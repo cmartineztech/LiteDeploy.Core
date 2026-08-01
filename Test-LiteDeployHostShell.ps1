@@ -3,34 +3,34 @@
     Manual verification harness for LiteDeploy-HostShell.ps1.
 
 .DESCRIPTION
-    This is NOT an automated test suite - it is a human-runnable check
-    script with two sections:
+    Call it from one Windows shell (classic Console Host or Windows PE)
+    and it executes ALL tests visually:
 
-    Section 1 (always runs, unattended):
+    Section 1 (unattended):
         Assertion checks for the toolkit's pure-logic functions
         (layout math, window-style bit math, theme table, truncation).
         Prints PASS/FAIL per check and sets the exit code.
 
-    Section 2 (runs with -Interactive, visual):
+    Section 2 (visual, runs right after Section 1):
         Cycles window positions, window styles, themes, the progress
         bar, and the task-sequence selector with sample data.
-        Run it in the classic Console Host (conhost) or Windows PE -
-        window control is not reliable under Windows Terminal.
+        Window control is not reliable under Windows Terminal - run in
+        the classic Console Host (conhost) or Windows PE.
 
 .EXAMPLE
     .\Test-LiteDeployHostShell.ps1
 
-    Runs only the unattended Section 1 assertions.
+    Runs everything: assertions, then the full visual walkthrough.
 
 .EXAMPLE
-    .\Test-LiteDeployHostShell.ps1 -Interactive
+    .\Test-LiteDeployHostShell.ps1 -AssertionsOnly
 
-    Runs Section 1, then the visual Section 2 walkthrough.
+    Runs only the unattended Section 1 assertions (no visual tests).
 #>
 
 [CmdletBinding()]
 param(
-    [switch]$Interactive,
+    [switch]$AssertionsOnly,
 
     [ValidateRange(1, 10)]
     [int]$DelaySeconds = 2
@@ -204,9 +204,7 @@ if ($script:FailCount -gt 0) {
 Write-Host "Section 1 PASSED: $($script:PassCount) of $($script:PassCount) checks." -ForegroundColor Green
 Write-Host "============================================================"
 
-if (-not $Interactive) {
-    Write-Host ""
-    Write-Host "Re-run with -Interactive for the visual walkthrough (conhost or WinPE only)."
+if ($AssertionsOnly) {
     exit 0
 }
 

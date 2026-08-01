@@ -3,46 +3,29 @@
     LiteDeploy HostShell - single-file console toolkit for Windows PE.
 
 .DESCRIPTION
-    Dot-source this file to load the LiteDeploy HostShell toolkit into the
-    current PowerShell session:
+    Dot-source to load the toolkit into the current session:
 
-        . X:\LiteDeploy\LiteDeploy-HostShell.ps1
+        . X:\~LiteDeploy\Scripts\LiteDeploy-HostShell.ps1
 
-    Public functions:
-
-        Set-HostShellWindow            Window state, position, size,
-                                       always-on-top, title, prompt.
-        Set-HostShellWindowStyle       Normal / Borderless / Fixed / Minimal.
+        Set-HostShellWindow            Window state, position, size, always-on-top, title, prompt.
+        Set-HostShellWindowStyle       Normal / Borderless / Fixed / Minimal frame styles.
         Set-HostShellTheme             Named or custom console color themes.
         Write-HostShellProgress        Colored in-place progress bar.
         Select-LiteDeployTaskSequence  Console task-sequence picker.
 
-    Designed for Windows PE and Windows PowerShell 5.1.
-    No modules, no external dependencies, kernel32/user32 P/Invoke only.
+    Windows PE / PowerShell 5.1. No modules, kernel32/user32 P/Invoke only.
 
 .NOTES
-    - Windows Terminal uses a pseudoconsole; window control is only
-      reliable in the classic Console Host (conhost), which is what
-      Windows PE uses.
-    - Dot-sourcing enables Set-StrictMode 2.0 and
-      $ErrorActionPreference = "Stop" in the calling session. This is
-      intentional: LiteDeploy engine scripts should fail fast.
-
-.EXAMPLE
-    . X:\LiteDeploy\LiteDeploy-HostShell.ps1
-
-    Loads the toolkit into the current session.
+    Window control is only reliable in the classic Console Host (conhost),
+    which is what Windows PE uses - not Windows Terminal.
+    Dot-sourcing enables StrictMode 2.0 and $ErrorActionPreference = "Stop"
+    in the calling session (intentional: engine scripts should fail fast).
 
 .EXAMPLE
     Set-HostShellWindow -Position TopLeft -WidthPercent 25 -HeightPercent 100
-
-    Docks the console window to the left quarter of the screen.
 #>
 
-#region 1 - Bootstrap
-# ============================================================================
-#  Session bootstrap. Runs once when the file is dot-sourced.
-# ============================================================================
+#region 1 - Bootstrap: strict session defaults + environment sanity check.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
@@ -54,14 +37,9 @@ if ($env:WT_SESSION) {
 #endregion
 
 #region 2 - Native interop (Win32)
-# ============================================================================
-#  Single consolidated P/Invoke class for the whole toolkit.
-#
-#  Add-Type definitions cannot be replaced inside the same PowerShell
-#  session. If the native declarations below ever change, bump the class
-#  name (LiteDeployHostShellV1 -> LiteDeployHostShellV2) so the new type
-#  compiles instead of colliding with the one already loaded.
-# ============================================================================
+# Single consolidated P/Invoke class for the whole toolkit.
+# Add-Type cannot redefine a type inside the same session: if these native
+# declarations ever change, bump the class name (V1 -> V2) to force recompile.
 
 if (-not ("Win32.LiteDeployHostShellV1" -as [type])) {
     Add-Type @"
@@ -76,79 +54,38 @@ namespace Win32
         public static extern IntPtr GetConsoleWindow();
 
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool ShowWindow(
-            IntPtr hWnd,
-            int nCmdShow
-        );
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool SetWindowPos(
-            IntPtr hWnd,
-            IntPtr hWndInsertAfter,
-            int X,
-            int Y,
-            int cx,
-            int cy,
-            uint uFlags
-        );
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
 
         [DllImport("user32.dll")]
-        public static extern int GetSystemMetrics(
-            int nIndex
-        );
+        public static extern int GetSystemMetrics(int nIndex);
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
-        public static extern IntPtr GetWindowLongPtr64(
-            IntPtr hWnd,
-            int nIndex
-        );
+        public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
-        public static extern IntPtr GetWindowLongPtr32(
-            IntPtr hWnd,
-            int nIndex
-        );
+        public static extern IntPtr GetWindowLongPtr32(IntPtr hWnd, int nIndex);
 
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
-        public static extern IntPtr SetWindowLongPtr64(
-            IntPtr hWnd,
-            int nIndex,
-            IntPtr dwNewLong
-        );
+        public static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
         [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
-        public static extern IntPtr SetWindowLongPtr32(
-            IntPtr hWnd,
-            int nIndex,
-            IntPtr dwNewLong
-        );
+        public static extern IntPtr SetWindowLongPtr32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
         // 32/64-bit safe wrappers: pick the correct Ptr variant at runtime.
-        public static IntPtr GetWindowStyle(
-            IntPtr hWnd,
-            int nIndex
-        )
+        public static IntPtr GetWindowStyle(IntPtr hWnd, int nIndex)
         {
-            if (IntPtr.Size == 8)
-            {
-                return GetWindowLongPtr64(hWnd, nIndex);
-            }
-
-            return GetWindowLongPtr32(hWnd, nIndex);
+            return (IntPtr.Size == 8) ? GetWindowLongPtr64(hWnd, nIndex) : GetWindowLongPtr32(hWnd, nIndex);
         }
 
-        public static IntPtr SetWindowStyle(
-            IntPtr hWnd,
-            int nIndex,
-            IntPtr newStyle
-        )
+        public static IntPtr SetWindowStyle(IntPtr hWnd, int nIndex, IntPtr newStyle)
         {
-            if (IntPtr.Size == 8)
-            {
-                return SetWindowLongPtr64(hWnd, nIndex, newStyle);
-            }
-
-            return SetWindowLongPtr32(hWnd, nIndex, newStyle);
+            return (IntPtr.Size == 8)
+                ? SetWindowLongPtr64(hWnd, nIndex, newStyle)
+                : SetWindowLongPtr32(hWnd, nIndex, newStyle);
         }
     }
 }
@@ -158,44 +95,24 @@ namespace Win32
 #endregion
 
 #region 3 - Pure logic and console helpers
-# ============================================================================
-#  No Win32 P/Invoke in this region. These functions do math, hold data,
-#  or use plain [Console] so they can be verified without touching the
-#  real window (see Test-LiteDeployHostShell.ps1, Section 1).
-# ============================================================================
+# No Win32 P/Invoke in this region: math, data tables, and plain [Console]
+# helpers that can be verified without touching the real window
+# (see Test-LiteDeployHostShell.ps1, Section 1).
 
 function Resolve-HostShellLayout {
     <#
     .SYNOPSIS
-        Calculates the target window rectangle for a named screen position.
-
-    .DESCRIPTION
-        Pure math helper for Set-HostShellWindow. Converts fixed or
-        percentage-based sizes into pixels, resolves the X/Y origin for
-        the requested position, and clamps everything to the screen.
-
-    .PARAMETER UsingPercentSize (output)
-        Included in the result. True when either dimension came from a
-        percentage, which tells the caller to anchor the window before
-        resizing (Console Host shifts the window otherwise).
-
+        Target window rectangle for a named screen position. Pure math helper
+        for Set-HostShellWindow: percent->pixels, X/Y origin, screen clamping.
+        UsingPercentSize in the result tells the caller to anchor the window
+        before resizing (Console Host shifts the window otherwise).
     .EXAMPLE
         Resolve-HostShellLayout -Position Center -ScreenWidth 1920 -ScreenHeight 1080
-
-        Returns X=460, Y=190, Width=1000, Height=700.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet(
-            "Top",
-            "TopLeft",
-            "TopRight",
-            "Center",
-            "Bottom",
-            "BottomLeft",
-            "BottomRight"
-        )]
+        [ValidateSet("Top", "TopLeft", "TopRight", "Center", "Bottom", "BottomLeft", "BottomRight")]
         [string]$Position,
 
         [Parameter(Mandatory)]
@@ -221,61 +138,26 @@ function Resolve-HostShellLayout {
         [int]$Height = 700
     )
 
-    $TargetWidth = if ($WidthPercent -gt 0) {
-        [int]($ScreenWidth * ($WidthPercent / 100))
-    }
-    else {
-        $Width
-    }
-
-    $TargetHeight = if ($HeightPercent -gt 0) {
-        [int]($ScreenHeight * ($HeightPercent / 100))
-    }
-    else {
-        $Height
-    }
+    $TargetWidth  = if ($WidthPercent  -gt 0) { [int]($ScreenWidth  * ($WidthPercent  / 100)) } else { $Width }
+    $TargetHeight = if ($HeightPercent -gt 0) { [int]($ScreenHeight * ($HeightPercent / 100)) } else { $Height }
 
     # Keep dimensions inside the screen.
-    $TargetWidth  = [Math]::Min([Math]::Max(1, $TargetWidth), $ScreenWidth)
+    $TargetWidth  = [Math]::Min([Math]::Max(1, $TargetWidth),  $ScreenWidth)
     $TargetHeight = [Math]::Min([Math]::Max(1, $TargetHeight), $ScreenHeight)
 
     switch ($Position) {
-        "Top" {
-            $X = [int](($ScreenWidth - $TargetWidth) / 2)
-            $Y = 0
-        }
-        "TopLeft" {
-            $X = 0
-            $Y = 0
-        }
-        "TopRight" {
-            $X = $ScreenWidth - $TargetWidth
-            $Y = 0
-        }
-        "Center" {
-            $X = [int](($ScreenWidth - $TargetWidth) / 2)
-            $Y = [int](($ScreenHeight - $TargetHeight) / 2)
-        }
-        "Bottom" {
-            $X = [int](($ScreenWidth - $TargetWidth) / 2)
-            $Y = $ScreenHeight - $TargetHeight
-        }
-        "BottomLeft" {
-            $X = 0
-            $Y = $ScreenHeight - $TargetHeight
-        }
-        "BottomRight" {
-            $X = $ScreenWidth - $TargetWidth
-            $Y = $ScreenHeight - $TargetHeight
-        }
+        "Top"         { $X = [int](($ScreenWidth - $TargetWidth) / 2);  $Y = 0 }
+        "TopLeft"     { $X = 0;                                         $Y = 0 }
+        "TopRight"    { $X = $ScreenWidth - $TargetWidth;               $Y = 0 }
+        "Center"      { $X = [int](($ScreenWidth - $TargetWidth) / 2);  $Y = [int](($ScreenHeight - $TargetHeight) / 2) }
+        "Bottom"      { $X = [int](($ScreenWidth - $TargetWidth) / 2);  $Y = $ScreenHeight - $TargetHeight }
+        "BottomLeft"  { $X = 0;                                         $Y = $ScreenHeight - $TargetHeight }
+        "BottomRight" { $X = $ScreenWidth - $TargetWidth;               $Y = $ScreenHeight - $TargetHeight }
     }
 
-    $X = [Math]::Max(0, $X)
-    $Y = [Math]::Max(0, $Y)
-
     [PSCustomObject]@{
-        X                = $X
-        Y                = $Y
+        X                = [Math]::Max(0, $X)
+        Y                = [Math]::Max(0, $Y)
         Width            = $TargetWidth
         Height           = $TargetHeight
         UsingPercentSize = ($WidthPercent -gt 0) -or ($HeightPercent -gt 0)
@@ -285,28 +167,17 @@ function Resolve-HostShellLayout {
 function Get-HostShellWindowStyleValue {
     <#
     .SYNOPSIS
-        Computes the new GWL_STYLE bitmask for a named window style.
-
-    .DESCRIPTION
-        Pure bit-math helper for Set-HostShellWindowStyle.
-
-        Normal      restores the session's original style.
-        Borderless  removes the title bar and the resize border.
-        Fixed       keeps the title bar; disables resizing and maximize.
-        Minimal     keeps the title bar; removes minimize and maximize.
-
+        New GWL_STYLE bitmask for a named window style. Pure bit-math helper
+        for Set-HostShellWindowStyle: Normal restores OriginalStyle;
+        Borderless drops caption+resize; Fixed keeps the title bar but drops
+        resize+maximize; Minimal keeps the title bar but drops min/max buttons.
     .EXAMPLE
         Get-HostShellWindowStyleValue -WindowStyle Borderless -CurrentStyle $cur -OriginalStyle $orig
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet(
-            "Normal",
-            "Borderless",
-            "Fixed",
-            "Minimal"
-        )]
+        [ValidateSet("Normal", "Borderless", "Fixed", "Minimal")]
         [string]$WindowStyle,
 
         [Parameter(Mandatory)]
@@ -324,35 +195,10 @@ function Get-HostShellWindowStyleValue {
     $WS_MAXIMIZEBOX = 0x00010000L  # Maximize button.
 
     $NewStyle = switch ($WindowStyle) {
-        "Normal" {
-            $OriginalStyle
-        }
-
-        "Borderless" {
-            $CurrentStyle `
-                -band (-bnot $WS_CAPTION) `
-                -band (-bnot $WS_THICKFRAME)
-        }
-
-        "Fixed" {
-            # Keep the title bar and system menu...
-            ($CurrentStyle `
-                -bor $WS_CAPTION `
-                -bor $WS_SYSMENU) `
-                -band (-bnot $WS_THICKFRAME) `
-                -band (-bnot $WS_MAXIMIZEBOX)
-            # ...but no resizing and no maximize button.
-        }
-
-        "Minimal" {
-            # Keep the title bar and system menu...
-            ($CurrentStyle `
-                -bor $WS_CAPTION `
-                -bor $WS_SYSMENU) `
-                -band (-bnot $WS_MINIMIZEBOX) `
-                -band (-bnot $WS_MAXIMIZEBOX)
-            # ...but no minimize or maximize buttons.
-        }
+        "Normal"     { $OriginalStyle }
+        "Borderless" { $CurrentStyle -band (-bnot $WS_CAPTION) -band (-bnot $WS_THICKFRAME) }
+        "Fixed"      { ($CurrentStyle -bor $WS_CAPTION -bor $WS_SYSMENU) -band (-bnot $WS_THICKFRAME)  -band (-bnot $WS_MAXIMIZEBOX) }
+        "Minimal"    { ($CurrentStyle -bor $WS_CAPTION -bor $WS_SYSMENU) -band (-bnot $WS_MINIMIZEBOX) -band (-bnot $WS_MAXIMIZEBOX) }
     }
 
     [long]$NewStyle
@@ -361,26 +207,16 @@ function Get-HostShellWindowStyleValue {
 function Get-HostShellTheme {
     <#
     .SYNOPSIS
-        Returns the foreground/background colors for a named theme.
-
-    .DESCRIPTION
-        Data helper for Set-HostShellTheme. To add a theme, add one line
-        to the table below; Set-HostShellTheme picks it up automatically.
-
+        Foreground/background colors for a named theme.
+        To add a theme, add one line to the table - Set-HostShellTheme
+        picks it up automatically.
     .EXAMPLE
         Get-HostShellTheme -Name LiteDeploy
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet(
-            "LiteDeploy",
-            "Midnight",
-            "Slate",
-            "Ocean",
-            "HighContrast",
-            "Default"
-        )]
+        [ValidateSet("LiteDeploy", "Midnight", "Slate", "Ocean", "HighContrast", "Default")]
         [string]$Name
     )
 
@@ -400,14 +236,9 @@ function Get-TruncatedText {
     <#
     .SYNOPSIS
         Truncates text to a column width, ending with "..." when cut.
-
-    .DESCRIPTION
-        Used by Select-LiteDeployTaskSequence to keep table columns
-        aligned. Text that already fits is returned unchanged.
-
+        Text that already fits is returned unchanged.
     .EXAMPLE
-        Get-TruncatedText -Value "A very long task sequence name" -Width 12
-        # Returns "A very lo..."
+        Get-TruncatedText -Value "A very long task sequence name" -Width 12  # "A very lo..."
     #>
     [CmdletBinding()]
     param(
@@ -428,15 +259,37 @@ function Get-TruncatedText {
     $Text.Substring(0, $Width - 3) + "..."
 }
 
+function Get-MaxTextLength {
+    <#
+    .SYNOPSIS
+        Longest text length of one property across all rows, with a floor.
+        Used by Select-LiteDeployTaskSequence to size table columns.
+    .EXAMPLE
+        Get-MaxTextLength -Rows $TaskSequences -Property Name -Minimum 20
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Rows,
+
+        [Parameter(Mandatory)]
+        [string]$Property,
+
+        [Parameter(Mandatory)]
+        [int]$Minimum
+    )
+
+    [Math]::Max(
+        $Minimum,
+        [int](($Rows | ForEach-Object { ([string]$_.$Property).Length } | Measure-Object -Maximum).Maximum)
+    )
+}
+
 function Clear-ConsoleRegion {
     <#
     .SYNOPSIS
         Blanks a block of console lines and parks the cursor at its top.
-
-    .DESCRIPTION
-        Used by Select-LiteDeployTaskSequence to redraw the picker in
-        place without Clear-Host (avoids full-screen flicker).
-
+        Lets the selector redraw in place without Clear-Host flicker.
     .EXAMPLE
         Clear-ConsoleRegion -StartTop 5 -LineCount 12
     #>
@@ -449,8 +302,7 @@ function Clear-ConsoleRegion {
         [int]$LineCount
     )
 
-    $BufferWidth = [Math]::Max(1, [Console]::BufferWidth - 1)
-    $BlankLine = " " * $BufferWidth
+    $BlankLine = " " * [Math]::Max(1, [Console]::BufferWidth - 1)
 
     for ($Line = 0; $Line -lt $LineCount; $Line++) {
         $TargetTop = $StartTop + $Line
@@ -468,64 +320,35 @@ function Clear-ConsoleRegion {
 
 #endregion
 
-#region 4 - Public functions
-# ============================================================================
-#  The toolkit API consumed by LiteDeploy. Each function composes the
-#  pure logic above with the Win32 interop class.
-# ============================================================================
+#region 4 - Public functions: the toolkit API consumed by LiteDeploy.
 
 function Set-HostShellWindow {
     <#
     .SYNOPSIS
-        Controls the current console window.
-
+        Controls the current console window: state, position, fixed or
+        percentage-based size, always-on-top, title, and prompt.
     .DESCRIPTION
-        Supports window state, positioning, fixed or percentage-based
-        sizing, always-on-top mode, window title, and prompt customization.
-
         Prompt behavior:
           -Prompt omitted  : leave the current prompt unchanged.
           -Prompt "."      : restore the standard location-based prompt.
           -Prompt ""       : clear the visible prompt.
           -Prompt "Text> " : set a custom prompt.
-
     .EXAMPLE
         Set-HostShellWindow -Action Minimize
-
     .EXAMPLE
         Set-HostShellWindow -Position Bottom -WidthPercent 60 -HeightPercent 30
-
     .EXAMPLE
         Set-HostShellWindow -Title "LiteDeploy Logs" -Prompt "" -AlwaysOnTop On
     #>
     [CmdletBinding()]
     param(
-        [ValidateSet(
-            "None",
-            "Minimize",
-            "Restore",
-            "Maximize",
-            "Hide"
-        )]
+        [ValidateSet("None", "Minimize", "Restore", "Maximize", "Hide")]
         [string]$Action = "None",
 
-        [ValidateSet(
-            "None",
-            "Top",
-            "TopLeft",
-            "TopRight",
-            "Center",
-            "Bottom",
-            "BottomLeft",
-            "BottomRight"
-        )]
+        [ValidateSet("None", "Top", "TopLeft", "TopRight", "Center", "Bottom", "BottomLeft", "BottomRight")]
         [string]$Position = "None",
 
-        [ValidateSet(
-            "None",
-            "On",
-            "Off"
-        )]
+        [ValidateSet("None", "On", "Off")]
         [string]$AlwaysOnTop = "None",
 
         # Zero means use the fixed -Width value.
@@ -568,18 +391,14 @@ function Set-HostShellWindow {
             Remove-Variable -Name HostShellCustomPrompt -Scope Global -ErrorAction SilentlyContinue
 
             # A single space keeps the prompt visually empty but functional.
-            Set-Item -Path Function:\global:prompt -Value {
-                " "
-            }
+            Set-Item -Path Function:\global:prompt -Value { " " }
         }
         else {
             # The prompt scriptblock reads this global on every render, so
             # changing the variable later changes the visible prompt.
             $global:HostShellCustomPrompt = $Prompt
 
-            Set-Item -Path Function:\global:prompt -Value {
-                $global:HostShellCustomPrompt
-            }
+            Set-Item -Path Function:\global:prompt -Value { $global:HostShellCustomPrompt }
         }
     }
 
@@ -609,20 +428,12 @@ function Set-HostShellWindow {
 
         if ($Layout.UsingPercentSize) {
             # Console Host may shift the window when moving and resizing in
-            # one call. First anchor it at the requested position without
-            # changing its size.
+            # one call, so anchor at the target position first (no resize).
             # SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW
             $MoveOnlyFlags = 0x0001 -bor 0x0004 -bor 0x0040
 
             $Moved = [Win32.LiteDeployHostShellV1]::SetWindowPos(
-                $WindowHandle,
-                [IntPtr]::Zero,
-                $Layout.X,
-                $Layout.Y,
-                0,
-                0,
-                $MoveOnlyFlags
-            )
+                $WindowHandle, [IntPtr]::Zero, $Layout.X, $Layout.Y, 0, 0, $MoveOnlyFlags)
 
             if (-not $Moved) {
                 Write-Warning "The console window could not be anchored at the requested position."
@@ -631,19 +442,11 @@ function Set-HostShellWindow {
             Start-Sleep -Milliseconds 120
         }
 
-        # Apply final position and size.
-        # SWP_NOZORDER | SWP_SHOWWINDOW
+        # Apply final position and size (SWP_NOZORDER | SWP_SHOWWINDOW).
         $PositionFlags = 0x0004 -bor 0x0040
 
         $Positioned = [Win32.LiteDeployHostShellV1]::SetWindowPos(
-            $WindowHandle,
-            [IntPtr]::Zero,
-            $Layout.X,
-            $Layout.Y,
-            $Layout.Width,
-            $Layout.Height,
-            $PositionFlags
-        )
+            $WindowHandle, [IntPtr]::Zero, $Layout.X, $Layout.Y, $Layout.Width, $Layout.Height, $PositionFlags)
 
         if (-not $Positioned) {
             Write-Warning "The console window could not be positioned or resized."
@@ -652,25 +455,13 @@ function Set-HostShellWindow {
 
     if ($AlwaysOnTop -ne "None") {
         # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2.
-        $InsertAfter = if ($AlwaysOnTop -eq "On") {
-            [IntPtr](-1)
-        }
-        else {
-            [IntPtr](-2)
-        }
+        $InsertAfter = if ($AlwaysOnTop -eq "On") { [IntPtr](-1) } else { [IntPtr](-2) }
 
         # SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
         $TopMostFlags = 0x0002 -bor 0x0001 -bor 0x0010
 
         $TopMostChanged = [Win32.LiteDeployHostShellV1]::SetWindowPos(
-            $WindowHandle,
-            $InsertAfter,
-            0,
-            0,
-            0,
-            0,
-            $TopMostFlags
-        )
+            $WindowHandle, $InsertAfter, 0, 0, 0, 0, $TopMostFlags)
 
         if (-not $TopMostChanged) {
             Write-Warning "Always-on-top mode could not be changed."
@@ -678,50 +469,31 @@ function Set-HostShellWindow {
     }
 
     $ShowCommand = switch ($Action) {
-        "Hide"     { 0 } # SW_HIDE
-        "Maximize" { 3 } # SW_MAXIMIZE
-        "Minimize" { 6 } # SW_MINIMIZE
-        "Restore"  { 9 } # SW_RESTORE
+        "Hide"     { 0 }    # SW_HIDE
+        "Maximize" { 3 }    # SW_MAXIMIZE
+        "Minimize" { 6 }    # SW_MINIMIZE
+        "Restore"  { 9 }    # SW_RESTORE
         default    { $null }
     }
 
     if ($null -ne $ShowCommand) {
-        [Win32.LiteDeployHostShellV1]::ShowWindow(
-            $WindowHandle,
-            $ShowCommand
-        ) | Out-Null
+        [Win32.LiteDeployHostShellV1]::ShowWindow($WindowHandle, $ShowCommand) | Out-Null
     }
 }
 
 function Set-HostShellWindowStyle {
     <#
     .SYNOPSIS
-        Changes the frame style of the current console window.
-
-    .DESCRIPTION
-        Normal      restores the style the window had when this function
-                    first ran in the current session.
-        Borderless  removes the title bar and resize border.
-        Fixed       keeps the title bar but disables resizing and maximize.
-        Minimal     keeps the title bar but removes minimize and maximize.
-
+        Changes the frame style of the current console window: Normal
+        (restores the session's original style), Borderless, Fixed, Minimal.
         The original style is captured once per session in
         $global:HostShellOriginalWindowStyle so Normal can restore it.
-
     .EXAMPLE
         Set-HostShellWindowStyle -WindowStyle Borderless
-
-    .EXAMPLE
-        Set-HostShellWindowStyle -WindowStyle Normal -Verbose
     #>
     [CmdletBinding()]
     param(
-        [ValidateSet(
-            "Normal",
-            "Borderless",
-            "Fixed",
-            "Minimal"
-        )]
+        [ValidateSet("Normal", "Borderless", "Fixed", "Minimal")]
         [string]$WindowStyle = "Normal"
     )
 
@@ -731,13 +503,9 @@ function Set-HostShellWindowStyle {
         throw "No console window is attached to this PowerShell process."
     }
 
-    # GWL_STYLE: index of the window's style bitmask.
-    $GWL_STYLE = -16
+    $GWL_STYLE = -16  # Index of the window's style bitmask.
 
-    $CurrentStyle = [Win32.LiteDeployHostShellV1]::GetWindowStyle(
-        $WindowHandle,
-        $GWL_STYLE
-    ).ToInt64()
+    $CurrentStyle = [Win32.LiteDeployHostShellV1]::GetWindowStyle($WindowHandle, $GWL_STYLE).ToInt64()
 
     # Store the original style once for the current PowerShell session.
     if (-not (Get-Variable -Name HostShellOriginalWindowStyle -Scope Global -ErrorAction SilentlyContinue)) {
@@ -749,33 +517,14 @@ function Set-HostShellWindowStyle {
         -CurrentStyle $CurrentStyle `
         -OriginalStyle $global:HostShellOriginalWindowStyle
 
-    [Win32.LiteDeployHostShellV1]::SetWindowStyle(
-        $WindowHandle,
-        $GWL_STYLE,
-        [IntPtr]$NewStyle
-    ) | Out-Null
+    [Win32.LiteDeployHostShellV1]::SetWindowStyle($WindowHandle, $GWL_STYLE, [IntPtr]$NewStyle) | Out-Null
 
-    # SetWindowLong can return zero even when successful, so success is
-    # judged by the frame refresh below instead.
+    # SetWindowLong can return zero even on success, so success is judged by
+    # this frame refresh instead:
     # SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW
-    $FrameFlags = (
-        0x0001 -bor
-        0x0002 -bor
-        0x0004 -bor
-        0x0010 -bor
-        0x0020 -bor
-        0x0040
-    )
+    $FrameFlags = 0x0001 -bor 0x0002 -bor 0x0004 -bor 0x0010 -bor 0x0020 -bor 0x0040
 
-    $FrameUpdated = [Win32.LiteDeployHostShellV1]::SetWindowPos(
-        $WindowHandle,
-        [IntPtr]::Zero,
-        0,
-        0,
-        0,
-        0,
-        $FrameFlags
-    )
+    $FrameUpdated = [Win32.LiteDeployHostShellV1]::SetWindowPos($WindowHandle, [IntPtr]::Zero, 0, 0, 0, 0, $FrameFlags)
 
     if (-not $FrameUpdated) {
         throw "The console window frame could not be refreshed."
@@ -787,34 +536,19 @@ function Set-HostShellWindowStyle {
 function Set-HostShellTheme {
     <#
     .SYNOPSIS
-        Applies a color theme to the current console.
-
-    .DESCRIPTION
-        Changes the Console Host foreground and background colors, either
-        from a named theme (-Theme) or from explicit colors
-        (-ForegroundColor / -BackgroundColor). In the Custom parameter set,
-        an omitted color keeps the console's current one.
-
-        Use -ClearScreen to repaint the whole console with the new colors
-        and -ShowPreview to print a sample message block.
-
+        Applies a color theme to the current console, from a named theme
+        (-Theme) or explicit colors (-ForegroundColor/-BackgroundColor;
+        an omitted custom color keeps the current one). -ClearScreen
+        repaints the whole console; -ShowPreview prints a sample block.
     .EXAMPLE
         Set-HostShellTheme -Theme LiteDeploy -ClearScreen -ShowPreview
-
     .EXAMPLE
         Set-HostShellTheme -ForegroundColor Cyan -BackgroundColor Black -ClearScreen
     #>
     [CmdletBinding(DefaultParameterSetName = "Theme")]
     param(
         [Parameter(ParameterSetName = "Theme")]
-        [ValidateSet(
-            "LiteDeploy",
-            "Midnight",
-            "Slate",
-            "Ocean",
-            "HighContrast",
-            "Default"
-        )]
+        [ValidateSet("LiteDeploy", "Midnight", "Slate", "Ocean", "HighContrast", "Default")]
         [string]$Theme = "LiteDeploy",
 
         [Parameter(ParameterSetName = "Custom")]
@@ -829,7 +563,6 @@ function Set-HostShellTheme {
     )
 
     if ($PSCmdlet.ParameterSetName -eq "Custom") {
-        # An omitted custom color keeps the console's current one.
         if (-not $PSBoundParameters.ContainsKey("ForegroundColor")) {
             $ForegroundColor = $Host.UI.RawUI.ForegroundColor
         }
@@ -838,10 +571,7 @@ function Set-HostShellTheme {
             $BackgroundColor = $Host.UI.RawUI.BackgroundColor
         }
 
-        $Colors = @{
-            Foreground = $ForegroundColor
-            Background = $BackgroundColor
-        }
+        $Colors = @{ Foreground = $ForegroundColor; Background = $BackgroundColor }
     }
     else {
         $Colors = Get-HostShellTheme -Name $Theme
@@ -863,9 +593,9 @@ function Set-HostShellTheme {
         Write-Host "Background: $($Host.UI.RawUI.BackgroundColor)"
         Write-Host ""
         Write-Host "[INFO]  Deployment environment initialized." -ForegroundColor Cyan
-        Write-Host "[OK]    Network connectivity confirmed." -ForegroundColor Green
-        Write-Host "[WARN]  Driver package not yet selected." -ForegroundColor Yellow
-        Write-Host "[ERROR] Example error message." -ForegroundColor Red
+        Write-Host "[OK]    Network connectivity confirmed."          -ForegroundColor Green
+        Write-Host "[WARN]  Driver package not yet selected."          -ForegroundColor Yellow
+        Write-Host "[ERROR] Example error message."                    -ForegroundColor Red
         Write-Host ""
     }
 }
@@ -873,15 +603,9 @@ function Set-HostShellTheme {
 function Write-HostShellProgress {
     <#
     .SYNOPSIS
-        Writes a colored in-place progress bar to the console.
-
-    .DESCRIPTION
-        Renders one progress bar line and returns the cursor to the start
-        of the line, so repeated calls animate in place. Write a final
-        newline (Write-Host) after the last call to move past the bar.
-
-        WinPE-friendly: standard console colors only, no dependencies.
-
+        Writes a colored in-place progress bar. Repeated calls redraw on
+        the same line; write a final newline (Write-Host) after the last
+        call to move past the bar. WinPE-friendly: console colors only.
     .EXAMPLE
         1..100 | ForEach-Object { Write-HostShellProgress -Percent $_ }
         Write-Host
@@ -902,60 +626,35 @@ function Write-HostShellProgress {
         [ConsoleColor]$TextColor = [ConsoleColor]::Gray
     )
 
-    $FilledWidth = [int][Math]::Round(
-        $Width * ($Percent / 100)
-    )
-
-    $EmptyWidth = $Width - $FilledWidth
-
-    $Filled = " " * $FilledWidth
-    $Empty  = " " * $EmptyWidth
+    $FilledWidth = [int][Math]::Round($Width * ($Percent / 100))
+    $EmptyWidth  = $Width - $FilledWidth
 
     # `r returns the cursor to the start of the line for in-place redraw.
     Write-Host "`r|" -NoNewline -ForegroundColor $TextColor
 
     if ($FilledWidth -gt 0) {
-        Write-Host $Filled `
-            -NoNewline `
-            -ForegroundColor Black `
-            -BackgroundColor $CompletedColor
+        Write-Host (" " * $FilledWidth) -NoNewline -ForegroundColor Black -BackgroundColor $CompletedColor
     }
 
     if ($EmptyWidth -gt 0) {
-        Write-Host $Empty `
-            -NoNewline `
-            -ForegroundColor Black `
-            -BackgroundColor $RemainingColor
+        Write-Host (" " * $EmptyWidth) -NoNewline -ForegroundColor Black -BackgroundColor $RemainingColor
     }
 
-    Write-Host ("| {0,3}%" -f $Percent) `
-        -NoNewline `
-        -ForegroundColor $TextColor
+    Write-Host ("| {0,3}%" -f $Percent) -NoNewline -ForegroundColor $TextColor
 }
 
 function Select-LiteDeployTaskSequence {
     <#
     .SYNOPSIS
-        Console task-sequence picker for LiteDeploy.
-
-    .DESCRIPTION
-        Displays task sequences as an aligned console table and allows
-        selection with Up/Down arrows, Home/End, Enter, and Escape.
-
-        Returns the selected task-sequence object, or $null when the user
-        presses Escape.
-
+        Console task-sequence picker: aligned table, Up/Down arrows,
+        Home/End, Enter to select, Escape to cancel. Returns the selected
+        task-sequence object, or $null on Escape.
         WinPE-friendly: no WPF, WinForms, Out-GridView, HTA, or modules.
-
-        Each task sequence object is expected to expose: Id, Name,
-        Architecture, Version, Description, ImagePath, ImageIndex.
-
+        Expected properties: Id, Name, Architecture, Version, Description,
+        ImagePath, ImageIndex.
     .EXAMPLE
         $Selected = Select-LiteDeployTaskSequence -TaskSequences $TaskSequences
         if ($null -eq $Selected) { return }
-
-    .EXAMPLE
-        Select-LiteDeployTaskSequence -TaskSequences $TaskSequences -Title "Pick an image"
     #>
     [CmdletBinding()]
     param(
@@ -979,56 +678,22 @@ function Select-LiteDeployTaskSequence {
         [Console]::CursorVisible = $false
 
         # Column widths grow to fit the longest value in each column.
-        $IdWidth = [Math]::Max(
-            4,
-            [int](($TaskSequences |
-                ForEach-Object { ([string]$_.Id).Length } |
-                Measure-Object -Maximum
-            ).Maximum)
-        )
-
-        $NameWidth = [Math]::Max(
-            20,
-            [int](($TaskSequences |
-                ForEach-Object { ([string]$_.Name).Length } |
-                Measure-Object -Maximum
-            ).Maximum)
-        )
-
-        $ArchitectureWidth = [Math]::Max(
-            12,
-            [int](($TaskSequences |
-                ForEach-Object { ([string]$_.Architecture).Length } |
-                Measure-Object -Maximum
-            ).Maximum)
-        )
-
-        $VersionWidth = [Math]::Max(
-            8,
-            [int](($TaskSequences |
-                ForEach-Object { ([string]$_.Version).Length } |
-                Measure-Object -Maximum
-            ).Maximum)
-        )
+        $IdWidth           = Get-MaxTextLength -Rows $TaskSequences -Property Id           -Minimum 4
+        $NameWidth         = Get-MaxTextLength -Rows $TaskSequences -Property Name         -Minimum 20
+        $ArchitectureWidth = Get-MaxTextLength -Rows $TaskSequences -Property Architecture -Minimum 12
+        $VersionWidth      = Get-MaxTextLength -Rows $TaskSequences -Property Version      -Minimum 8
 
         $AvailableWidth = [Math]::Max(80, [Console]::WindowWidth - 1)
 
-        $FixedWidth = (
-            2 +                 # Selection marker
-            $IdWidth + 2 +
-            $NameWidth + 2 +
-            $ArchitectureWidth + 2 +
-            $VersionWidth + 2
-        )
+        # 2 chars of padding per column, plus 2 for the selection marker.
+        $FixedWidth = 2 + $IdWidth + 2 + $NameWidth + 2 + $ArchitectureWidth + 2 + $VersionWidth + 2
 
         # Description takes whatever width is left.
         $DescriptionWidth = [Math]::Max(20, $AvailableWidth - $FixedWidth)
 
         do {
             if ($RenderedLineCount -gt 0) {
-                Clear-ConsoleRegion `
-                    -StartTop $StartTop `
-                    -LineCount $RenderedLineCount
+                Clear-ConsoleRegion -StartTop $StartTop -LineCount $RenderedLineCount
             }
 
             [Console]::SetCursorPosition(0, $StartTop)
@@ -1039,11 +704,7 @@ function Select-LiteDeployTaskSequence {
 
             $Header = (
                 "  {0,-$IdWidth}  {1,-$NameWidth}  {2,-$ArchitectureWidth}  {3,-$VersionWidth}  {4,-$DescriptionWidth}" -f
-                "ID",
-                "Name",
-                "Architecture",
-                "Version",
-                "Description"
+                "ID", "Name", "Architecture", "Version", "Description"
             )
 
             Write-Host $Header -ForegroundColor White
@@ -1057,24 +718,20 @@ function Select-LiteDeployTaskSequence {
                 $Row = (
                     "{0} {1,-$IdWidth}  {2,-$NameWidth}  {3,-$ArchitectureWidth}  {4,-$VersionWidth}  {5,-$DescriptionWidth}" -f
                     $Marker,
-                    (Get-TruncatedText -Value $TaskSequence.Id -Width $IdWidth),
-                    (Get-TruncatedText -Value $TaskSequence.Name -Width $NameWidth),
+                    (Get-TruncatedText -Value $TaskSequence.Id           -Width $IdWidth),
+                    (Get-TruncatedText -Value $TaskSequence.Name         -Width $NameWidth),
                     (Get-TruncatedText -Value $TaskSequence.Architecture -Width $ArchitectureWidth),
-                    (Get-TruncatedText -Value $TaskSequence.Version -Width $VersionWidth),
-                    (Get-TruncatedText -Value $TaskSequence.Description -Width $DescriptionWidth)
+                    (Get-TruncatedText -Value $TaskSequence.Version      -Width $VersionWidth),
+                    (Get-TruncatedText -Value $TaskSequence.Description  -Width $DescriptionWidth)
                 )
 
                 $Row = $Row.PadRight([Math]::Min($AvailableWidth, $Row.Length))
 
                 if ($Index -eq $SelectedIndex) {
-                    Write-Host $Row `
-                        -ForegroundColor Black `
-                        -BackgroundColor Cyan
+                    Write-Host $Row -ForegroundColor Black -BackgroundColor Cyan
                 }
                 else {
-                    Write-Host $Row `
-                        -ForegroundColor Gray `
-                        -BackgroundColor Black
+                    Write-Host $Row -ForegroundColor Gray -BackgroundColor Black
                 }
             }
 
@@ -1095,39 +752,16 @@ function Select-LiteDeployTaskSequence {
             switch ($Key.Key) {
                 "UpArrow" {
                     # Wrap around at the top.
-                    if ($SelectedIndex -gt 0) {
-                        $SelectedIndex--
-                    }
-                    else {
-                        $SelectedIndex = $TaskSequences.Count - 1
-                    }
+                    if ($SelectedIndex -gt 0) { $SelectedIndex-- } else { $SelectedIndex = $TaskSequences.Count - 1 }
                 }
-
                 "DownArrow" {
                     # Wrap around at the bottom.
-                    if ($SelectedIndex -lt ($TaskSequences.Count - 1)) {
-                        $SelectedIndex++
-                    }
-                    else {
-                        $SelectedIndex = 0
-                    }
+                    if ($SelectedIndex -lt ($TaskSequences.Count - 1)) { $SelectedIndex++ } else { $SelectedIndex = 0 }
                 }
-
-                "Home" {
-                    $SelectedIndex = 0
-                }
-
-                "End" {
-                    $SelectedIndex = $TaskSequences.Count - 1
-                }
-
-                "Enter" {
-                    return $TaskSequences[$SelectedIndex]
-                }
-
-                "Escape" {
-                    return $null
-                }
+                "Home"   { $SelectedIndex = 0 }
+                "End"    { $SelectedIndex = $TaskSequences.Count - 1 }
+                "Enter"  { return $TaskSequences[$SelectedIndex] }
+                "Escape" { return $null }
             }
         }
         while ($true)
@@ -1135,16 +769,9 @@ function Select-LiteDeployTaskSequence {
     finally {
         [Console]::CursorVisible = $OriginalCursorVisible
 
-        # Park the cursor below the picker so follow-up output does not
-        # overwrite it.
+        # Park the cursor below the picker so follow-up output does not overwrite it.
         if ($RenderedLineCount -gt 0) {
-            [Console]::SetCursorPosition(
-                0,
-                [Math]::Min(
-                    [Console]::BufferHeight - 1,
-                    $StartTop + $RenderedLineCount
-                )
-            )
+            [Console]::SetCursorPosition(0, [Math]::Min([Console]::BufferHeight - 1, $StartTop + $RenderedLineCount))
         }
     }
 }
