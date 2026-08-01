@@ -16,6 +16,7 @@ task-sequence picker.
 | File | Purpose |
 |---|---|
 | `LiteDeploy-HostShell.ps1` | The toolkit. This is the only file LiteDeploy needs at runtime. |
+| `Start-LiteDeployShell.ps1` | Launcher: applies a named preset to its own window, then optionally runs your engine script. The WinPE entry point. |
 | `Test-LiteDeployHostShell.ps1` | Manual verification harness (dev/test only — do not ship in the WinPE image). |
 
 ## Quick start
@@ -139,17 +140,62 @@ if ($null -eq $Selected) {
 Write-Host "Deploying $($Selected.ImagePath) index $($Selected.ImageIndex)"
 ```
 
-## Typical WinPE boot flow
+## Presets — launch a window with a behavior bundle
+
+A preset bundles theme + frame style + position + size + state +
+always-on-top + title + prompt into one call:
 
 ```powershell
-# --- LiteDeploy engine start ---
-. X:\LiteDeploy\LiteDeploy-HostShell.ps1
+Set-HostShellPreset -Name Main
+```
 
-Set-HostShellTheme -Theme LiteDeploy -ClearScreen
-Set-HostShellWindow -Position Top -WidthPercent 100 -HeightPercent 30 `
-    -Title "LiteDeploy" -Prompt "LiteDeploy> " -AlwaysOnTop On
-Set-HostShellWindowStyle -WindowStyle Fixed
+| Preset | What you get |
+|---|---|
+| `Main` | LiteDeploy theme (cleared), Fixed frame, docked top 100%×30%, always-on-top, title `LiteDeploy`, prompt `LiteDeploy> ` |
+| `Full` | LiteDeploy theme (cleared), maximized, title `LiteDeploy`, prompt `LiteDeploy> ` |
+| `Logs` | Midnight theme (cleared), Minimal frame, bottom strip 100%×25%, always-on-top, title `LiteDeploy Logs`, hidden prompt |
+| `Picker` | Ocean theme (cleared), Fixed frame, centered 70%×70% |
 
+Apply order is handled for you (theme → frame style → geometry, because
+border changes shift the client area). **Adding a preset:** add one entry
+to the table in `Get-HostShellPreset` — fields may be omitted and missing
+ones are skipped.
+
+### Launching a pre-configured window in WinPE
+
+`powershell.exe` knows nothing about themes or geometry, so the window is
+configured from *inside* the moment it opens — that is what
+`Start-LiteDeployShell.ps1` does. Point `winpeshl.ini` or `startnet.cmd`
+at it:
+
+```
+powershell.exe -NoExit -ExecutionPolicy Bypass -File X:\LiteDeploy\Start-LiteDeployShell.ps1 -Preset Main -Script X:\LiteDeploy\Engine.ps1
+```
+
+- Keep `-NoExit` for an interactive window; omit it when `-Script` runs
+  the whole flow.
+- `-Script` runs after the preset is applied — and because the launcher
+  already dot-sourced the toolkit, the engine script can call every
+  HostShell function directly.
+- A preset failure degrades to a warning: WinPE always keeps a usable
+  shell.
+
+**Secondary windows (optional):** each PowerShell process owns its own
+console window, so the engine can spawn another pre-configured window:
+
+```powershell
+Start-Process powershell -ArgumentList "-NoExit","-ExecutionPolicy Bypass","-File","X:\LiteDeploy\Start-LiteDeployShell.ps1","-Preset","Logs"
+```
+
+## Typical WinPE boot flow
+
+```
+REM startnet.cmd - one line boots a fully configured shell:
+powershell.exe -NoExit -ExecutionPolicy Bypass -File X:\LiteDeploy\Start-LiteDeployShell.ps1 -Preset Main -Script X:\LiteDeploy\Engine.ps1
+```
+
+```powershell
+# Engine.ps1 - the toolkit is already loaded by the launcher:
 $Selected = Select-LiteDeployTaskSequence -TaskSequences $TaskSequences
 if ($null -eq $Selected) { exit 1 }
 
@@ -162,7 +208,7 @@ Write-HostShellProgress -Percent 25
 Run the harness from one console window (conhost or WinPE — **not** Windows
 Terminal). With no switches it executes **all** tests visually: the assertion
 checks, then a full visual walkthrough (window docking, frame styles, theme
-cycle, progress demo, and the picker with sample data):
+cycle, preset cycle, progress demo, and the picker with sample data):
 
 ```powershell
 .\Test-LiteDeployHostShell.ps1

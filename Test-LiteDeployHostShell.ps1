@@ -12,8 +12,8 @@
         Prints PASS/FAIL per check and sets the exit code.
 
     Section 2 (visual, runs right after Section 1):
-        Cycles window positions, window styles, themes, the progress
-        bar, and the task-sequence selector with sample data.
+        Cycles window positions, window styles, themes, behavior presets,
+        the progress bar, and the task-sequence selector with sample data.
         Window control is not reliable under Windows Terminal - run in
         the classic Console Host (conhost) or Windows PE.
 
@@ -180,6 +180,22 @@ foreach ($Name in "LiteDeploy", "Midnight", "Slate", "Ocean", "HighContrast", "D
     Assert-Equal -Name "Theme table resolves: $Name" -Expected $true -Actual ($null -ne $Theme)
 }
 
+# --- Get-HostShellPreset -----------------------------------------------------
+
+Write-Host ""
+Write-Host "Get-HostShellPreset"
+
+foreach ($Name in "Main", "Full", "Logs", "Picker") {
+    $Preset = Get-HostShellPreset -Name $Name
+    Assert-Equal -Name "Preset table resolves: $Name" -Expected $true -Actual ($null -ne $Preset)
+}
+
+$Preset = Get-HostShellPreset -Name Main
+Assert-Equal -Name "Main preset: theme"         -Expected "LiteDeploy" -Actual $Preset.Theme
+Assert-Equal -Name "Main preset: position"      -Expected "Top"        -Actual $Preset.Position
+Assert-Equal -Name "Main preset: height"        -Expected 30           -Actual $Preset.HeightPercent
+Assert-Equal -Name "Main preset: always-on-top" -Expected "On"         -Actual $Preset.AlwaysOnTop
+
 # --- Get-TruncatedText -------------------------------------------------------
 
 Write-Host ""
@@ -280,6 +296,22 @@ try {
         Write-Host "Theme: $Name"
         Start-Sleep -Seconds $DelaySeconds
     }
+
+    Write-Step "Presets: Main (top dock, LiteDeploy theme)"
+    Set-HostShellPreset -Name Main
+    Start-Sleep -Seconds $DelaySeconds
+
+    Write-Step "Presets: Logs (bottom strip, Midnight theme)"
+    Set-HostShellPreset -Name Logs
+    Start-Sleep -Seconds $DelaySeconds
+
+    Write-Step "Presets: Picker (centered, Ocean theme)"
+    Set-HostShellPreset -Name Picker
+    Start-Sleep -Seconds $DelaySeconds
+
+    Write-Step "Presets: Full (maximized, LiteDeploy theme)"
+    Set-HostShellPreset -Name Full
+    Start-Sleep -Seconds $DelaySeconds
 
     Write-Step "Progress bar: 0% to 100%"
     for ($Percent = 0; $Percent -le 100; $Percent += 5) {

@@ -10,6 +10,7 @@
         Set-HostShellWindow            Window state, position, size, always-on-top, title, prompt.
         Set-HostShellWindowStyle       Normal / Borderless / Fixed / Minimal frame styles.
         Set-HostShellTheme             Named or custom console color themes.
+        Set-HostShellPreset            One-call behavior bundles (theme + style + geometry).
         Write-HostShellProgress        Colored in-place progress bar.
         Select-LiteDeployTaskSequence  Console task-sequence picker.
 
@@ -230,6 +231,67 @@ function Get-HostShellTheme {
     }
 
     $Themes[$Name]
+}
+
+function Get-HostShellPreset {
+    <#
+    .SYNOPSIS
+        Behavior bundle for a named window preset: theme, frame style,
+        position, size, state, always-on-top, title, prompt. Any field may
+        be omitted; Set-HostShellPreset skips missing fields.
+        To add a preset, add one entry to the table below.
+    .EXAMPLE
+        Get-HostShellPreset -Name Main
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("Main", "Full", "Logs", "Picker")]
+        [string]$Name
+    )
+
+    $Presets = @{
+        Main = @{
+            Theme         = "LiteDeploy"
+            ClearScreen   = $true
+            Style         = "Fixed"
+            Position      = "Top"
+            WidthPercent  = 100
+            HeightPercent = 30
+            AlwaysOnTop   = "On"
+            Title         = "LiteDeploy"
+            Prompt        = "LiteDeploy> "
+        }
+        Full = @{
+            Theme       = "LiteDeploy"
+            ClearScreen = $true
+            Action      = "Maximize"
+            Title       = "LiteDeploy"
+            Prompt      = "LiteDeploy> "
+        }
+        Logs = @{
+            Theme         = "Midnight"
+            ClearScreen   = $true
+            Style         = "Minimal"
+            Position      = "Bottom"
+            WidthPercent  = 100
+            HeightPercent = 25
+            AlwaysOnTop   = "On"
+            Title         = "LiteDeploy Logs"
+            Prompt        = ""
+        }
+        Picker = @{
+            Theme         = "Ocean"
+            ClearScreen   = $true
+            Style         = "Fixed"
+            Position      = "Center"
+            WidthPercent  = 70
+            HeightPercent = 70
+            Title         = "LiteDeploy"
+        }
+    }
+
+    $Presets[$Name]
 }
 
 function Get-TruncatedText {
@@ -531,6 +593,54 @@ function Set-HostShellWindowStyle {
     }
 
     Write-Verbose "Console window style applied: $WindowStyle"
+}
+
+function Set-HostShellPreset {
+    <#
+    .SYNOPSIS
+        Applies a named behavior preset to the current console window:
+        theme, frame style, position, size, state, always-on-top, title,
+        and prompt in one call. Presets are defined in Get-HostShellPreset,
+        which also owns the valid name list (single source of truth).
+    .DESCRIPTION
+        Apply order matters: theme (+ClearScreen) first, then frame style
+        (border changes shift the client area), then window geometry.
+    .EXAMPLE
+        Set-HostShellPreset -Name Main
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    $Preset = Get-HostShellPreset -Name $Name
+
+    # 1. Theme first: -ClearScreen repaints the console in the new colors.
+    if ($Preset.ContainsKey("Theme")) {
+        Set-HostShellTheme -Theme $Preset.Theme `
+            -ClearScreen:($Preset.ContainsKey("ClearScreen") -and $Preset.ClearScreen)
+    }
+
+    # 2. Frame style before geometry: border changes shift the client area.
+    if ($Preset.ContainsKey("Style")) {
+        Set-HostShellWindowStyle -WindowStyle $Preset.Style
+    }
+
+    # 3. Window state, position, size, z-order, title, prompt in one call.
+    #    Splatting keeps $PSBoundParameters semantics: a key present in the
+    #    preset is applied (even an empty Title/Prompt); absent keys are not.
+    $WindowParameters = @{}
+
+    foreach ($Key in "Action", "Position", "WidthPercent", "HeightPercent", "Width", "Height", "AlwaysOnTop", "Title", "Prompt") {
+        if ($Preset.ContainsKey($Key)) {
+            $WindowParameters[$Key] = $Preset[$Key]
+        }
+    }
+
+    if ($WindowParameters.Count -gt 0) {
+        Set-HostShellWindow @WindowParameters
+    }
 }
 
 function Set-HostShellTheme {
