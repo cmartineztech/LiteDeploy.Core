@@ -7,8 +7,7 @@
     prompt) to THIS console window, then optionally runs an engine script.
 
     This is the entry point WinPE should launch (winpeshl.ini / startnet.cmd).
-    Preset names are validated by the toolkit (Get-HostShellPreset), which
-    is the single source of truth for the list.
+    Preset names are validated against the supported HostShell presets.
 
 .EXAMPLE
     powershell.exe -NoExit -ExecutionPolicy Bypass -File Start-LiteDeployShell.ps1 -Preset Main
@@ -17,17 +16,28 @@
     interactive use; omit it when -Script runs the whole flow).
 
 .EXAMPLE
-    .\Start-LiteDeployShell.ps1 -Preset Main -Script X:\LiteDeploy\Engine.ps1
+    .\Start-LiteDeployShell.ps1 -Preset Main -Script X:\LiteDeploy\LiteDeploy-PreCheck.ps1
 
-    Applies the preset, then runs the engine script.
+    Applies the preset, then runs the LiteDeploy system pre-check engine script.
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("Main", "Full", "Logs", "Picker")]
     [string]$Preset = "Main",
 
     # Optional engine script to run after the preset is applied.
-    [string]$Script
+    [Parameter(Mandatory = $false)]
+    [string]$Script,
+
+    # Optional parameters to pass to the engine script.
+    [Parameter(Mandatory = $false)]
+    [string]$ScriptArgs,
+
+    # Auto-detect and run LiteDeploy-PreCheck.ps1 if no script is specified.
+    [Parameter(Mandatory = $false)]
+    [switch]$AutoPreCheck
 )
 
 Set-StrictMode -Version 2.0
@@ -49,10 +59,25 @@ catch {
     Write-Warning "HostShell preset '$Preset' could not be applied: $_"
 }
 
-if ($Script) {
-    if (-not (Test-Path -LiteralPath $Script -PathType Leaf)) {
-        throw "Engine script not found: $Script"
+# Determine script to execute
+$TargetScript = $Script
+
+if ([string]::IsNullOrWhiteSpace($TargetScript) -and $AutoPreCheck) {
+    $PreCheckPath = Join-Path $PSScriptRoot "LiteDeploy-PreCheck.ps1"
+    if (Test-Path -LiteralPath $PreCheckPath -PathType Leaf) {
+        $TargetScript = $PreCheckPath
+    }
+}
+
+if ($TargetScript) {
+    if (-not (Test-Path -LiteralPath $TargetScript -PathType Leaf)) {
+        throw "Engine script not found: $TargetScript"
     }
 
-    & $Script
+    if (-not [string]::IsNullOrWhiteSpace($ScriptArgs)) {
+        Invoke-Expression "& `"$TargetScript`" $ScriptArgs"
+    }
+    else {
+        & $TargetScript
+    }
 }

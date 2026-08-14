@@ -13,9 +13,12 @@
 
     Section 2 (visual, runs right after Section 1):
         Cycles window positions, window styles, themes, behavior presets,
-        the progress bar, and the task-sequence selector with sample data.
+        and the progress bar.
         Window control is not reliable under Windows Terminal - run in
         the classic Console Host (conhost) or Windows PE.
+
+    The task-sequence picker has its own harness:
+    Test-LiteDeployTaskSequence.ps1
 
 .EXAMPLE
     .\Test-LiteDeployHostShell.ps1
@@ -162,6 +165,15 @@ Assert-Equal -Name "Fixed re-adds caption from borderless" -Expected $WS_CAPTION
 $Style = Get-HostShellWindowStyleValue -WindowStyle Normal -CurrentStyle 0x12345 -OriginalStyle $FullStyle
 Assert-Equal -Name "Normal restores original style" -Expected $FullStyle -Actual $Style
 
+# --- Resolve-HostShellBufferSize --------------------------------------------
+
+Write-Host ""
+Write-Host "Resolve-HostShellBufferSize"
+
+$BufferSize = Resolve-HostShellBufferSize -WindowWidth 120 -WindowHeight 40
+Assert-Equal -Name "Hide scrollbar buffer width matches window width"  -Expected 120 -Actual $BufferSize.Width
+Assert-Equal -Name "Hide scrollbar buffer height matches window height" -Expected 40  -Actual $BufferSize.Height
+
 # --- Get-HostShellTheme ------------------------------------------------------
 
 Write-Host ""
@@ -195,16 +207,6 @@ Assert-Equal -Name "Main preset: theme"         -Expected "LiteDeploy" -Actual $
 Assert-Equal -Name "Main preset: position"      -Expected "Top"        -Actual $Preset.Position
 Assert-Equal -Name "Main preset: height"        -Expected 30           -Actual $Preset.HeightPercent
 Assert-Equal -Name "Main preset: always-on-top" -Expected "On"         -Actual $Preset.AlwaysOnTop
-
-# --- Get-TruncatedText -------------------------------------------------------
-
-Write-Host ""
-Write-Host "Get-TruncatedText"
-
-Assert-Equal -Name "Short text unchanged"      -Expected "hello"       -Actual (Get-TruncatedText -Value "hello" -Width 10)
-Assert-Equal -Name "Exact-fit text unchanged"  -Expected "1234567890"  -Actual (Get-TruncatedText -Value "1234567890" -Width 10)
-Assert-Equal -Name "Long text gets ellipsis"   -Expected "hello w..."  -Actual (Get-TruncatedText -Value "hello world foo" -Width 10)
-Assert-Equal -Name "Null becomes empty string" -Expected ""            -Actual (Get-TruncatedText -Value $null -Width 10)
 
 # --- Summary -----------------------------------------------------------------
 
@@ -258,6 +260,10 @@ try {
 
     Write-Step "Window: bottom strip, 60% width x 30% height"
     Set-HostShellWindow -Position Bottom -WidthPercent 60 -HeightPercent 30
+    Start-Sleep -Seconds $DelaySeconds
+
+    Write-Step "Window: center 60% x 70% with scrollbars hidden"
+    Set-HostShellWindow -Position Center -WidthPercent 60 -HeightPercent 70 -HideScrollBars
     Start-Sleep -Seconds $DelaySeconds
 
     Write-Step "Window: always-on-top ON"
@@ -320,50 +326,6 @@ try {
     }
     Write-Host
     Start-Sleep -Seconds $DelaySeconds
-
-    Write-Step "Task-sequence selector (sample data)"
-    $TaskSequences = @(
-        [PSCustomObject]@{
-            Id           = "TS001"
-            Name         = "Windows 11 Enterprise"
-            Description  = "Standard Windows 11 Enterprise deployment"
-            Architecture = "x64"
-            Version      = "24H2"
-            ImagePath    = "X:\Images\Windows11-Enterprise.wim"
-            ImageIndex   = 6
-            UnattendPath = "X:\LiteDeploy\Unattend\Enterprise.xml"
-        }
-        [PSCustomObject]@{
-            Id           = "TS002"
-            Name         = "Windows 11 Developer"
-            Description  = "Developer workstation with additional tools"
-            Architecture = "x64"
-            Version      = "24H2"
-            ImagePath    = "X:\Images\Windows11-Developer.wim"
-            ImageIndex   = 6
-            UnattendPath = "X:\LiteDeploy\Unattend\Developer.xml"
-        }
-        [PSCustomObject]@{
-            Id           = "TS003"
-            Name         = "Windows 11 Clean"
-            Description  = "Minimal clean Windows 11 deployment"
-            Architecture = "x64"
-            Version      = "24H2"
-            ImagePath    = "X:\Images\Windows11-Clean.wim"
-            ImageIndex   = 6
-            UnattendPath = "X:\LiteDeploy\Unattend\Clean.xml"
-        }
-    )
-
-    $Selected = Select-LiteDeployTaskSequence -TaskSequences $TaskSequences
-
-    Write-Host ""
-    if ($null -eq $Selected) {
-        Write-Host "Selection cancelled (Escape)." -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Selected: $($Selected.Id) - $($Selected.Name)" -ForegroundColor Green
-    }
 }
 catch {
     Write-Error $_

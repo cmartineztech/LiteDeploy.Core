@@ -1,0 +1,64 @@
+{
+  "$schemaVersion": "1.0",
+  "_Description": "Consolidated reference configurations for LiteDeploy deployment modes (BootWim, DeploymentShare, Media)",
+  "Modes": {
+    "BootWim": {
+      "$schemaVersion": "1.0",
+      "Metadata": {
+        "Name": "LiteDeploy",
+        "Environment": "Production",
+        "Version": "1.0"
+      },
+      "Startup": {
+        "SkipPreCheck": false
+      },
+      "Deployment": {
+        "Type": "Network",
+        "NetworkPath": "\\\\Server\\DeploymentShare$"
+      },
+      "_Comments": "Minimal Configuration for Boot.wim / PXE Boot"
+    },
+    "DeploymentShare": {
+      "$schemaVersion": "1.0",
+      "Metadata": {
+        "Name": "LiteDeploy",
+        "Environment": "Production",
+        "Version": "1.0"
+      },
+      "Startup": {
+        "SkipPreCheck": false
+      },
+      "Deployment": {
+        "Type": "Network",
+        "NetworkPath": "\\\\Server\\DeploymentShare$",
+        "WorkingRootName": "~LiteDeploy",
+        "ComputerSetup": {
+          "PromptForComputerName": true,
+          "PromptForComputerDescription": true
+        }
+      },
+      "_Comments": "Configuration for Network Deployment Share"
+    },
+    "Media": {
+      "$schemaVersion": "1.0",
+      "Metadata": {
+        "Name": "LiteDeploy",
+        "Environment": "Production",
+        "Version": "1.0"
+      },
+      "Startup": {
+        "SkipPreCheck": false
+      },
+      "Deployment": {
+        "Type": "Media",
+        "NetworkPath": null,
+        "WorkingRootName": "~LiteDeploy",
+        "ComputerSetup": {
+          "PromptForComputerName": true,
+          "PromptForComputerDescription": true
+        }
+      },
+      "_Comments": "Configuration for Standalone USB / ISO Media"
+    }
+  }
+}
