@@ -5,7 +5,7 @@
 .DESCRIPTION
     Discovers BootConfig.json using a 3-priority hierarchy, performs network pre-validations,
     prompts for user credentials via native Get-Credential, maps deployment share Z:\ persistently,
-    and launches LiteDeploy.DeploymentEngine.ps1 with the in-memory BootObject.
+    and resolves the target engine pre-check script path.
 
 .NOTES
     Compatible with Set-StrictMode 2.0 and WinPE 5.1/10/11.
@@ -111,34 +111,13 @@ function Show-LiteDeployGuiError {
 
 function Resolve-LiteDeployEnginePath {
     param([string]$RootPath)
-    # Prefer the deployment engine orchestrator. PreCheck is invoked by the engine, not BootInitializer.
-    $candidates = [System.Collections.Generic.List[string]]::new()
-
-    # Production: BootInitializer and DeploymentEngine are siblings under Engine\Scripts.
-    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        $candidates.Add((Join-Path $PSScriptRoot "LiteDeploy.DeploymentEngine.ps1"))
-        # Development repository layout (numbered component folders).
-        $candidates.Add((Join-Path $PSScriptRoot "..\08-DeploymentEngine\LiteDeploy.DeploymentEngine.ps1"))
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($RootPath)) {
-        $candidates.Add((Join-Path $RootPath "Engine\Scripts\LiteDeploy.DeploymentEngine.ps1"))
-    }
-
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate -ErrorAction SilentlyContinue).Path
-        }
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($RootPath)) {
-        return (Join-Path $RootPath "Engine\Scripts\LiteDeploy.DeploymentEngine.ps1")
-    }
-    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        return (Join-Path $PSScriptRoot "LiteDeploy.DeploymentEngine.ps1")
-    }
-    return ""
+    if ([string]::IsNullOrWhiteSpace($RootPath)) { return "" }
+    $resolved = Resolve-Path -Path @(
+        "$RootPath\Engine\Scripts\LiteDeploy.PreCheck.ps1",
+        "$RootPath\*\Engine\Scripts\LiteDeploy.PreCheck.ps1"
+    ) -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($resolved) { return $resolved.Path }
+    return (Join-Path $RootPath "Engine\Scripts\LiteDeploy.PreCheck.ps1")
 }
 
 function Get-LiteDeployRuntimeConfig {
@@ -827,7 +806,6 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
 
             try {
-                # Deployment engine orchestrates PreCheck → SelectWorkflow → state init (and later Setup).
                 $null = & $enginePath -BootObject $bootObj
             }
             catch {
@@ -843,11 +821,11 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
         }
         else {
-            $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\LiteDeploy.DeploymentEngine.ps1" }
-            Write-LiteDeployLog " [ERROR] Engine script not found: 'LiteDeploy.DeploymentEngine.ps1' is missing at '$($targetPath)'." -Level "ERROR" -ForegroundColor Red
-            Write-Warning "Engine script missing: Unable to locate LiteDeploy.DeploymentEngine.ps1 at '$($targetPath)'."
+            $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\LiteDeploy.PreCheck.ps1" }
+            Write-LiteDeployLog " [ERROR] Engine script not found: 'LiteDeploy.PreCheck.ps1' is missing at '$($targetPath)'." -Level "ERROR" -ForegroundColor Red
+            Write-Warning "Engine script missing: Unable to locate LiteDeploy.PreCheck.ps1 at '$($targetPath)'."
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "Engine Script Missing: LiteDeploy.DeploymentEngine.ps1 was not found on deployment share/media.`n`Target Path: $($targetPath)`n`Please ensure the deployment engine script exists on the deployment share." -Title "LiteDeploy - Script Missing"
+                Show-LiteDeployGuiError -Message "Engine Script Missing: LiteDeploy.PreCheck.ps1 was not found on deployment share/media.`n`Target Path: $($targetPath)`n`Please ensure the engine script exists on the deployment share." -Title "LiteDeploy - Script Missing"
             }
             Write-Host ""
             Write-Host " [NOTICE]  Deployment initialization paused." -ForegroundColor Yellow
