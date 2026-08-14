@@ -1,7 +1,11 @@
-# Runtime logs
+# Runtime log files
+*.log
+
+# Runtime WorkLogs directories, but keep the DeploymentShare template
 WorkLogs/
 **/WorkLogs/
-*.log
+!DeploymentShare/WorkLogs/
+!DeploymentShare/WorkLogs/**
 
 # Media and credential payloads
 *.wim
