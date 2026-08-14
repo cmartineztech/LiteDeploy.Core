@@ -9,6 +9,9 @@ Related documents:
 - [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md)
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
 - [LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md](LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md)
+- [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) — ISO and `Boot.wim` for WDS/PXE
+- [DeployVault](https://github.com/cmartinezone/DeployVault) — credential vault
+- [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE credential transfer
 
 ## 1. Product direction
 

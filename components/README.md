@@ -7,6 +7,7 @@ Folders are numbered in the order LiteDeploy works. Numbers are for this develop
 | # | Folder | Runs when |
 | ---: | --- | --- |
 | 01 | `01-Config` | An administrator generates `BootConfig.json` for the boot image or share. |
+| — | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds ISO or `Boot.wim` for WDS/PXE from that config and the WinPE scripts. Separate repository. |
 | 02 | `02-DeploymentShareACL` | An administrator creates the share, SMB permissions, and log ACLs. |
 | 03 | `03-LogWriter` | Loaded by later components as soon as WinPE logging starts. |
 | 04 | `04-HostShell` | Loaded by BootInitializer to control the WinPE console. |

@@ -23,6 +23,7 @@ LiteDeploy supports three distinct deployment modes:
 - **Purpose**: Minimal configuration schema used when booting directly from WinPE (`Boot.wim` / WDS / PXE).
 - **NetworkPath**: **MANDATORY** via `-NetworkPath` parameter.
 - **Schema Features**: Includes only essential network boot parameters (`Type` & `NetworkPath`). `Startup`, `ComputerSetup`, and `Drivers` sections are omitted.
+- **Boot media**: Built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) as `Boot.wim` for WDS/PXE.
 
 ### 2. `DeploymentShare` (Network Deployment Share)
 - **Deployment Type**: `"Network"`
@@ -35,6 +36,7 @@ LiteDeploy supports three distinct deployment modes:
 - **Purpose**: Offline deployment from local media (USB flash drives, offline ISOs).
 - **NetworkPath**: Automatically set to `null`.
 - **Schema Features**: Includes `LocalRootName`, top-level `Startup` flags, `ComputerSetup` identity/locale flags, and `Drivers` management flags (including `AutoOnlineDownloadOnMedia`).
+- **Boot media**: Built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) as an ISO or USB boot image.
 
 ---
 

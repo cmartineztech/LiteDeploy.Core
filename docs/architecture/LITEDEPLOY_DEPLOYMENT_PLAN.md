@@ -9,6 +9,7 @@ Related project documents:
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) — architecture and sequence diagrams.
 - [LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md](LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md) — OS, workflow, action, and package JSON contracts.
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md) — current implementation inventory and continuation checklist.
+- [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) — WinPE ISO and `Boot.wim` builder for WDS/PXE (separate repository).
 - [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted credential vault (separate repository).
 - [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository).
 

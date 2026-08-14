@@ -11,6 +11,8 @@
 
 `LiteDeploy.BootInitilizer.ps1` is the core initialization, configuration discovery, network validation, interactive authentication, and SMB share mounting engine for **LiteDeploy**.
 
+The WinPE ISO or `Boot.wim` that launches this script is built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) for USB/ISO media or WDS/PXE.
+
 It automatically discovers `BootConfig.json` using dynamic RAM drive detection (`$env:SystemDrive`), performs network hardware & IP checks (when `DeploymentType` is `"Network"`), verifies deployment server reachability over SMB Port 445, prompts for user credentials securely via native `Get-Credential`, mounts the remote deployment share to drive **`Z:\`**, discovers `LiteDeploy.HostShell.ps1`, minimizes the console shell, and launches the target engine pre-check script (`LiteDeploy.PreCheck.ps1`).
 
 ---

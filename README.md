@@ -8,6 +8,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 
 ```text
 01 Config                 Admin generates BootConfig.json
+   WinPEBuilder           Builds ISO or Boot.wim for WDS/PXE (separate repo)
 02 DeploymentShareACL     Admin creates and hardens the deployment share
 03 LogWriter              Logging used by every later component
 04 HostShell              WinPE console window
@@ -22,6 +23,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | # | Component | What it does | Status |
 | ---: | --- | --- | --- |
 | 01 | [Config](components/01-Config) | Generates `BootConfig.json` for BootWim, DeploymentShare, and Media | Exists |
+| — | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds boot ISO or `Boot.wim` for WDS/PXE | Separate repo |
 | 02 | [DeploymentShareACL](components/02-DeploymentShareACL) | Share folders, SMB, and NTFS log isolation | Exists |
 | 03 | [LogWriter](components/03-LogWriter) | CMTrace + NDJSON logging | Exists |
 | 04 | [HostShell](components/04-HostShell) | WinPE console geometry, theme, and presets | Exists |
@@ -57,6 +59,16 @@ LiteDeploy Core/
 ```
 
 Script file names stay as they are so WinPE and the future `Engine\Scripts` layout do not change. Folder numbers exist only in this Core repo so the sequence is visible.
+
+## Related repositories
+
+These stay in their own GitHub repos. LiteDeploy Core consumes them; it does not copy their source.
+
+| Repository | Role in LiteDeploy |
+| --- | --- |
+| [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Creates WinPE boot media as ISO or `Boot.wim` for WDS/PXE. |
+| [DeployVault](https://github.com/cmartinezone/DeployVault) | Encrypted credential vault on the deployment share. |
+| [WinPECT](https://github.com/cmartinezone/WinPECT) | Hardware-bound credential transfer from WinPE to FullOS. |
 
 ## Architecture
 
