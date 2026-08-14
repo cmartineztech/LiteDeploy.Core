@@ -97,6 +97,8 @@ Display names may change without breaking references. IDs must not contain a pas
   Engine\Scripts\...
 ```
 
+The initial empty share tree in this repository is [DeploymentShare](../../DeploymentShare). It uses the folder name `WorkFlows`. Catalog JSON in that tree is placeholder-only until ImportOSMedia and workflow publishing exist.
+
 Forward-slash paths stored in JSON are repository-relative. Runtime code resolves them against the validated deployment root and normalizes them with `Join-Path`. Catalog paths must not escape the deployment root through `..`, rooted paths, or alternate data streams.
 
 ## 4. Operating-system catalog

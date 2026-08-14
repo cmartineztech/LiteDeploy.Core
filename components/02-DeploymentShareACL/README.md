@@ -23,6 +23,7 @@ This folder contains the setup and security configuration scripts for the **Lite
 - **Automated Directory Provisioning**: Generates the standard directory layout:
   - `<SharePath>\Engine` — Stores deployment engine files and assets (Read & Execute).
   - `<SharePath>\WorkLogs\Deployments` — Destination for client execution logs (Granular write permissions).
+  - The full intended share tree (Config, Content, Engine, WorkFlows, WorkLogs) is defined in [DeploymentShare](../../DeploymentShare).
 - **Service Account Management**: Optionally provisions a local deployment user account (e.g., `deployer`) with non-expiring credentials.
 - **SMB Share Configuration**: Re-creates or configures an SMB network share with Full Access for deployment administrators and specified identities, and Read Access for `Everyone`.
 - **Granular NTFS Permission Hierarchy**:

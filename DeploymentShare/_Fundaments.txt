@@ -1,0 +1,8 @@
+
+
+MAIN ROOT DIRECTORY:
+Config = How LiteDeploy behaves
+Content = What LiteDeploy deploys
+Engine = The reusable code that performs the work
+Workflows = The ordered deployment process
+WorkLogs = The record of what LiteDeploy did

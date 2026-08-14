@@ -9,6 +9,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 ```text
 01 Config                 Admin generates BootConfig.json
    WinPEBuilder           Builds ISO or Boot.wim for WDS/PXE (separate repo)
+   DeploymentShare        Initial deployment-share folder layout
 02 DeploymentShareACL     Admin creates and hardens the deployment share
 03 LogWriter              Logging used by every later component
 04 HostShell              WinPE console window
@@ -24,6 +25,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | ---: | --- | --- | --- |
 | 01 | [Config](components/01-Config) | Generates `BootConfig.json` for BootWim, DeploymentShare, and Media | Exists |
 | — | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds boot ISO or `Boot.wim` for WDS/PXE | Separate repo |
+| — | [DeploymentShare](DeploymentShare) | Initial deployment-share folder layout | Exists |
 | 02 | [DeploymentShareACL](components/02-DeploymentShareACL) | Share folders, SMB, and NTFS log isolation | Exists |
 | 03 | [LogWriter](components/03-LogWriter) | CMTrace + NDJSON logging | Exists |
 | 04 | [HostShell](components/04-HostShell) | WinPE console geometry, theme, and presets | Exists |
@@ -52,10 +54,11 @@ startnet
 
 ```text
 LiteDeploy Core/
-  components/           Numbered in working order
-  docs/architecture/    Product design, diagrams, and status
-  experiments/          Historical and scratch scripts; not shippable
-  ImportOSMedia/        Planned OS importer (empty)
+  components/                 Numbered in working order
+  DeploymentShare/            Initial deployment-share folder layout
+  docs/architecture/          Product design, diagrams, and status
+  experiments/                Historical and scratch scripts; not shippable
+  ImportOSMedia/              Planned OS importer (empty)
 ```
 
 Script file names stay as they are so WinPE and the future `Engine\Scripts` layout do not change. Folder numbers exist only in this Core repo so the sequence is visible.
