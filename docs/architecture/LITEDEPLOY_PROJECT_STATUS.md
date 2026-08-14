@@ -164,9 +164,9 @@ The SYSTEM engine and visible progress UI are separate processes. A SYSTEM task 
 
 Locations:
 
-- `Credentials/DeployVault`
-- `Credentials/WinPECredentialTransfer`
-- `components/09-Credentials/EndToEndDeploymentGuide.md`
+- [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted share vault (separate repository)
+- [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository)
+- `components/09-Credentials/` — LiteDeploy integration notes and [EndToEndDeploymentGuide.md](../../components/09-Credentials/EndToEndDeploymentGuide.md)
 
 Implemented:
 

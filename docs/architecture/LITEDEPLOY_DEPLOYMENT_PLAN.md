@@ -9,6 +9,8 @@ Related project documents:
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) — architecture and sequence diagrams.
 - [LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md](LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md) — OS, workflow, action, and package JSON contracts.
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md) — current implementation inventory and continuation checklist.
+- [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted credential vault (separate repository).
+- [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository).
 
 ## 1. Design goals
 
@@ -32,8 +34,8 @@ Related project documents:
 | `LiteDeploy.SelecWorkflowDriverPicker.ps1` | WinPE | Reusable WinPE-compatible WPF directory picker used by workflow selection. |
 | `LiteDeploy.DeploymentEngine.ps1` | Both | Planned orchestration engine. In WinPE it validates and starts Setup; in FullOS it resumes workflow actions from persisted state. |
 | `LiteDeploy.Progress.ps1` | Both | Read-only WPF progress client. It renders `DeploymentState.json`; it does not own deployment operations. |
-| DeployVault | WinPE/server | Resolves only the credential IDs declared by the selected workflow. The vault files remain on the deployment source. |
-| WinPECredentialTransfer | WinPE to FullOS | Encrypts the required `PSCredential` objects for the target machine and imports them into SYSTEM-owned DPAPI CLIXML after boot. |
+| [DeployVault](https://github.com/cmartinezone/DeployVault) | WinPE/server | Resolves only the credential IDs declared by the selected workflow. The vault files remain on the deployment source. |
+| [WinPECT](https://github.com/cmartinezone/WinPECT) | WinPE to FullOS | Encrypts the required `PSCredential` objects for the target machine and imports them into SYSTEM-owned DPAPI CLIXML after boot. |
 | `SetupComplete.cmd` | FullOS bootstrap | Registers the scheduled tasks and immediately starts the engine-resume task. It contains no workflow logic or secrets. |
 | Task Scheduler | FullOS | Runs the engine reliably as SYSTEM and starts the progress UI in an interactive session. |
 

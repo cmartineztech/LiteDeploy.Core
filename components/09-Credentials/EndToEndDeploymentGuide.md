@@ -1,6 +1,13 @@
 # End-to-End Zero-Plaintext OS Deployment Architecture
 
-This document describes the end-to-end integration architecture combining **DeployVault** (server-side network vault) and **WinPECredentialTransfer** (client-side pre-installation bootstrap transfer) to achieve a complete **Zero-Plaintext OS Deployment Pipeline** for MDT, MECM/SCCM, and Windows Task Sequences.
+This document describes how LiteDeploy combines **DeployVault** (server-side network vault) and **WinPECT** (client-side pre-installation bootstrap transfer) for a zero-plaintext credential handoff.
+
+Those components live in their own repositories:
+
+- [DeployVault](https://github.com/cmartinezone/DeployVault)
+- [WinPECT](https://github.com/cmartinezone/WinPECT) (WinPECredentialTransfer)
+
+This folder in LiteDeploy Core only documents how the engine will call them.
 
 ---
 
@@ -52,8 +59,8 @@ This document describes the end-to-end integration architecture combining **Depl
 
 | Component | Location | Role & Responsibility |
 | :--- | :--- | :--- |
-| **DeployVault** | Network Server (`DeploymentShare$`) | Serves as the central, persistent encrypted repository for workflow secrets (Domain Join Accounts, LAPS Seeds, Service Accounts). |
-| **WinPECredentialTransfer** | Target Client (WinPE Phase) | Takes secrets fetched from DeployVault, splits the decryption secret, and packages them safely onto the target disk and offline registry hive across the reboot window. |
+| **[DeployVault](https://github.com/cmartinezone/DeployVault)** | Network Server (`DeploymentShare$`) | Serves as the central, persistent encrypted repository for workflow secrets (Domain Join Accounts, LAPS Seeds, Service Accounts). |
+| **[WinPECT](https://github.com/cmartinezone/WinPECT)** | Target Client (WinPE Phase) | Takes secrets fetched from DeployVault, splits the decryption secret, and packages them safely onto the target disk and offline registry hive across the reboot window. |
 | **Full OS Importer** | Target Client (Full OS Phase) | Reads the registry bootstrap secret, decrypts the package, exports DPAPI CLIXML files, and completes OS specialization tasks. |
 
 ---

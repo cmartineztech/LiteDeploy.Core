@@ -20,7 +20,7 @@ Folders are numbered in the order LiteDeploy works. Numbers are for this develop
 | 07 | `07-SelectWorkflow` | PreCheck Continue currently launches it in the same process. |
 | — | DeploymentEngine | Planned next stage after a confirmed workflow selection. |
 | 08 | `08-Progress` | Planned as a separate process while the engine runs. |
-| 09 | `09-Credentials` | Planned during offline handoff and FullOS SYSTEM import. |
+| 09 | `09-Credentials` | Offline handoff and FullOS SYSTEM import. Code lives in [DeployVault](https://github.com/cmartinezone/DeployVault) and [WinPECT](https://github.com/cmartinezone/WinPECT). |
 
 When DeploymentEngine is added, it becomes `08-DeploymentEngine` and Progress / Credentials shift to `09` and `10`. Do not add new work under the old `01_BootInitlizer` names.
 

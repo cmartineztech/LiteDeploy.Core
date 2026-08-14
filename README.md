@@ -30,7 +30,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | 07 | [SelectWorkflow](components/07-SelectWorkflow) | Identity, workflow, disk, and drivers | Exists |
 | — | DeploymentEngine | Setup `/NoReboot`, handoff, FullOS resume | Not built |
 | 08 | [Progress](components/08-Progress) | Reads `DeploymentState.json` and renders progress | Exists |
-| 09 | [Credentials](components/09-Credentials) | DeployVault + WinPECredentialTransfer | Docs only |
+| 09 | [Credentials](components/09-Credentials) | [DeployVault](https://github.com/cmartinezone/DeployVault) + [WinPECT](https://github.com/cmartinezone/WinPECT) | Separate repos |
 
 `ImportOSMedia` will sit after Config when it is in this repository. It publishes the OS catalog that SelectWorkflow and the engine will consume.
 
