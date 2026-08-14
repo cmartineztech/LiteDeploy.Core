@@ -16,9 +16,9 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 05 BootInitializer        Device starts here (startnet parent process)
 06 PreCheck               Hardware and source readiness UI
 07 SelectWorkflow         Computer, workflow, disk, and driver UI
-   — DeploymentEngine —   Not built yet. Runs after selection.
-08 Progress               Read-only deployment progress UI
-09 Credentials            Encrypted secrets across the WinPE → FullOS reboot
+08 DeploymentEngine       Orchestrates PreCheck → SelectWorkflow → Setup (Setup stubbed)
+09 Progress               Read-only deployment progress UI
+10 Credentials            Encrypted secrets across the WinPE → FullOS reboot
 ```
 
 | # | Component | What it does | Status |
@@ -29,12 +29,12 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | 02 | [DeploymentShareACL](components/02-DeploymentShareACL) | Share folders, SMB, and NTFS log isolation | Exists |
 | 03 | [LogWriter](components/03-LogWriter) | CMTrace + NDJSON logging | Exists |
 | 04 | [HostShell](components/04-HostShell) | WinPE console geometry, theme, and presets | Exists |
-| 05 | [BootInitializer](components/05-BootInitializer) | Discovers config, maps `Z:\`, builds `BootObject`, starts PreCheck | Exists |
-| 06 | [PreCheck](components/06-PreCheck) | Nine-point readiness UI | Exists |
-| 07 | [SelectWorkflow](components/07-SelectWorkflow) | Identity, workflow, disk, and drivers | Exists |
-| — | DeploymentEngine | Setup `/NoReboot`, handoff, FullOS resume | Not built |
-| 08 | [Progress](components/08-Progress) | Reads `DeploymentState.json` and renders progress | Exists |
-| 09 | [Credentials](components/09-Credentials) | [DeployVault](https://github.com/cmartinezone/DeployVault) + [WinPECT](https://github.com/cmartinezone/WinPECT) | Separate repos |
+| 05 | [BootInitializer](components/05-BootInitializer) | Discovers config, maps `Z:\`, builds `BootObject`, starts DeploymentEngine | Exists |
+| 06 | [PreCheck](components/06-PreCheck) | Nine-point readiness UI; returns structured result | Exists |
+| 07 | [SelectWorkflow](components/07-SelectWorkflow) | Identity, workflow, disk, and drivers; returns structured selection | Exists |
+| 08 | [DeploymentEngine](components/08-DeploymentEngine) | WinPE orchestration; Setup `/NoReboot` still stubbed | Scaffold |
+| 09 | [Progress](components/09-Progress) | Reads `DeploymentState.json` and renders progress | Exists |
+| 10 | [Credentials](components/10-Credentials) | [DeployVault](https://github.com/cmartinezone/DeployVault) + [WinPECT](https://github.com/cmartinezone/WinPECT) | Separate repos |
 
 `ImportOSMedia` will sit after Config when it is in this repository. It publishes the OS catalog that SelectWorkflow and the engine will consume.
 
@@ -43,11 +43,12 @@ On a device, the live chain is:
 ```text
 startnet
   → 05 BootInitializer
-  → 06 PreCheck
-  → 07 SelectWorkflow
-  → DeploymentEngine (planned)
-  → 08 Progress (separate process, read-only)
-  → 09 Credentials (handoff, then FullOS import)
+  → 08 DeploymentEngine
+       → 06 PreCheck
+       → 07 SelectWorkflow
+       → (planned) Setup /NoReboot + handoff
+  → 09 Progress (separate process, read-only)
+  → 10 Credentials (handoff, then FullOS import)
 ```
 
 ## Repository layout

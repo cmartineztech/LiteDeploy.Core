@@ -986,7 +986,17 @@ if ($null -ne $gridDisks) {
 }
 
 # Unified Action Handler (Start Deployment / Validate All Sections)
+# Returns a structured selection to LiteDeploy.DeploymentEngine; does not start Setup.
 $script:DeploymentRequested = $false
+$script:ComputerName = ""
+$script:ComputerDescription = ""
+$script:SelectedWorkflowTag = $null
+$script:SelectedOSName = ""
+$script:SelectedDiskIndex = $null
+$script:SelectedDiskNumber = $null
+$script:SelectedDiskModel = ""
+$script:SelectedDriverFolderPath = ""
+$script:AutoDetectDrivers = $autoDetectDrivers
 
 if ($null -ne $btnNext) {
     $btnNext.Add_Click({
@@ -1059,6 +1069,12 @@ if ($null -ne $btnNext) {
         } else {
             $script:SelectedDiskIndex = $selectedDisk.Index
             $script:SelectedDiskModel = $selectedDisk.Model
+            # Numeric DiskNumber is the execution identifier for the engine (not the display Index).
+            if ($selectedDisk.PSObject.Properties['DiskNumber']) {
+                $script:SelectedDiskNumber = [int]$selectedDisk.DiskNumber
+            } else {
+                $script:SelectedDiskNumber = $null
+            }
         }
 
         # 4. Save Driver Selection Path
@@ -1136,4 +1152,29 @@ $window.Add_KeyDown({
 
 # Display Window
 $window.ShowDialog() | Out-Null
-return $script:DeploymentRequested
+
+if (-not $script:DeploymentRequested) {
+    return [PSCustomObject]@{
+        DeploymentRequested = $false
+        Status              = "Cancelled"
+    }
+}
+
+# Structured selection for LiteDeploy.DeploymentEngine.
+# osId / editionId / workflowId remain null until ImportOSMedia catalogs drive the UI.
+return [PSCustomObject]@{
+    DeploymentRequested = $true
+    Status              = "Confirmed"
+    ComputerName        = [string]$script:ComputerName
+    ComputerDescription = [string]$script:ComputerDescription
+    WorkflowName        = [string]$script:SelectedOSName
+    WorkflowTag         = $script:SelectedWorkflowTag
+    OsId                = $null
+    EditionId           = $null
+    WorkflowId          = $null
+    DiskNumber          = $script:SelectedDiskNumber
+    DiskIndex           = $script:SelectedDiskIndex
+    DiskModel           = [string]$script:SelectedDiskModel
+    DriverFolderPath    = [string]$script:SelectedDriverFolderPath
+    AutoDetectDrivers   = [bool]$script:AutoDetectDrivers
+}

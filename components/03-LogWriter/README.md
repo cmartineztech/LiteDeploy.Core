@@ -11,7 +11,7 @@
 
 `LiteDeploy.LogWriter.ps1` is an independent, reusable logging engine module for **LiteDeploy Core**.
 
-It provides standardized dual logging across all LiteDeploy components (`05-BootInitializer`, `06-PreCheck`, `07-SelectWorkflow`, `08-Progress`):
+It provides standardized dual logging across all LiteDeploy components (`05-BootInitializer`, `06-PreCheck`, `07-SelectWorkflow`, `08-DeploymentEngine`, `09-Progress`):
 1. **Real-Time Console Output**: Writes color-coded visual feedback directly to the console screen.
 2. **Microsoft CMTrace XML Logging**: Appends timestamped XML log entries to `$env:SystemDrive\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log` (compatible with `CMTrace.exe`).
 3. **Structured NDJSON Logging**: Appends single-line JSON log objects to `$env:SystemDrive\~LiteDeploy\WorkLogs\LiteDeploy.Execution.json` (compatible with Splunk, Azure, and cloud log analytics).
@@ -74,7 +74,7 @@ Clear-LiteDeployLog -LogFileName "LiteDeploy.Execution.log"
 
 ## 4. Usage Patterns for Other Components
 
-Other LiteDeploy modules (`06-PreCheck`, `07-SelectWorkflow`, `08-Progress`) can consume `LiteDeploy.LogWriter.ps1` in two simple ways:
+Other LiteDeploy modules (`06-PreCheck`, `07-SelectWorkflow`, `08-DeploymentEngine`, `09-Progress`) can consume `LiteDeploy.LogWriter.ps1` in two simple ways:
 
 ### Pattern A: Dot-Sourcing the Module (Recommended)
 

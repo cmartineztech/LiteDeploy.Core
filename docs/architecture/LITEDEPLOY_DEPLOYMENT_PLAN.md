@@ -62,12 +62,13 @@ The deployment engine must resolve sibling scripts from `$PSScriptRoot`. It must
 
 1. `startnet.cmd` launches `LiteDeploy.BootInitilizer.ps1` in Windows PowerShell 5.1 STA mode.
 2. BootInitializer discovers `BootConfig.json`, initializes networking, connects the deployment source, and creates `BootObject`.
-3. BootInitializer invokes PreCheck with `& $preCheckPath -BootObject $bootObject`.
-4. PreCheck closes and returns a structured result.
-5. If PreCheck did not pass or Continue was not selected, BootInitializer stops without changing a disk.
-6. BootInitializer invokes workflow selection in the same process and passes `BootObject`.
+3. BootInitializer invokes `LiteDeploy.DeploymentEngine.ps1` with `& $enginePath -BootObject $bootObject` (same process; credential stays in memory).
+4. The deployment engine invokes PreCheck; PreCheck closes and returns a structured result.
+5. If PreCheck did not pass or Continue was not selected, the engine stops without changing a disk.
+6. The deployment engine invokes workflow selection in the same process and passes `BootObject`.
 7. Workflow selection returns a structured selection object.
-8. If the technician cancels, BootInitializer stops without changing a disk.
+8. If the technician cancels, the engine stops without changing a disk.
+9. The engine initializes deployment state and proceeds to Phase B (Setup `/NoReboot` — still stubbed on the orchestration test branch).
 
 ### Phase B: validation, credentials, and Setup preparation
 

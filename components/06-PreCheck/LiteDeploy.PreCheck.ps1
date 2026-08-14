@@ -672,37 +672,10 @@ function Invoke-PreCheck {
 # ------------------------------------------------------------------------------
 # 6. EVENT BINDING & EXECUTION
 # ------------------------------------------------------------------------------
+# PreCheck returns a structured result to LiteDeploy.DeploymentEngine (or a
+# standalone caller). It does not launch SelectWorkflow — the engine owns sequencing.
 $script:AllowClose = $false
 $script:ContinueRequested = $false
-
-function Resolve-LiteDeploySelectWorkflowPath {
-    [CmdletBinding()]
-    param()
-
-    $candidates = [System.Collections.Generic.List[string]]::new()
-
-    # Production layout: all engine scripts are siblings under Engine\Scripts.
-    $candidates.Add((Join-Path $PSScriptRoot "LiteDeploy.SelectWorkFlow.ps1"))
-
-    # When available, use the same engine folder selected by BootInitializer.
-    if ($BootObject -and $BootObject.PSObject.Properties['EngineScriptPath'] -and $BootObject.EngineScriptPath) {
-        $engineFolder = Split-Path -Parent ([string]$BootObject.EngineScriptPath)
-        if ($engineFolder) {
-            $candidates.Add((Join-Path $engineFolder "LiteDeploy.SelectWorkFlow.ps1"))
-        }
-    }
-
-    # Development repository layout: next component in working order.
-    $candidates.Add((Join-Path $PSScriptRoot "..\07-SelectWorkflow\LiteDeploy.SelectWorkFlow.ps1"))
-
-    foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-            return (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path
-        }
-    }
-
-    return $null
-}
 
 if ($null -ne $btnContinue) {
     $btnContinue.Add_Click({
@@ -744,21 +717,26 @@ $window.Add_ContentRendered({ Invoke-PreCheck })
 $null = $window.ShowDialog()
 if ($backdropWindow) { $backdropWindow.Close() }
 
-if ($script:ContinueRequested) {
-    $selectWorkflowPath = Resolve-LiteDeploySelectWorkflowPath
-    if (-not $selectWorkflowPath) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "LiteDeploy.SelectWorkFlow.ps1 was not found beside PreCheck or in components/07-SelectWorkflow.",
-            "LiteDeploy - Workflow Selection Missing",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return $false
-    }
-
-    # Use the call operator in the current PowerShell process. BootObject and its
-    # PSCredential remain in memory and are never serialized or placed on a command line.
-    return (& $selectWorkflowPath -BootObject $BootObject)
+$preCheckPassed = $false
+if (Test-Path Variable:global:PreCheckPassed) {
+    $preCheckPassed = [bool]$global:PreCheckPassed
 }
 
-return $global:PreCheckPassed
+$status = if ($script:ContinueRequested -and $preCheckPassed) {
+    "Continue"
+}
+elseif ($script:ContinueRequested -and -not $preCheckPassed) {
+    "Failed"
+}
+elseif (-not $script:ContinueRequested) {
+    "Cancelled"
+}
+else {
+    "Unknown"
+}
+
+return [PSCustomObject]@{
+    ContinueRequested = [bool]$script:ContinueRequested
+    PreCheckPassed    = [bool]$preCheckPassed
+    Status            = $status
+}

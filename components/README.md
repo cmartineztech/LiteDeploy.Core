@@ -18,13 +18,11 @@ Folders are numbered in the order LiteDeploy works. Numbers are for this develop
 | # | Folder | Runs when |
 | ---: | --- | --- |
 | 05 | `05-BootInitializer` | `startnet.cmd` starts the parent PowerShell process. |
-| 06 | `06-PreCheck` | BootInitializer invokes it with `BootObject`. |
-| 07 | `07-SelectWorkflow` | PreCheck Continue currently launches it in the same process. |
-| — | DeploymentEngine | Planned next stage after a confirmed workflow selection. |
-| 08 | `08-Progress` | Planned as a separate process while the engine runs. |
-| 09 | `09-Credentials` | Offline handoff and FullOS SYSTEM import. Code lives in [DeployVault](https://github.com/cmartinezone/DeployVault) and [WinPECT](https://github.com/cmartinezone/WinPECT). |
-
-When DeploymentEngine is added, it becomes `08-DeploymentEngine` and Progress / Credentials shift to `09` and `10`. Do not add new work under the old `01_BootInitlizer` names.
+| 06 | `06-PreCheck` | DeploymentEngine invokes it with `BootObject`; returns a structured result. |
+| 07 | `07-SelectWorkflow` | DeploymentEngine invokes it after PreCheck Continue; returns a structured selection. |
+| 08 | `08-DeploymentEngine` | BootInitializer invokes it with `BootObject`; orchestrates PreCheck → SelectWorkflow → state (Setup later). |
+| 09 | `09-Progress` | Planned as a separate process while the engine runs. |
+| 10 | `10-Credentials` | Offline handoff and FullOS SYSTEM import. Code lives in [DeployVault](https://github.com/cmartinezone/DeployVault) and [WinPECT](https://github.com/cmartinezone/WinPECT). |
 
 ## Rules
 
