@@ -62,9 +62,9 @@ Implemented:
 
 Required changes:
 
-- Become the explicit sequence orchestrator via `LiteDeploy.DeploymentEngine.ps1`.
-- Consume structured PreCheck and workflow results (engine does this).
-- Invoke Setup `/NoReboot`, handoff, and FullOS resume from the engine (still stubbed).
+- Become the explicit sequence orchestrator.
+- Consume structured PreCheck and workflow results.
+- Invoke the planned Deployment Engine.
 
 ### PreCheck UI
 
@@ -80,8 +80,8 @@ Implemented:
 
 Required changes:
 
-- ~~Return `{ ContinueRequested, PreCheckPassed, Status }`.~~ Done on engine-orchestration branch.
-- ~~Close and return control without launching the next component.~~ Done (engine invokes SelectWorkflow).
+- Return `{ ContinueRequested, PreCheckPassed, Status }`.
+- Close and return control to BootInitializer without launching the next component.
 
 ### Workflow Selection UI
 
@@ -142,7 +142,7 @@ Required additions:
 
 ### Progress UI
 
-Location: `components/09-Progress/LiteDeploy.Progress.ps1`
+Location: `components/08-Progress/LiteDeploy.Progress.ps1`
 
 Implemented:
 
@@ -169,7 +169,7 @@ Locations:
 
 - [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted share vault (separate repository)
 - [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository)
-- `components/10-Credentials/` — LiteDeploy integration notes and [EndToEndDeploymentGuide.md](../../components/10-Credentials/EndToEndDeploymentGuide.md)
+- `components/09-Credentials/` — LiteDeploy integration notes and [EndToEndDeploymentGuide.md](../../components/09-Credentials/EndToEndDeploymentGuide.md)
 
 Implemented:
 
@@ -195,7 +195,7 @@ Integration decisions:
 - Versioned package catalog and JSON schema
 - Optional deployment-profile catalog
 - Cross-catalog resolver and reference validator
-- `LiteDeploy.DeploymentEngine.ps1` (Phase A orchestration scaffold; Setup `/NoReboot` still pending)
+- `LiteDeploy.DeploymentEngine.ps1`
 - Atomic deployment-state manager
 - Deployment lock/single-instance manager
 - Target-disk safety executor

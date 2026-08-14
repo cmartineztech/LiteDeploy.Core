@@ -70,7 +70,7 @@ flowchart TD
 * **STA Relaunch Guard**: Detects if the current PowerShell host thread is running in Single-Threaded Apartment (STA) mode. If not, it transparently relaunches itself using `powershell.exe -STA`.
 * **Software Rendering**: Enforces `[RenderOptions]::ProcessRenderMode = SoftwareOnly` to eliminate GPU driver crashes in WinPE RAMDisk environments.
 * **Dynamic Scaling & Themes**: Dynamically computes 4:3 viewbox scaling based on primary monitor height ($75\%$ height scaling) and applies theme brushes (`Light` or `Dark`).
-* **BootObject Storage**: Accepts an optional `[psobject]$BootObject` from `LiteDeploy.DeploymentEngine` / BootInitializer and holds it in `$BootObject` and `$global:LiteDeployBootObject`. On Continue, PreCheck returns `{ ContinueRequested, PreCheckPassed, Status }` to the engine; it does not launch SelectWorkflow.
+* **BootObject Storage**: Accepts an optional `[psobject]$BootObject` parameter passed from `BootInitilizer` (which encapsulates credentials, network paths, drive letters, and config metadata) and holds it intact in `$BootObject` and `$global:LiteDeployBootObject`.
 
 ### 2. Configuration Resolution & Policy Bypass
 * Resolves `BootConfig.json` across strict priority paths.

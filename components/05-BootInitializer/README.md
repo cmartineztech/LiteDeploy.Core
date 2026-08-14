@@ -13,7 +13,7 @@
 
 The WinPE ISO or `Boot.wim` that launches this script is built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) for USB/ISO media or WDS/PXE.
 
-It automatically discovers `BootConfig.json` using dynamic RAM drive detection (`$env:SystemDrive`), performs network hardware & IP checks (when `DeploymentType` is `"Network"`), verifies deployment server reachability over SMB Port 445, prompts for user credentials securely via native `Get-Credential`, mounts the remote deployment share to drive **`Z:\`**, discovers `LiteDeploy.HostShell.ps1`, minimizes the console shell, and launches the deployment engine (`LiteDeploy.DeploymentEngine.ps1`) with the in-memory `BootObject`.
+It automatically discovers `BootConfig.json` using dynamic RAM drive detection (`$env:SystemDrive`), performs network hardware & IP checks (when `DeploymentType` is `"Network"`), verifies deployment server reachability over SMB Port 445, prompts for user credentials securely via native `Get-Credential`, mounts the remote deployment share to drive **`Z:\`**, discovers `LiteDeploy.HostShell.ps1`, minimizes the console shell, and launches the target engine pre-check script (`LiteDeploy.PreCheck.ps1`).
 
 ---
 
@@ -81,11 +81,11 @@ flowchart TD
     end
 
     SetMediaEngine --> Handoff["Return Result PSCustomObject (Includes Strict-Mode Guards)"]
-    MountSuccess --> SetNetEngine["Set EngineScriptPath = Z:/Engine/Scripts/LiteDeploy.DeploymentEngine.ps1"]
+    MountSuccess --> SetNetEngine["Set EngineScriptPath = Z:/Engine/Scripts/LiteDeploy.PreCheck.ps1"]
     SetNetEngine --> Handoff
     Handoff --> LaunchEngine{"Standalone Launcher Run?"}
     LaunchEngine -- "Yes" --> HostShellCheck["Discover LiteDeploy.HostShell.ps1 & Set-HostShellWindow -Action Minimize"]
-    HostShellCheck --> ExecScript["Execute DeploymentEngine (& $res.EngineScriptPath -BootObject $res)"]
+    HostShellCheck --> ExecScript["Execute Engine Pre-Check (& $res.EngineScriptPath -BootObject $res)"]
 ```
 
 ---
@@ -158,10 +158,10 @@ Show-LiteDeployGuiError -Message "Error message text" -Title "LiteDeploy Error" 
 ```
 
 ### `Resolve-LiteDeployEnginePath`
-Resolves `LiteDeploy.DeploymentEngine.ps1` from production `Engine\Scripts` siblings or this repo's `components/08-DeploymentEngine`.
+Resolves target engine pre-check script paths on `Z:\` or offline media using multi-line wildcard `Resolve-Path`.
 ```powershell
 $enginePath = Resolve-LiteDeployEnginePath -RootPath "Z:"
-# Returns "...\LiteDeploy.DeploymentEngine.ps1"
+# Returns "Z:\Engine\Scripts\LiteDeploy.PreCheck.ps1"
 ```
 
 ### `Test-LiteDeployNetworkHardware`
@@ -207,9 +207,9 @@ When executed directly (not dot-sourced), `LiteDeploy.BootInitilizer.ps1`:
 1. Executes `Get-LiteDeployBootConfig`.
 2. Extracts `$bootObj` with `Set-StrictMode 2.0` property protection.
 3. Logs all checks, status, warnings, and errors to `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log` (CMTrace XML) and `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.json` (NDJSON).
-4. Verifies presence of the deployment engine (`LiteDeploy.DeploymentEngine.ps1`).
-   * **If Missing**: Logs `[ERROR] Engine script not found...`, displays GUI error dialog titled *"LiteDeploy - Script Missing"*, and pauses initialization cleanly.
-   * **If Present**: Discovers `LiteDeploy.HostShell.ps1`, minimizes the host console, and executes `& $enginePath -BootObject $bootObj`. The engine then runs PreCheck and SelectWorkflow in the same process.
+4. Verifies presence of target engine pre-check script (`LiteDeploy.PreCheck.ps1`).
+   * **If Missing**: Logs `[ERROR] Engine script not found...` to `LiteDeploy.Execution.log` and `LiteDeploy.Execution.json`, displays GUI error dialog titled *"LiteDeploy - Script Missing"*, and pauses initialization cleanly.
+   * **If Present**: Discovers `LiteDeploy.HostShell.ps1`, minimizes host console shell, and executes `& $enginePath -BootObject $bootObj` inside an error-capturing `try/catch` block.
 5. Restores host shell window on completion or error.
 
 ---
