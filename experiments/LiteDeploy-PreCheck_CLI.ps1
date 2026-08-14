@@ -434,8 +434,15 @@ if (-not [string]::IsNullOrWhiteSpace($envName)) {
     }
 }
 
-# Check for SkipPreCheck flag
-if ($null -ne $cfg -and $null -ne $cfg.Startup -and ($cfg.Startup.SkipPreCheck -eq $true -or $cfg.Startup.SkipPreCheck -eq "true")) {
+# Check for SkipHardwarePreCheck / SkipPreCheck flag
+$skipPreCheck = $false
+if ($null -ne $cfg -and $null -ne $cfg.Startup) {
+    if ($cfg.Startup.SkipHardwarePreCheck -eq $true -or $cfg.Startup.SkipHardwarePreCheck -eq "true" -or
+        $cfg.Startup.SkipPreCheck -eq $true -or $cfg.Startup.SkipPreCheck -eq "true") {
+        $skipPreCheck = $true
+    }
+}
+if ($skipPreCheck) {
     # Erase progress bar lines from console so no percentage (5%) is displayed on bypass
     if ($null -ne $script:ProgressAnchor) {
         try {
@@ -451,7 +458,7 @@ if ($null -ne $cfg -and $null -ne $cfg.Startup -and ($cfg.Startup.SkipPreCheck -
 
     Write-Banner -Message "PRE-CHECK BYPASSED"
     Write-Host ""
-    Write-Status -Status "INFO" -Message "Pre-Check: Bypassed via configuration (SkipPreCheck = true)"
+    Write-Status -Status "INFO" -Message "Pre-Check: Bypassed via configuration (SkipHardwarePreCheck = true)"
     Write-Host ""
     Write-Host "     [ SKIPPED ] SYSTEM PRE-CHECK BYPASSED BY POLICY  " -BackgroundColor Yellow -ForegroundColor Black
     Write-Host ""

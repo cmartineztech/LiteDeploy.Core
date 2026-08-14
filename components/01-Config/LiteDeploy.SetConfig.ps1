@@ -1,15 +1,19 @@
 <#
 .SYNOPSIS
-    Generates LiteDeploy.json configuration for BootWim, DeploymentShare, or Media modes.
+    Generates LiteDeploy configurations (BootConfig, etc.) for BootWim, DeploymentShare, or Media modes.
 
 .DESCRIPTION
-    Generates a target LiteDeploy.json configuration file managed via PowerShell
+    Generates a target BootConfig.json configuration file managed via PowerShell
     objects and configurable variables with inline comments.
 
     Supported Modes:
     - BootWim         : Type = "Network", NetworkPath = Mandatory UNC path (e.g. "\\Server\Share$")
     - DeploymentShare : Type = "Network", NetworkPath = Mandatory UNC path (e.g. "\\Server\Share$")
     - Media           : Type = "Media",   NetworkPath = null
+
+.PARAMETER BootConfig
+    Switch specifying that BootConfig.json configuration is being generated.
+    Allows extending LiteDeploy.SetConfig.ps1 with additional configuration target switches in the future.
 
 .PARAMETER Mode
     Deployment mode to generate configuration for.
@@ -27,20 +31,23 @@
 
 .PARAMETER OutputPath
     Target file path for the generated configuration file.
-    Default: 'LiteDeploy.json' in current working directory.
+    Default: 'BootConfig.json' in current working directory.
 
 .EXAMPLE
-    .\LiteDeploy-Config.ps1 -Mode DeploymentShare -NetworkPath "\\Server01\Share$" -Environment "Production"
+    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode DeploymentShare -NetworkPath "\\Server01\Share$" -Environment "Production"
 
 .EXAMPLE
-    .\LiteDeploy-Config.ps1 -Mode Media -Comment "Custom offline USB config"
+    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode Media -Comment "Custom offline USB config"
 
 .EXAMPLE
-    .\LiteDeploy-Config.ps1 -Mode BootWim -NetworkPath "\\PXEServer\DeploymentShare$" -Environment "Production" -Comment "PXE WIM Boot Configuration"
+    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode BootWim -NetworkPath "\\PXEServer\DeploymentShare$" -Environment "Production" -Comment "PXE WIM Boot Configuration"
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false)]
+    [switch]$BootConfig,
+
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateSet('BootWim', 'DeploymentShare', 'Media')]
     [string]$Mode = 'DeploymentShare',
@@ -70,10 +77,20 @@ $ErrorActionPreference = 'Stop'
 $SchemaVersion               = "1.0"                   # LiteDeploy Schema Version
 $AppName                     = "LiteDeploy"            # Target Application Name
 $AppVersion                  = "1.0"                   # Default Package Version
-$SkipPreCheck                = $false                  # Set $true to bypass hardware pre-checks
-$WorkingRootName             = "~LiteDeploy"           # Default Working Root Directory Name
+$SkipHardwarePreCheck        = $false                  # Set $true to bypass hardware pre-checks
+$SkipHardwareRequirments     = $false                  # Set $true to bypass hardware requirements check
+$LocalRootName               = "~LiteDeploy"           # Default Local Root Directory Name
 $PromptForComputerName        = $true                  # Prompt operator for computer name during deployment
+$ComputerNamePrefix           = $null                  # Optional computer name prefix (e.g. "DESK-", or null if none)
+$MaxComputerNameLength        = 15                     # Maximum allowed computer name character length (NetBIOS max 15)
 $PromptForComputerDescription = $true                  # Prompt operator for computer description during deployment
+$Language                     = "en-US"                # Default system language locale
+$KeyboardLocale               = "0409:00000409"        # Default keyboard layout / input locale (US English)
+$TimeZone                     = "Eastern Standard Time"# Default system time zone
+$AutoDetectDrivers            = $true                  # Auto-detect driver pack by WMI Make/Model
+$AllowManualSelection         = $true                  # Allow technician to manually select driver pack
+$AutoOnlineDownloadOnMedia    = $true                  # Enable on-the-fly driver downloading when on Media
+
 
 # Determine effective Environment value ($null if omitted, or passed string)
 $EffectiveEnvironment = if ($PSBoundParameters.ContainsKey('Environment')) {
@@ -108,22 +125,14 @@ $ModeConfigs = @{
     'DeploymentShare' = [ordered]@{
         'Type'            = "Network"               # Network deployment mode for Deployment Share
         'NetworkPath'     = $EffectiveNetworkPath   # Mandatory UNC Share path supplied via -NetworkPath
-        'WorkingRootName' = $WorkingRootName        # Working root folder name (~LiteDeploy)
-        'ComputerSetup'   = [ordered]@{
-            'PromptForComputerName'        = $PromptForComputerName
-            'PromptForComputerDescription' = $PromptForComputerDescription
-        }
+        'LocalRootName'   = $LocalRootName          # Local root folder name (~LiteDeploy)
     }
 
     # Offline USB / ISO Media Configuration
     'Media'           = [ordered]@{
         'Type'            = "Media"                 # Standalone Media deployment mode
         'NetworkPath'     = $null                   # Network path is null for offline media deployments
-        'WorkingRootName' = $WorkingRootName        # Working root folder name (~LiteDeploy)
-        'ComputerSetup'   = [ordered]@{
-            'PromptForComputerName'        = $PromptForComputerName
-            'PromptForComputerDescription' = $PromptForComputerDescription
-        }
+        'LocalRootName'   = $LocalRootName          # Local root folder name (~LiteDeploy)
     }
 }
 
@@ -148,7 +157,7 @@ if ($TargetFolder -and (-not (Test-Path -LiteralPath $TargetFolder -PathType Con
 # Extract mode configuration
 $TargetDeployment = $ModeConfigs[$Mode]
 
-# Construct full LiteDeploy PSObject
+# Construct full LiteDeploy PSObject based on deployment mode
 $ConfigObject = [ordered]@{
     '$schemaVersion' = $SchemaVersion    # Version tag for LiteDeploy engine
     'Metadata'       = [ordered]@{
@@ -156,12 +165,33 @@ $ConfigObject = [ordered]@{
         'Environment' = $EffectiveEnvironment  # Environment target (null unless specified via -Environment)
         'Version'     = $AppVersion            # Package version (default 1.0)
     }
-    'Startup'        = [ordered]@{
-        'SkipPreCheck' = $SkipPreCheck   # Hardware pre-check toggle
-    }
     'Deployment'     = $TargetDeployment
-    '_Comments'      = $Comment          # Blank by default unless -Comment parameter is passed
 }
+
+# Include Startup, ComputerSetup, and Drivers sections for DeploymentShare and Media modes
+if ($Mode -ne 'BootWim') {
+    $ConfigObject['Startup'] = [ordered]@{
+        'SkipHardwarePreCheck'    = $SkipHardwarePreCheck     # Hardware pre-check toggle
+        'SkipHardwareRequirments' = $SkipHardwareRequirments  # Hardware requirements toggle
+    }
+    $ConfigObject['ComputerSetup'] = [ordered]@{
+        'PromptForComputerName'        = $PromptForComputerName
+        'ComputerNamePrefix'           = $ComputerNamePrefix
+        'MaxComputerNameLength'        = $MaxComputerNameLength
+        'PromptForComputerDescription' = $PromptForComputerDescription
+        'Language'                     = $Language
+        'KeyboardLocale'               = $KeyboardLocale
+        'TimeZone'                     = $TimeZone
+    }
+    $ConfigObject['Drivers'] = [ordered]@{
+        'AutoDetectDrivers'         = $AutoDetectDrivers
+        'AllowManualSelection'      = $AllowManualSelection
+        'AutoOnlineDownloadOnMedia' = $AutoOnlineDownloadOnMedia
+    }
+}
+
+# Always attach _Comments tag at the end
+$ConfigObject['_Comments'] = $Comment # Blank by default unless -Comment parameter is passed
 
 # Convert PowerShell Object to formatted JSON
 $JsonContent = $ConfigObject | ConvertTo-Json -Depth 10
@@ -178,10 +208,26 @@ Write-Host " Environment      : $(if ($null -eq $ConfigObject.Metadata.Environme
 Write-Host " Version          : $($ConfigObject.Metadata.Version)"
 Write-Host " Type             : $($ConfigObject.Deployment.Type)"
 Write-Host " NetworkPath      : $(if ($null -eq $ConfigObject.Deployment.NetworkPath) { 'null' } elseif ([string]::IsNullOrWhiteSpace($ConfigObject.Deployment.NetworkPath)) { '(blank)' } else { $ConfigObject.Deployment.NetworkPath })"
-if ($ConfigObject.Deployment.Contains('WorkingRootName')) {
-    Write-Host " WorkingRootName  : $($ConfigObject.Deployment.WorkingRootName)"
-    Write-Host " PromptCompName   : $($ConfigObject.Deployment.ComputerSetup.PromptForComputerName)"
-    Write-Host " PromptCompDesc   : $($ConfigObject.Deployment.ComputerSetup.PromptForComputerDescription)"
+if ($ConfigObject.Deployment.Contains('LocalRootName')) {
+    Write-Host " LocalRootName    : $($ConfigObject.Deployment.LocalRootName)"
+}
+if ($ConfigObject.Contains('Startup')) {
+    Write-Host " SkipHwPreCheck   : $($ConfigObject.Startup.SkipHardwarePreCheck)"
+    Write-Host " SkipHwReqs       : $($ConfigObject.Startup.SkipHardwareRequirments)"
+}
+if ($ConfigObject.Contains('ComputerSetup')) {
+    Write-Host " PromptCompName   : $($ConfigObject.ComputerSetup.PromptForComputerName)"
+    Write-Host " CompNamePrefix   : $(if ($null -eq $ConfigObject.ComputerSetup.ComputerNamePrefix) { 'null' } else { $ConfigObject.ComputerSetup.ComputerNamePrefix })"
+    Write-Host " MaxCompNameLen   : $($ConfigObject.ComputerSetup.MaxComputerNameLength)"
+    Write-Host " PromptCompDesc   : $($ConfigObject.ComputerSetup.PromptForComputerDescription)"
+    Write-Host " Language         : $($ConfigObject.ComputerSetup.Language)"
+    Write-Host " KeyboardLocale   : $($ConfigObject.ComputerSetup.KeyboardLocale)"
+    Write-Host " TimeZone         : $($ConfigObject.ComputerSetup.TimeZone)"
+}
+if ($ConfigObject.Contains('Drivers')) {
+    Write-Host " AutoDetectDrivers: $($ConfigObject.Drivers.AutoDetectDrivers)"
+    Write-Host " AllowManualSel   : $($ConfigObject.Drivers.AllowManualSelection)"
+    Write-Host " AutoOnlineOnMedia: $($ConfigObject.Drivers.AutoOnlineDownloadOnMedia)"
 }
 Write-Host " Comment          : $(if ([string]::IsNullOrWhiteSpace($ConfigObject._Comments)) { '(blank)' } else { $ConfigObject._Comments })"
 Write-Host " Output File      : $ResolvedOutputPath"

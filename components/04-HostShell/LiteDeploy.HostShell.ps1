@@ -5,7 +5,12 @@
 .DESCRIPTION
     Dot-source to load the toolkit into the current session:
 
-        . X:\~LiteDeploy\Scripts\LiteDeploy-HostShell.ps1
+        . "Z:\Engine\Scripts\LiteDeploy.HostShell.ps1"
+        or
+        . "$PSScriptRoot\LiteDeploy.HostShell.ps1"
+
+    Deployment Path:
+        DeploymentShare\Engine\Scripts\LiteDeploy.HostShell.ps1
 
     Exported API Functions:
         Set-HostShellWindow            Window state, position, size, always-on-top, title, prompt, optional scrollbar hiding.

@@ -1,0 +1,18 @@
+﻿{
+    "phase":  "Finalize",
+    "workflowName":  "Standard Workstation Workflow",
+    "deploymentId":  "LD-206072-001",
+    "overallPercent":  100,
+    "environment":  "WinPE",
+    "message":  "Completing Installation",
+    "status":  "Completed",
+    "computerModel":  "Latitude 7450",
+    "computerName":  "X1-DESKTOP01",
+    "productName":  "LiteDeploy",
+    "source":  "Local (Media) Repository",
+    "operatingSystem":  "Windows 11 Enterprise 25H2",
+    "currentStep":  "Writing Boot Configuration",
+    "stepPercent":  100,
+    "logMessage":  "Completed Writing Boot Configuration.",
+    "overallText":  "Action 5 of 5"
+}

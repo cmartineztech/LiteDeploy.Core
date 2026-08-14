@@ -1,0 +1,16 @@
+# Runtime logs
+WorkLogs/
+**/WorkLogs/
+*.log
+
+# Media and credential payloads
+*.wim
+*.esd
+*.iso
+localvault.bin
+localseed.bin
+Secrets.bin
+**/Secrets/
+
+# Local tooling
+.vscode/
