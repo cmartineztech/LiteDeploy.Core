@@ -22,20 +22,20 @@ LiteDeploy supports three distinct deployment modes:
 - **Deployment Type**: `"Network"`
 - **Purpose**: Minimal configuration schema used when booting directly from WinPE (`Boot.wim` / WDS / PXE).
 - **NetworkPath**: **MANDATORY** via `-NetworkPath` parameter.
-- **Schema Features**: Includes only essential network boot parameters (`Type` & `NetworkPath`). `Startup`, `ComputerSetup`, and `Drivers` sections are omitted.
+- **Schema Features**: Includes essential network boot parameters (`Type` & `NetworkPath`) plus optional `Ui.Theme` (`Light` / `Dark`, default `Light`). `Startup`, `ComputerSetup`, and `Drivers` sections are omitted.
 - **Boot media**: Built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) as `Boot.wim` for WDS/PXE.
 
 ### 2. `DeploymentShare` (Network Deployment Share)
 - **Deployment Type**: `"Network"`
 - **Purpose**: Full network deployment configuration when connecting to a network share.
 - **NetworkPath**: **MANDATORY** via `-NetworkPath` parameter.
-- **Schema Features**: Includes `LocalRootName`, top-level `Startup` flags (`SkipHardwarePreCheck`, `SkipHardwareRequirments`), `ComputerSetup` identity/locale flags, and `Drivers` management flags.
+- **Schema Features**: Includes `LocalRootName`, top-level `Startup` flags (`SkipHardwarePreCheck`, `SkipHardwareRequirments`), `ComputerSetup` identity/locale/engine flags (`DriveSelection`, `ImageEngine`), `Drivers` management flags, and optional `Ui.Theme`.
 
 ### 3. `Media` (Offline USB / ISO Media)
 - **Deployment Type**: `"Media"`
 - **Purpose**: Offline deployment from local media (USB flash drives, offline ISOs).
 - **NetworkPath**: Automatically set to `null`.
-- **Schema Features**: Includes `LocalRootName`, top-level `Startup` flags, `ComputerSetup` identity/locale flags, and `Drivers` management flags (including `AutoOnlineDownloadOnMedia`).
+- **Schema Features**: Includes `LocalRootName`, top-level `Startup` flags, `ComputerSetup` identity/locale/engine flags (`DriveSelection`, `ImageEngine`), `Drivers` management flags (including `AutoOnlineDownloadOnMedia`), and optional `Ui.Theme`.
 - **Boot media**: Built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) as an ISO or USB boot image.
 
 ---
@@ -72,6 +72,8 @@ LiteDeploy supports three distinct deployment modes:
 | **`ComputerSetup.ComputerNamePrefix`** | `String` / `null` | Prefix string prepended to computer names (e.g., `"DESK-"` or `null`). |
 | **`ComputerSetup.MaxComputerNameLength`** | `Integer` | Maximum character length limit for computer name (Default: `15`). |
 | **`ComputerSetup.PromptForComputerDescription`** | `Boolean` | Interactive prompt toggle for computer description. |
+| **`ComputerSetup.DriveSelection`** | `Boolean` | Show the SelectWorkflow target-disk picker (`true`) or auto-select the first internal disk (`false`). Default: `true`. Omitted in `BootWim`. |
+| **`ComputerSetup.ImageEngine`** | `String` | Imaging engine: `"Setup.exe"` (Windows Setup) or `"Dism.exe"` (DISM apply). Default: `"Setup.exe"`. Omitted in `BootWim`. |
 | **`ComputerSetup.Language`** | `String` | System language locale code (Default: `"en-US"`). |
 | **`ComputerSetup.KeyboardLocale`** | `String` | Keyboard input locale code (Default: `"0409:00000409"`). |
 | **`ComputerSetup.TimeZone`** | `String` | System time zone identifier (Default: `"Eastern Standard Time"`). |
@@ -79,6 +81,8 @@ LiteDeploy supports three distinct deployment modes:
 | **`Drivers.AutoDetectDrivers`** | `Boolean` | Automatically detect Make/Model via WMI and inject matching driver pack (`true`/`false`). |
 | **`Drivers.AllowManualSelection`** | `Boolean` | Allow operator/technician to manually browse or select driver pack (`true`/`false`). |
 | **`Drivers.AutoOnlineDownloadOnMedia`** | `Boolean` | Automatically fetch missing driver packs from online web repository during USB media boot (`true`/`false`). |
+| **`Ui`** | `Object` | Optional UI appearance settings. Present in all modes. |
+| **`Ui.Theme`** | `String` | UI palette (`"Light"` or `"Dark"`). Default: `"Light"`. Used by the boot credential prompt and later UIs. |
 | **`_Comments`** | `String` | Optional comment or documentation string. |
 
 ---

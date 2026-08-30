@@ -13,7 +13,10 @@
         "Type": "Network",
         "NetworkPath": "\\\\Server\\DeploymentShare$"
       },
-      "_Comments": "Minimal Configuration for Boot.wim / PXE Boot"
+      "Ui": {
+        "Theme": "Light"
+      },
+      "_Comments": "Minimal Configuration for Boot.wim / PXE Boot. Ui.Theme (Light|Dark) is optional; default Light."
     },
     "DeploymentShare": {
       "$schemaVersion": "1.0",
@@ -36,6 +39,8 @@
         "ComputerNamePrefix": null,
         "MaxComputerNameLength": 15,
         "PromptForComputerDescription": true,
+        "DriveSelection": true,
+        "ImageEngine": "Setup.exe",
         "Language": "en-US",
         "KeyboardLocale": "0409:00000409",
         "TimeZone": "Eastern Standard Time"
@@ -45,7 +50,10 @@
         "AllowManualSelection": true,
         "AutoOnlineDownloadOnMedia": true
       },
-      "_Comments": "Configuration for Network Deployment Share"
+      "Ui": {
+        "Theme": "Light"
+      },
+      "_Comments": "Configuration for Network Deployment Share. Ui.Theme (Light|Dark) is optional; default Light."
     },
     "Media": {
       "$schemaVersion": "1.0",
@@ -68,6 +76,8 @@
         "ComputerNamePrefix": null,
         "MaxComputerNameLength": 15,
         "PromptForComputerDescription": true,
+        "DriveSelection": true,
+        "ImageEngine": "Setup.exe",
         "Language": "en-US",
         "KeyboardLocale": "0409:00000409",
         "TimeZone": "Eastern Standard Time"
@@ -77,7 +87,10 @@
         "AllowManualSelection": true,
         "AutoOnlineDownloadOnMedia": true
       },
-      "_Comments": "Configuration for Standalone USB / ISO Media"
+      "Ui": {
+        "Theme": "Light"
+      },
+      "_Comments": "Configuration for Standalone USB / ISO Media. Ui.Theme (Light|Dark) is optional; default Light."
     }
   }
 }
