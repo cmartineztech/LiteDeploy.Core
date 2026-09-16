@@ -9,7 +9,7 @@ Related documents:
 - [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md)
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md)
-- [ImportOSMedia/README.md](../../ImportOSMedia/README.md)
+- [ImportOSMedia/README.md](../../components/Manager/ImportOSMedia/README.md)
 
 ## 1. Catalog relationship model
 
@@ -103,7 +103,7 @@ Forward-slash paths stored in JSON are repository-relative. Runtime code resolve
 
 ## 4. Operating-system catalog
 
-`ImportOSMedia/LiteDeploy.ImportOSMedia.ps1` already creates:
+`components/Manager/ImportOSMedia/LiteDeploy.ImportOSMedia.ps1` already creates:
 
 ```text
 Content/OperatingSystems/<media-folder>/os.json

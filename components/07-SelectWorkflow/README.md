@@ -52,7 +52,6 @@ The interface uses WPF with software rendering to reduce display-driver dependen
 | `LiteDeploy.SelectWorkFlow.ps1` | Main workflow, computer, disk, and driver-selection UI. |
 | `LiteDeploy.SelecWorkflowDriverPicker.ps1` | Reusable WPF folder-selection dialog used by **Select Folder**. |
 | `SELECTWORKFLOW_DIAGRAM.md` | Mermaid execution and decision-flow diagrams. |
-| `bk/` | Historical or experimental copies; not part of the active workflow. |
 
 The main script dot-sources the picker using `$PSScriptRoot`, so the two active scripts must remain in the same directory.
 
@@ -79,9 +78,12 @@ JSON parsing is strict. A missing or invalid configuration displays an alert and
 | `ComputerSetup.ComputerNamePrefix` | Empty | Prepopulates the computer-name input. |
 | `ComputerSetup.MaxComputerNameLength` | `15` | Sets input length and validation limit. |
 | `ComputerSetup.PromptForComputerDescription` | `true` | Shows or hides the description input. |
+| `ComputerSetup.DriveSelection` | `true` | Show target-disk selection (`true`) or auto-select first internal disk (`false`). |
+| `ComputerSetup.ImageEngine` | `"Setup.exe"` | Imaging engine: `"Setup.exe"` (Windows Setup) or `"Dism.exe"` (DISM apply). |
 | `Drivers.AutoDetectDrivers` | `true` | Enables manufacturer/model driver-pack detection. |
 | `Drivers.AllowManualSelection` | `true` | Enables the driver dropdown and **Select Folder** button. |
 | `Drivers.AutoOnlineDownloadOnMedia` | `true` | Makes online driver download available in Media mode. |
+| `Ui.Theme` | `"Light"` | UI palette theme (`"Light"` or `"Dark"`). |
 
 ---
 

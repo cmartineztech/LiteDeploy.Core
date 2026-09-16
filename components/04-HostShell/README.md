@@ -14,17 +14,20 @@ The task-sequence picker lives in the companion file
 
 ## Files & Deployment Location
 
-Deployment Share Location: **`DeploymentShare\Engine\Scripts\LiteDeploy.HostShell.ps1`** (Mapped Drive: `Z:\Engine\Scripts\LiteDeploy.HostShell.ps1`)
+- **Component Path**: `components\04-HostShell\LiteDeploy.HostShell.ps1`
+- **Deployment Share Location**: `DeploymentShare\Engine\Scripts\LiteDeploy.HostShell.ps1` (Mapped Drive: `Z:\Engine\Scripts\LiteDeploy.HostShell.ps1`)
 
-| File | Purpose |
-|---|---|
-| `LiteDeploy.HostShell.ps1` | The console-window toolkit (theme, geometry, presets, progress). |
-| `LiteDeploy.PreCheck.ps1` | WinPE system pre-check engine (Network, IPv4, SMB share, Storage, Firmware/Secure Boot/RAM/TPM). |
-| `LiteDeploy.TaskSequence.ps1` | Task-sequence toolkit: console picker and task-sequence execution engine. Standalone. |
-| `Config/LiteDeploy.SetConfig.ps1` | Configuration generator script for `BootWim`, `DeploymentShare`, and `Media` deployment modes. |
-| `Config/LiteDeploy.Template.BootConfig.json` | Consolidated JSON reference schemas for all deployment modes. |
-| `Config/BootConfig.json` | Active deployment configuration payload file. |
-| `LiteDeploy.BootInitilizer.ps1` | WinPE initialization bootstrap script (`wpeinit.exe`, High Performance power plan, launches `LiteDeploy.PreCheck.ps1`). |
+| File | Location | Purpose |
+|---|---|---|
+| `LiteDeploy.HostShell.ps1` | `components\04-HostShell\` | The console-window toolkit (theme, geometry, presets, progress). |
+
+### Sibling Pipeline Components
+HostShell controls the console window during initialization and coordinates with sibling components:
+- [`01-Config`](../01-Config/README.md): Generates `BootConfig.json` for boot images and shares.
+- [`03-LogWriter`](../03-LogWriter/README.md): Central logging engine (CMTrace XML + NDJSON).
+- [`05-BootInitializer`](../05-BootInitializer/README.md): Starts WinPE, discovers HostShell, minimizes the console, and launches PreCheck.
+- [`06-PreCheck`](../06-PreCheck/README.md): 9-point system readiness and hardware assessment UI.
+- [`07-SelectWorkflow`](../07-SelectWorkflow/README.md): Computer identity, workflow, disk, and driver selection UI.
 
 ## Quick start
 
@@ -45,56 +48,6 @@ Every function has built-in help:
 ```powershell
 Get-Help Set-HostShellWindow -Full
 ```
-
-## Configuration generator — `Config/LiteDeploy.SetConfig.ps1`
-
-Generates target `BootConfig.json` configuration files for deployment targets (`BootWim`, `DeploymentShare`, `Media`).
-
-### Supported Modes
-
-| Mode | `Deployment.Type` | `Deployment.NetworkPath` | Included Schema Properties |
-| :--- | :--- | :--- | :--- |
-| **`BootWim`** | `"Network"` | **Mandatory** via `-NetworkPath` | Minimal schema (`Type` & `NetworkPath` only) |
-| **`DeploymentShare`** | `"Network"` | **Mandatory** via `-NetworkPath` | Full schema (`LocalRootName`, top-level `Startup`, top-level `ComputerSetup`) |
-| **`Media`** | `"Media"` | Automatically set to `null` | Full schema (`LocalRootName`, top-level `Startup`, top-level `ComputerSetup`) |
-
-### Usage Examples
-
-```powershell
-# Generate Network Deployment Share configuration (BootConfig.json)
-.\components\01-Config\LiteDeploy.SetConfig.ps1 -BootConfig -Mode DeploymentShare -NetworkPath "\\Server01\DeploymentShare$" -Environment "Production"
-
-# Generate Minimal PXE / Boot.wim configuration
-.\components\01-Config\LiteDeploy.SetConfig.ps1 -BootConfig -Mode BootWim -NetworkPath "\\PXEServer\Share$" -Comment "PXE Boot Setup"
-
-# Generate Standalone Offline USB Media configuration
-.\components\01-Config\LiteDeploy.SetConfig.ps1 -BootConfig -Mode Media -Environment "Production" -Comment "USB Offline Media"
-```
-
-> For full schema property details and reference templates, see **Config/README.md**.
-
-## WinPE System Pre-Check Engine — `LiteDeploy.PreCheck.ps1`
-
-Evaluates minimal imaging prerequisites in Windows PE prior to launching task sequences:
-
-1. **Network Hardware**: Scans active physical network interfaces (`Get-NetAdapter` with `.NET` fallback).
-2. **IPv4 Address**: Polls for DHCP/Static IPv4 assignment (filters out APIPA `169.254.x.x` and loopback).
-3. **Deployment Mode**: Discovers `BootConfig.json` and identifies `Network` vs `Media (Local)`.
-4. **Deployment Server**: Tests SMB TCP Port 445 connectivity *(evaluates only when `NetworkPath` is configured)*.
-5. **Hard Drive Available**: Scans for internal non-USB target hard drives (`WinPE-StorageWMI` / `Win32_DiskDrive`).
-6. **System RAM**: Checks physical memory capacity against minimum threshold.
-7. **BIOS Mode**: Identifies UEFI vs Legacy BIOS firmware.
-8. **Secure Boot & TPM**: Reports Secure Boot state (`Enabled`/`Disabled`) and TPM 2.0 presence.
-
-### Configuration Discovery Hierarchy ("The Law")
-
-`LiteDeploy.PreCheck.ps1` targets **`BootConfig.json`** exclusively and follows a strict discovery order:
-
-1. **Priority 1 (WinPE RAM `X:\`)** — *Highest Priority ("The Law")*: `X:\~LiteDeploy\Config\BootConfig.json` and `X:\BootConfig.json`. If found on `X:\`, discovery stops immediately!
-2. **Priority 2 (External Media Drives)**: Scans removable USB flash drives, USB SSDs/HDDs, and optical CD-ROM/DVD drives (`DriveType Removable/CD-ROM` + `BusType USB`).
-3. **Priority 3 (Script Root & Working Directory)**: Fallback search in `$PSScriptRoot` and `$PWD`.
-
-> **Internal Drive Safeguard**: Internal SATA, NVMe, and RAID target disks are **100% excluded** from discovery to prevent loading stale configuration files from old operating systems.
 
 ## Function reference
 
@@ -178,14 +131,12 @@ call to move past the bar.
 Write-Host   # final newline past the bar
 ```
 
-## Task sequences — `LiteDeploy.TaskSequence.ps1`
+## Task sequences — `experiments\LiteDeploy-TaskSequence.ps1`
 
-The console task picker lives in its own toolkit (future home of
-task-sequence features). Dot-source it separately — it is standalone and
-does not require `LiteDeploy.HostShell.ps1`:
+The experimental console task picker lives in `experiments\LiteDeploy-TaskSequence.ps1`. Dot-source it separately — it is standalone and does not require `LiteDeploy.HostShell.ps1`:
 
 ```powershell
-. "Z:\Engine\Scripts\LiteDeploy.TaskSequence.ps1"
+. "experiments\LiteDeploy-TaskSequence.ps1"
 ```
 
 `Select-LiteDeployTaskSequence`: aligned table with Up/Down arrows
@@ -250,14 +201,14 @@ checks, then a full visual walkthrough (window docking, frame styles, theme
 cycle, preset cycle, progress demo, and the picker with sample data):
 
 ```powershell
-.\Test-LiteDeployHostShell.ps1
+.\experiments\Test-LiteDeployHostShell.ps1
 ```
 
 For unattended runs (automation, CI) use `-AssertionsOnly` — prints PASS/FAIL
 and sets the exit code (`0` = all 54 checks passed, `1` = failure):
 
 ```powershell
-.\Test-LiteDeployHostShell.ps1 -AssertionsOnly
+.\experiments\Test-LiteDeployHostShell.ps1 -AssertionsOnly
 ```
 
 `-DelaySeconds 1..10` controls the pause between visual steps (default `2`).

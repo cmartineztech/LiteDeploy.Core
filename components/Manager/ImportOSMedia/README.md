@@ -1,5 +1,12 @@
 # LiteDeploy WinPE Deployment Share & Media Management Framework v2
 
+**Script Files**:
+- `components\Manager\ImportOSMedia\LiteDeploy.ImportOSMedia.ps1` (CLI & Ingestion Engine)
+- `components\Manager\ImportOSMedia\LiteDeploy.ImportOSMediaGUI.ps1` (WPF Management Frontend)  
+**Documentation File**: `components\Manager\ImportOSMedia\README.md`  
+**Target Environment**: Windows Host (Full OS, Administrator)  
+**PowerShell Version**: PowerShell 5.1+  
+
 A high-performance, modular PowerShell & WPF framework for Windows OS setup media ingestion, WIM edition cataloging, custom Gold Master payload management, and central `catalog.json` generation.
 
 ---

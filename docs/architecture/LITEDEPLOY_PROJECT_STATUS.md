@@ -113,9 +113,9 @@ Required changes:
 
 Locations:
 
-- `ImportOSMedia/LiteDeploy.ImportOSMedia.ps1`
-- `ImportOSMedia/LiteDeploy.ImportOSMediaGUI.ps1`
-- `ImportOSMedia/README.md`
+- `components/Manager/ImportOSMedia/LiteDeploy.ImportOSMedia.ps1`
+- `components/Manager/ImportOSMedia/LiteDeploy.ImportOSMediaGUI.ps1`
+- `components/Manager/ImportOSMedia/README.md`
 
 Implemented:
 

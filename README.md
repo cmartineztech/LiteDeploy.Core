@@ -25,7 +25,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | ---: | --- | --- | --- |
 | 01 | [Config](components/01-Config) | Generates `BootConfig.json` for BootWim, DeploymentShare, and Media | Exists |
 | — | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds boot ISO or `Boot.wim` for WDS/PXE | Separate repo |
-| — | [ImportOSMedia](ImportOSMedia) | Imports OS media and publishes the catalog SelectWorkflow and the engine consume | Exists |
+| — | [ImportOSMedia](components/Manager/ImportOSMedia) | Imports OS media and publishes the catalog SelectWorkflow and the engine consume | Exists |
 | — | [DeploymentShare](DeploymentShare) | Initial deployment-share folder layout | Exists |
 | 02 | [DeploymentShareACL](components/02-DeploymentShareACL) | Share folders, SMB, and NTFS log isolation | Exists |
 | 03 | [LogWriter](components/03-LogWriter) | CMTrace + NDJSON logging | Exists |
@@ -37,7 +37,7 @@ The production product repo is **LiteDeploy**. A component moves there only afte
 | 08 | [Progress](components/08-Progress) | Reads `DeploymentState.json` and renders progress | Exists |
 | 09 | [Credentials](components/09-Credentials) | [DeployVault](https://github.com/cmartinezone/DeployVault) + [WinPECT](https://github.com/cmartinezone/WinPECT) | Separate repos |
 
-`ImportOSMedia` sits after Config. It publishes the OS catalog that SelectWorkflow and the engine will consume.
+`ImportOSMedia` (in `components/Manager/ImportOSMedia`) sits after Config. It publishes the OS catalog that SelectWorkflow and the engine will consume.
 
 On a device, the live chain is:
 
@@ -55,11 +55,21 @@ startnet
 
 ```text
 LiteDeploy Core/
-  components/                 Numbered in working order
+  components/                 Numbered in working order and management tools
+    01-Config/
+    02-DeploymentShareACL/
+    03-LogWriter/
+    04-HostShell/
+    05-BootInitializer/
+    06-PreCheck/
+    07-SelectWorkflow/
+    08-Progress/
+    09-Credentials/
+    Manager/
+      ImportOSMedia/          OS media importer and catalog publisher
   DeploymentShare/            Initial deployment-share folder layout
   docs/architecture/          Product design, diagrams, and status
   experiments/                Historical and scratch scripts; not shippable
-  ImportOSMedia/              OS media importer and catalog publisher
 ```
 
 Script file names stay as they are so WinPE and the future `Engine\Scripts` layout do not change. Folder numbers exist only in this Core repo so the sequence is visible.
