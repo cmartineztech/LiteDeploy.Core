@@ -357,21 +357,7 @@ if ($bootConfig) {
             <TextBlock Text="Select deployment workflow" FontSize="13" FontWeight="SemiBold" Foreground="#005A9E" Margin="0,2,0,4" FontFamily="Segoe UI"/>
             
             <Border Background="#FFFFFF" BorderBrush="#D9E0E7" BorderThickness="1" CornerRadius="5" Height="200" Margin="0,0,0,8" HorizontalAlignment="Stretch">
-                <TreeView Name="treeViewWorkflows" Grid.IsSharedSizeScope="True" Background="Transparent" BorderThickness="0" Padding="4" HorizontalContentAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    
-                    <!-- Standard Workflow -->
-                    <TreeViewItem Style="{StaticResource HeaderNodeStyle}" Name="nodeStandard">
-                        <TreeViewItem Style="{StaticResource ChildNodeStyle}" Name="itemStdEnt" Tag="W11-ENT-STD"/>
-                        <TreeViewItem Style="{StaticResource ChildNodeStyle}" Name="itemStdPro" Tag="W11-PRO-STD"/>
-                    </TreeViewItem>
-
-                    <!-- Intune Workflow -->
-                    <TreeViewItem Style="{StaticResource HeaderNodeStyle}" Name="nodeIntune">
-                        <TreeViewItem Style="{StaticResource ChildNodeStyle}" Name="itemApEnt" Tag="W11-ENT-AP"/>
-                        <TreeViewItem Style="{StaticResource ChildNodeStyle}" Name="itemApPro" Tag="W11-PRO-AP"/>
-                    </TreeViewItem>
-
-                </TreeView>
+                <TreeView Name="treeViewWorkflows" Grid.IsSharedSizeScope="True" Background="Transparent" BorderThickness="0" Padding="4" HorizontalContentAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
             </Border>
 
             <!-- Workflow Validation Error Message -->
@@ -526,30 +512,241 @@ if ($null -ne $gridDisks) {
     })
 }
 
-# Bind Parent Nodes
-$nodeStandard = $window.FindName("nodeStandard")
-$nodeIntune   = $window.FindName("nodeIntune")
-if ($null -ne $nodeStandard) { $nodeStandard.Header = [PSCustomObject]@{ HeaderText = "Standard Workflow (Zero Touch)" } }
-if ($null -ne $nodeIntune)   { $nodeIntune.Header   = [PSCustomObject]@{ HeaderText = "Intune Autopilot Workflow" } }
+# ==============================================================================
+# DYNAMIC OPERATING SYSTEMS & WORKFLOW CATALOG DISCOVERY
+# ==============================================================================
 
-# Helper function to create clean OS objects for DataBinding
-function New-OSItem {
-    param([string]$Name, [string]$Date)
-    $formattedDate = [datetime]::Parse($Date).ToString("MMM dd, yyyy")
-    return [PSCustomObject]@{
-        Name     = $Name
-        DateText = "Updated: $formattedDate"
+function Get-LiteDeployOperatingSystemsCatalog {
+    param(
+        [string]$ShareRoot = ""
+    )
+
+    $candidateCatalogs = [System.Collections.Generic.List[string]]::new()
+
+    if ($ShareRoot) {
+        $candidateCatalogs.Add((Join-Path $ShareRoot "Content\OperatingSystems\catalog.json"))
+        $candidateCatalogs.Add((Join-Path $ShareRoot "Content\OperatingSystems\catalog\catalog.json"))
+    }
+
+    if ($BootObject -and $BootObject.PSObject.Properties['DriveLetter'] -and $BootObject.DriveLetter) {
+        $dl = $BootObject.DriveLetter.TrimEnd('\')
+        $candidateCatalogs.Add("$dl\Content\OperatingSystems\catalog.json")
+        $candidateCatalogs.Add("$dl\Content\OperatingSystems\catalog\catalog.json")
+    }
+
+    if ($configPath) {
+        try {
+            $configParent = Split-Path -Parent (Split-Path -Parent $configPath)
+            if ($configParent) {
+                $candidateCatalogs.Add((Join-Path $configParent "Content\OperatingSystems\catalog.json"))
+            }
+        } catch {}
+    }
+
+    # Standard production and relative candidates
+    $candidateCatalogs.Add((Join-Path $PSScriptRoot "Content\OperatingSystems\catalog.json"))
+    $candidateCatalogs.Add((Join-Path $PSScriptRoot "..\Content\OperatingSystems\catalog.json"))
+    $candidateCatalogs.Add((Join-Path $PSScriptRoot "..\..\Content\OperatingSystems\catalog.json"))
+    $candidateCatalogs.Add((Join-Path $PSScriptRoot "..\..\..\Content\OperatingSystems\catalog.json"))
+    $candidateCatalogs.Add("Z:\Content\OperatingSystems\catalog.json")
+    $candidateCatalogs.Add("C:\DeploymentShare\Content\OperatingSystems\catalog.json")
+
+    foreach ($catPath in $candidateCatalogs) {
+        if ($catPath -and (Test-Path -LiteralPath $catPath -PathType Leaf)) {
+            try {
+                $catalogData = Get-Content -LiteralPath $catPath -Raw -ErrorAction Stop | ConvertFrom-Json
+                if ($catalogData -and $catalogData.operatingSystems) {
+                    return [PSCustomObject]@{
+                        CatalogPath      = $catPath
+                        OperatingSystems = $catalogData.operatingSystems
+                    }
+                }
+            } catch {}
+        }
+    }
+
+    # Fallback: Scan for individual os.json files under Content\OperatingSystems
+    $candidateOsFolders = [System.Collections.Generic.List[string]]::new()
+    if ($ShareRoot) {
+        $candidateOsFolders.Add((Join-Path $ShareRoot "Content\OperatingSystems"))
+    }
+    if ($BootObject -and $BootObject.PSObject.Properties['DriveLetter'] -and $BootObject.DriveLetter) {
+        $candidateOsFolders.Add("$($BootObject.DriveLetter.TrimEnd('\'))\Content\OperatingSystems")
+    }
+    $candidateOsFolders.Add((Join-Path $PSScriptRoot "Content\OperatingSystems"))
+    $candidateOsFolders.Add((Join-Path $PSScriptRoot "..\..\..\Content\OperatingSystems"))
+    $candidateOsFolders.Add("Z:\Content\OperatingSystems")
+    $candidateOsFolders.Add("C:\DeploymentShare\Content\OperatingSystems")
+
+    foreach ($osFolder in $candidateOsFolders) {
+        if ($osFolder -and (Test-Path -LiteralPath $osFolder)) {
+            $osFiles = Get-ChildItem -Path $osFolder -Recurse -Filter "os.json" -ErrorAction SilentlyContinue
+            if ($osFiles -and $osFiles.Count -gt 0) {
+                $discoveredList = [System.Collections.Generic.List[object]]::new()
+                foreach ($f in $osFiles) {
+                    try {
+                        $item = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
+                        if ($item) { $discoveredList.Add($item) }
+                    } catch {}
+                }
+                if ($discoveredList.Count -gt 0) {
+                    return [PSCustomObject]@{
+                        CatalogPath      = $osFolder
+                        OperatingSystems = $discoveredList
+                    }
+                }
+            }
+        }
+    }
+
+    return $null
+}
+
+function Populate-WorkflowTreeView {
+    param(
+        [System.Windows.Controls.TreeView]$TreeView,
+        [psobject]$CatalogResult,
+        [System.Windows.Window]$Window
+    )
+
+    $TreeView.Items.Clear()
+    $validOsFound = $false
+
+    if ($CatalogResult -and $CatalogResult.OperatingSystems -and $CatalogResult.OperatingSystems.Count -gt 0) {
+        foreach ($os in $CatalogResult.OperatingSystems) {
+            # Check if OS is explicitly disabled
+            if ($os.PSObject.Properties['enabled'] -and $os.enabled -eq $false) {
+                continue
+            }
+
+            $langTag = if ($os.defaultLanguage) { " [$($os.defaultLanguage)]" } else { "" }
+            $parentTitle = if ($os.fullName) { "$($os.fullName)$langTag" } elseif ($os.osName) { "$($os.osName)$langTag" } else { "Operating System" }
+
+            $parentItem = [System.Windows.Controls.TreeViewItem]::new()
+            $parentItem.Style = $Window.FindResource("HeaderNodeStyle")
+            $parentItem.Header = [PSCustomObject]@{
+                HeaderText = $parentTitle
+            }
+            $parentItem.IsExpanded = $true
+
+            $editions = if ($os.PSObject.Properties['editions'] -and $os.editions) {
+                @($os.editions | Where-Object { -not ($_.PSObject.Properties['enabled'] -and $_.enabled -eq $false) })
+            } else {
+                @()
+            }
+
+            if ($editions.Count -gt 0) {
+                foreach ($ed in $editions) {
+                    $childItem = [System.Windows.Controls.TreeViewItem]::new()
+                    $childItem.Style = $Window.FindResource("ChildNodeStyle")
+                    
+                    $edName = if ($ed.PSObject.Properties['editionName'] -and $ed.editionName) { 
+                        $ed.editionName 
+                    } elseif ($ed.PSObject.Properties['name'] -and $ed.name) { 
+                        $ed.name 
+                    } else { 
+                        $os.fullName 
+                    }
+
+                    $edIndex = if ($ed.PSObject.Properties['imageIndex'] -and $null -ne $ed.imageIndex) { 
+                        [int]$ed.imageIndex 
+                    } elseif ($ed.PSObject.Properties['index'] -and $null -ne $ed.index) { 
+                        [int]$ed.index 
+                    } else { 
+                        1 
+                    }
+
+                    $buildText = if ($os.buildVersion) { "Build $($os.buildVersion)" } elseif ($os.version) { "Version $($os.version)" } else { "Updated" }
+                    $childItem.Header = [PSCustomObject]@{
+                        Name     = $edName
+                        DateText = $buildText
+                    }
+
+                    $childItem.Tag = [PSCustomObject]@{
+                        OsId      = $os.osId
+                        EditionId = if ($ed.PSObject.Properties['editionId']) { $ed.editionId } else { $os.osId }
+                        Name      = $edName
+                        SkuCode   = if ($ed.PSObject.Properties['skuCode']) { $ed.skuCode } else { "" }
+                        Index     = $edIndex
+                        ImagePath = $os.imagePath
+                        SetupPath = $os.setupPath
+                        MediaRoot = $os.mediaRoot
+                        Arch      = $os.arch
+                        Language  = $os.defaultLanguage
+                    }
+
+                    $null = $parentItem.Items.Add($childItem)
+                    $validOsFound = $true
+                }
+            } else {
+                # Single standalone OS entry without multi-edition breakdown
+                $childItem = [System.Windows.Controls.TreeViewItem]::new()
+                $childItem.Style = $Window.FindResource("ChildNodeStyle")
+                $buildText = if ($os.buildVersion) { "Build $($os.buildVersion)" } elseif ($os.version) { "Version $($os.version)" } else { "Updated" }
+                $childItem.Header = [PSCustomObject]@{
+                    Name     = if ($os.fullName) { $os.fullName } else { $os.osName }
+                    DateText = $buildText
+                }
+                $childItem.Tag = [PSCustomObject]@{
+                    OsId      = $os.osId
+                    EditionId = $os.osId
+                    Name      = if ($os.fullName) { $os.fullName } else { $os.osName }
+                    SkuCode   = ""
+                    Index     = 1
+                    ImagePath = $os.imagePath
+                    SetupPath = $os.setupPath
+                    MediaRoot = $os.mediaRoot
+                    Arch      = $os.arch
+                    Language  = $os.defaultLanguage
+                }
+                $null = $parentItem.Items.Add($childItem)
+                $validOsFound = $true
+            }
+
+            if ($parentItem.Items.Count -gt 0) {
+                $null = $TreeView.Items.Add($parentItem)
+            }
+        }
+    }
+
+    if (-not $validOsFound) {
+        # Display clean "No Workflows Available" placeholder
+        $emptyNode = [System.Windows.Controls.TreeViewItem]::new()
+        $emptyNode.Style = $Window.FindResource("HeaderNodeStyle")
+        $emptyNode.Header = [PSCustomObject]@{
+            HeaderText = "No Workflows Available"
+        }
+        $emptyNode.IsExpanded = $true
+
+        $emptyChild = [System.Windows.Controls.TreeViewItem]::new()
+        $emptyChild.Style = $Window.FindResource("ChildNodeStyle")
+        $emptyChild.Header = [PSCustomObject]@{
+            Name     = "No Operating Systems found in 'Content\OperatingSystems\catalog.json'"
+            DateText = "Catalog Empty"
+        }
+        $emptyChild.Tag = $null
+
+        $null = $emptyNode.Items.Add($emptyChild)
+        $null = $TreeView.Items.Add($emptyNode)
+
+        if ($null -ne $txtWorkflowError) {
+            $txtWorkflowError.Text = "No operating system workflows are available in the deployment share."
+            $txtWorkflowError.Visibility = [System.Windows.Visibility]::Visible
+        }
+    } else {
+        # Select the first available child item by default
+        if ($TreeView.Items.Count -gt 0 -and $TreeView.Items[0].Items.Count -gt 0) {
+            $TreeView.Items[0].Items[0].IsSelected = $true
+        }
     }
 }
 
-# Bind OS Child Item Data
-if ($null -ne $window.FindName("itemStdEnt")) { $window.FindName("itemStdEnt").Header = New-OSItem -Name "Windows 11 Enterprise" -Date "2026-03-15" }
-if ($null -ne $window.FindName("itemStdPro")) { $window.FindName("itemStdPro").Header = New-OSItem -Name "Windows 11 Professional" -Date "2026-03-20" }
-if ($null -ne $window.FindName("itemApEnt"))  { $window.FindName("itemApEnt").Header  = New-OSItem -Name "Windows 11 Enterprise Autopilot" -Date "2026-04-01" }
-if ($null -ne $window.FindName("itemApPro"))  { $window.FindName("itemApPro").Header  = New-OSItem -Name "Windows 11 Professional Autopilot" -Date "2026-04-05" }
-
-# Prevent parent categories from being selected directly
+# Discover catalog and dynamically populate TreeView
+$script:DiscoveredCatalog = Get-LiteDeployOperatingSystemsCatalog
 if ($null -ne $treeView) {
+    Populate-WorkflowTreeView -TreeView $treeView -CatalogResult $script:DiscoveredCatalog -Window $window
+
+    # Auto-expand parent categories and prevent selecting empty parents
     $treeView.add_SelectedItemChanged({
         param($sender, $e)
         if ($treeView.SelectedItem -and $treeView.SelectedItem.HasItems) {
