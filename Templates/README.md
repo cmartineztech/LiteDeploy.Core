@@ -1,6 +1,6 @@
 # LiteDeploy Component Templates & Standardization
 
-This directory provides master blueprints, manifests, and inventory tooling for authoring, versioning, and managing **LiteDeploy** PowerShell components.
+This directory provides master blueprints and inventory tooling for authoring, versioning, and managing **LiteDeploy** PowerShell components with **100% embedded metadata**.
 
 ---
 
@@ -8,18 +8,19 @@ This directory provides master blueprints, manifests, and inventory tooling for 
 
 | File | Type | Purpose |
 | :--- | :--- | :--- |
-| **[`LiteDeploy.Component.Template.ps1`](LiteDeploy.Component.Template.ps1)** | PowerShell Template | Master script template implementing the LiteDeploy component contract, semantic versioning, strict-mode guards, and LogWriter integration. |
-| **[`LiteDeploy.Component.Manifest.json`](LiteDeploy.Component.Manifest.json)** | JSON Schema Template | Standard component descriptor containing metadata, dependencies, exported functions, and version information. |
-| **[`Get-LiteDeployComponentInventory.ps1`](Get-LiteDeployComponentInventory.ps1)** | PowerShell Utility | Automated scanner that discovers, queries, and reports version information for all repository components. |
+| **[`LiteDeploy.Component.Template.ps1`](LiteDeploy.Component.Template.ps1)** | PowerShell Template | Master single-file template implementing the LiteDeploy component contract, embedded metadata, semantic versioning, strict-mode guards, and LogWriter integration. |
+| **[`Get-LiteDeployComponentInventory.ps1`](Get-LiteDeployComponentInventory.ps1)** | PowerShell Utility | Automated scanner that queries embedded metadata and outputs a consolidated inventory of all repository components. |
 
 ---
 
-## 🏷️ Standard Component Specification
+## 🏷️ Embedded Metadata Specification
 
-Every LiteDeploy component script should follow these four standardized regions:
+Every LiteDeploy component is **100% self-contained** in a single `.ps1` file. There are no separate manifest sidecars to maintain.
+
+Components implement the following 4 standardized regions:
 
 ### Region 1: Metadata & Version Control
-Exposes a `Get-LiteDeployComponentMetadata` function and supports the `-Metadata` switch to allow fast version discovery without executing payload logic:
+Exposes `Get-LiteDeployComponentMetadata` and handles the `-Metadata` fast-exit parameter switch:
 
 ```powershell
 function Get-LiteDeployComponentMetadata {
@@ -55,7 +56,7 @@ Protects standalone execution with structured `try/catch` error capture while al
 
 ## 🔍 Scanning Component Inventory
 
-You can list all repository components and their detected versions by executing:
+You can discover and inspect all component versions across the entire repository with a single command:
 
 ```powershell
 .\Templates\Get-LiteDeployComponentInventory.ps1 | Format-Table -AutoSize
