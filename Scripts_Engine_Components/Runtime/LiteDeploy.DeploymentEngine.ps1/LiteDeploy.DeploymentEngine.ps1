@@ -107,82 +107,106 @@ function Resolve-RuntimeComponent {
         [string]$ScriptFileName
     )
 
-    $candidates = @(
-        # Same directory (Production share: Engine\Scripts\Runtime\)
-        (Join-Path $PSScriptRoot $ScriptFileName),
-        # Dev repository layout: ..\<ComponentName>\<ScriptFileName>
-        (Join-Path $PSScriptRoot "..\$ComponentName\$ScriptFileName")
-    )
+    $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
+    $candidates = [System.Collections.Generic.List[string]]::new()
 
+    # 1. Local relative / script directory
+    $candidates.Add((Join-Path $PSScriptRoot $ScriptFileName))
+    $candidates.Add((Join-Path $PSScriptRoot "Runtime\$ScriptFileName"))
+    $candidates.Add((Join-Path $PSScriptRoot "..\Runtime\$ScriptFileName"))
+
+    # 2. WinPE RAM root (~LiteDeploy\Engine\Scripts\...)
+    $candidates.Add((Join-Path $sysDrive "~LiteDeploy\Engine\Scripts\Runtime\$ScriptFileName"))
+    $candidates.Add((Join-Path $sysDrive "~LiteDeploy\Engine\Scripts\$ScriptFileName"))
+    $candidates.Add((Join-Path $sysDrive "Engine\Scripts\Runtime\$ScriptFileName"))
+    $candidates.Add((Join-Path $sysDrive "Engine\Scripts\$ScriptFileName"))
+
+    # 3. Active deployment share or offline media drive
     if ($BootObject -and $BootObject.PSObject.Properties['DriveLetter'] -and $BootObject.DriveLetter) {
         $dl = $BootObject.DriveLetter.TrimEnd('\')
-        $candidates += "$dl\Engine\Scripts\Runtime\$ScriptFileName"
-        $logWriterPath = Resolve-RuntimeComponent -ComponentName "LiteDeploy.LogWriter.ps1" -ScriptFileName "LiteDeploy.LogWriter.ps1"
-        if ($logWriterPath) {
-            try {
-                . $logWriterPath
-            }
-            catch {}
+        $candidates.Add("$dl\Engine\Scripts\Runtime\$ScriptFileName")
+        $candidates.Add("$dl\Engine\Scripts\$ScriptFileName")
+        $candidates.Add("$dl\~LiteDeploy\Engine\Scripts\Runtime\$ScriptFileName")
+        $candidates.Add("$dl\~LiteDeploy\Engine\Scripts\$ScriptFileName")
+    }
+
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c -PathType Leaf)) {
+            return (Resolve-Path -LiteralPath $c).Path
+        }
+    }
+
+    return $null
+}
+
+# Automatically import LogWriter engine
+$logWriterPath = Resolve-RuntimeComponent -ComponentName "LiteDeploy.LogWriter.ps1" -ScriptFileName "LiteDeploy.LogWriter.ps1"
+if ($logWriterPath) {
+    try {
+        . $logWriterPath
+    }
+    catch {}
+}
+
+# Automatically import HostShell console geometry and window manager
+$hostShellPath = Resolve-RuntimeComponent -ComponentName "LiteDeploy.HostShell.ps1" -ScriptFileName "LiteDeploy.HostShell.ps1"
+if ($hostShellPath) {
+    try {
+        . $hostShellPath
+    }
+    catch {}
+}
+
+# Fallback logger if LogWriter is not loaded
+if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) {
+    function Write-LiteDeployLog {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$Message,
+            [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "WARNING", "RETRY", "ERROR")]
+            [string]$Level = "INFO",
+            [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
+            [string]$Component = "DeploymentEngine",
+            [switch]$NoConsole
+        )
+        if ($Message -and -not $NoConsole) {
+            Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
         }
 
-        # Fallback logger if LogWriter is not loaded
-        if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) {
-            function Write-LiteDeployLog {
-                param(
-                    [Parameter(Mandatory = $true)]
-                    [string]$Message,
-                    [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "WARNING", "RETRY", "ERROR")]
-                    [string]$Level = "INFO",
-                    [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
-                    [string]$Component = "DeploymentEngine",
-                    [switch]$NoConsole
-                )
-                if ($Message -and -not $NoConsole) {
-                    Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
+        try {
+            $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
+            $logDir = Join-Path $sysDrive "~LiteDeploy\WorkLogs"
+            if (-not (Test-Path -LiteralPath $logDir)) {
+                $null = New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+            }
+            $logFile = Join-Path $logDir "LiteDeploy.Execution.log"
+            $cleanMsg = $Message.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($cleanMsg)) {
+                $now = Get-Date
+                $timeStr = $now.ToString("HH:mm:ss.fff") + "+000"
+                $dateStr = $now.ToString("MM-dd-yyyy")
+                $typeCode = switch ($Level.ToUpper()) {
+                    "ERROR" { "3" }
+                    "WARNING" { "2" }
+                    "RETRY" { "2" }
+                    default { "1" }
                 }
-                # Automatically import HostShell console geometry and window manager
-                $hostShellPath = Resolve-RuntimeComponent -ComponentName "LiteDeploy.HostShell.ps1" -ScriptFileName "LiteDeploy.HostShell.ps1"
-                if ($hostShellPath) {
-                    try {
-                        . $hostShellPath
-                    }
-                    catch {}
-                }
+                $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""1"" file=""LiteDeploy.DeploymentEngine.ps1"">"
+                Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
 
-                try {
-                    $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
-                    $logDir = Join-Path $sysDrive "~LiteDeploy\WorkLogs"
-                    if (-not (Test-Path -LiteralPath $logDir)) {
-                        $null = New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue
-                    }
-                    $logFile = Join-Path $logDir "LiteDeploy.Execution.log"
-                    $cleanMsg = $Message.Trim()
-                    if (-not [string]::IsNullOrWhiteSpace($cleanMsg)) {
-                        $now = Get-Date
-                        $timeStr = $now.ToString("HH:mm:ss.fff") + "+000"
-                        $dateStr = $now.ToString("MM-dd-yyyy")
-                        $typeCode = switch ($Level.ToUpper()) {
-                            "ERROR" { "3" }
-                            "WARNING" { "2" }
-                            "RETRY" { "2" }
-                            default { "1" }
-                        }
-                        $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""1"" file=""LiteDeploy.DeploymentEngine.ps1"">"
-                        Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
-
-                        # Dual-write to remote share log directory if active
-                        if (Test-Path "Variable:global:LiteDeployRemoteLogDir") {
-                            $rDir = $global:LiteDeployRemoteLogDir
-                            if ($rDir -and (Test-Path -LiteralPath $rDir -ErrorAction SilentlyContinue)) {
-                                $rFile = Join-Path $rDir "LiteDeploy.Execution.log"
-                                Add-Content -Path $rFile -Value $logEntry -ErrorAction SilentlyContinue
-                            }
-                        }
+                # Dual-write to remote share log directory if active
+                if (Test-Path "Variable:global:LiteDeployRemoteLogDir") {
+                    $rDir = $global:LiteDeployRemoteLogDir
+                    if ($rDir -and (Test-Path -LiteralPath $rDir -ErrorAction SilentlyContinue)) {
+                        $rFile = Join-Path $rDir "LiteDeploy.Execution.log"
+                        Add-Content -Path $rFile -Value $logEntry -ErrorAction SilentlyContinue
                     }
                 }
-                catch {}
             }
         }
+        catch {}
+    }
+}
 
 # ==============================================================================
 # 3. DEPLOYMENT UID & STATE MANAGEMENT
@@ -406,10 +430,16 @@ function Start-LiteDeployPipeline {
     }
     Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan
 
-            # --------------------------------------------------------------------------
-            # PHASE 1: PRE-CHECK (Hardware, Network, and Readiness Assessment)
-            # --------------------------------------------------------------------------
-            $preCheckPassed = $false
+    try {
+        # Hide/Minimize console window to focus UI dialogs
+        if (Get-Command Set-HostShellWindow -ErrorAction SilentlyContinue) {
+            try { Set-HostShellWindow -Action Minimize } catch {}
+        }
+
+        # --------------------------------------------------------------------------
+        # PHASE 1: PRE-CHECK (Hardware, Network, and Readiness Assessment)
+        # --------------------------------------------------------------------------
+        $preCheckPassed = $false
             $deployment.CurrentPhase = 1
 
             if ($SkipPreCheck) {
@@ -556,7 +586,6 @@ function Start-LiteDeployPipeline {
             }
         }
     }
-}
 
 # ==============================================================================
 # 5. ENTRY POINT EXECUTION
