@@ -99,15 +99,19 @@ if (Test-Path -LiteralPath $driverPathPickerScript) {
     . $driverPathPickerScript
 }
 
-# Resolve BootConfig.json in the same order as LiteDeploy.PreCheck.ps1.
+# Resolve BootConfig.json
 function Find-Configuration {
-    $paths = @(
-        (Join-Path $PSScriptRoot "..\01-Config\BootConfig.json"),
+    $candidates = @(
         (Join-Path $PSScriptRoot "Config\BootConfig.json"),
-        (Join-Path $PSScriptRoot "BootConfig.json")
+        (Join-Path $PSScriptRoot "BootConfig.json"),
+        "Z:\Config\BootConfig.json"
     )
+    if ($env:SystemDrive) {
+        $candidates += "$($env:SystemDrive)\~LiteDeploy\Config\BootConfig.json"
+        $candidates += "$($env:SystemDrive)\Config\BootConfig.json"
+    }
 
-    foreach ($path in $paths) {
+    foreach ($path in $candidates) {
         if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) {
             return (Resolve-Path -LiteralPath $path).Path
         }

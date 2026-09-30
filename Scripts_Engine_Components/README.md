@@ -16,6 +16,7 @@ These tools prepare and maintain the deployment environment before a client devi
 | :--- | :--- | :--- |
 | **SetConfig** | [`Admin/LiteDeploy.SetConfig.ps1`](Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` templates and active configurations for `BootWim`, `DeploymentShare`, and `Media` modes. |
 | **SetDeploymentShareAcl** | [`Admin/LiteDeploy.SetDeploymentShareAcl.ps1`](Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions local deployment share folder structures, SMB share permissions, and isolated NTFS write-only ACLs for deployment logs. |
+| **SyncComponents** | [`Admin/LiteDeploy.SyncComponents.ps1`](Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository scripts to production Deployment Shares, WinPE Builder staging directories, and Media roots. |
 | **ImportOSMedia** | [`Admin/LiteDeploy.ImportOSMedia.ps1`](Admin/LiteDeploy.ImportOSMedia.ps1) | High-performance CLI and WPF tool for ingesting Windows ISOs/WIMs, resolving DISM edition metadata, and publishing `catalog.json`. |
 | **Credentials** | [`Admin/LiteDeploy.Credentials.ps1`](Admin/LiteDeploy.Credentials.ps1) | Integration architecture and technical guides for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot credential transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). |
 
@@ -31,9 +32,8 @@ These engines execute inside Windows PE on the target device:
 | **HostShell** | [`Runtime/LiteDeploy.HostShell.ps1`](Runtime/LiteDeploy.HostShell.ps1) | Manages classic WinPE console window geometry, positioning, border styles, color palettes, and shell presets. |
 | **BootInitializer** | [`Runtime/LiteDeploy.BootInitilizer.ps1`](Runtime/LiteDeploy.BootInitilizer.ps1) | WinPE entry point started by `startnet.cmd`. Discovers `BootConfig.json`, tests network connectivity, authenticates and maps `Z:\`, and launches PreCheck. |
 | **PreCheck** | [`Runtime/LiteDeploy.PreCheck.ps1`](Runtime/LiteDeploy.PreCheck.ps1) | 9-point hardware, firmware (UEFI/Secure Boot CA), TPM, RAM, disk, and network readiness assessment WPF wizard. |
-| **SelectWorkflow** | [`Runtime/LiteDeploy.SelectWorkFlow.ps1`](Runtime/LiteDeploy.SelectWorkFlow.ps1) | Technician wizard for computer identity, workflow selection, target disk verification, and automated/manual driver injection. |
+| **DeploymentEngine** | [`Runtime/LiteDeploy.DeploymentEngine.ps1`](Runtime/LiteDeploy.DeploymentEngine.ps1) | Pipeline orchestrator. Sequences PreCheck, SelectWorkflow, and deployment execution in WinPE. |
 | **Progress** | [`Runtime/LiteDeployProgress.ps1`](Runtime/LiteDeployProgress.ps1) | Zero-dependency WPF progress dashboard that renders real-time state from `DeploymentState.json` in both WinPE and FullOS phases. |
-| **DeploymentEngine** | *(Planned Orchestrator)* | Will coordinate Windows Setup `/NoReboot`, offline staging, handoff verification, and post-reboot FullOS execution. |
 
 ---
 
@@ -50,6 +50,7 @@ DeploymentShare\Engine\Scripts\
 │   └── LiteDeploy.SetDeploymentShareAcl.ps1
 └── Runtime\
     ├── LiteDeploy.BootInitilizer.ps1
+    ├── LiteDeploy.DeploymentEngine.ps1
     ├── LiteDeploy.HostShell.ps1
     ├── LiteDeploy.LogWriter.ps1
     ├── LiteDeploy.PreCheck.ps1

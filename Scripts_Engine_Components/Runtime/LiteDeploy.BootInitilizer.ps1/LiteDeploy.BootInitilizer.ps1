@@ -5,10 +5,28 @@
 .DESCRIPTION
     Discovers BootConfig.json using a 3-priority hierarchy, performs network pre-validations,
     prompts for user credentials via native Get-Credential, maps deployment share Z:\ persistently,
-    and resolves the target engine pre-check script path.
+    and launches LiteDeploy.DeploymentEngine.ps1.
+
+.PARAMETER ExplicitConfigPath
+    Optional explicit path to BootConfig.json file to bypass automatic discovery.
+
+.PARAMETER MountShare
+    Switch to force mounting of the network deployment share specified in BootConfig.json.
+
+.PARAMETER ShowGuiError
+    Switch to display graphical Windows Forms message boxes on errors.
+
+.PARAMETER Metadata
+    Outputs the standardized component metadata PSCustomObject and exits immediately.
+
+.EXAMPLE
+    .\LiteDeploy.BootInitilizer.ps1 -MountShare -ShowGuiError
 
 .NOTES
-    Compatible with Set-StrictMode 2.0 and WinPE 5.1/10/11.
+    LiteDeploy Core Component Standard v1.0
+    Target Environment: WinPE
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
 #>
 
 [CmdletBinding()]
@@ -26,34 +44,40 @@ param(
     [switch]$Metadata
 )
 
+# Enforce strict execution discipline across WinPE runtime
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
 # ==============================================================================
-# COMPONENT METADATA
+# 1. COMPONENT METADATA & VERSION CONTROL
 # ==============================================================================
 
 function Get-LiteDeployComponentMetadata {
+    <#
+    .SYNOPSIS
+        Returns standardized component metadata for inventory discovery and version management.
+    #>
     return [PSCustomObject]@{
         ComponentId          = "BootInitializer"
-        Name                 = "LiteDeploy WinPE Boot Initializer"
+        Name                 = "LiteDeploy Boot Initializer"
         Version              = "1.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("LogWriter", "HostShell")
-        Description          = "WinPE parent shell: discovers BootConfig.json, validates network, mounts Z:\, and launches PreCheck."
+        Dependencies         = @("LogWriter")
+        Description          = "WinPE parent shell: discovers BootConfig.json, validates network, mounts Z:\, and launches DeploymentEngine."
     }
 }
 
+# Fast-exit for automated inventory scanners or version queries
 if ($Metadata) {
     Get-LiteDeployComponentMetadata
     return
 }
 
 # ==============================================================================
-# 1. HELPERS & GUI DIALOGS
+# 2. HELPERS & GUI DIALOGS
 # ==============================================================================
 
 function Write-LiteDeployLog {
@@ -61,7 +85,7 @@ function Write-LiteDeployLog {
         [string]$Message,
         [string]$Level = "INFO",
         [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
-        [string]$Component = "BootInitilizer",
+        [string]$Component = "BootInitializer",
         [switch]$NoConsole
     )
     if ($Message -and -not $NoConsole) {
@@ -139,11 +163,12 @@ function Resolve-LiteDeployEnginePath {
     param([string]$RootPath)
     if ([string]::IsNullOrWhiteSpace($RootPath)) { return "" }
     $resolved = Resolve-Path -Path @(
-        "$RootPath\Engine\Scripts\LiteDeploy.PreCheck.ps1",
-        "$RootPath\*\Engine\Scripts\LiteDeploy.PreCheck.ps1"
+        (Join-Path $PSScriptRoot "LiteDeploy.DeploymentEngine.ps1"),
+        "$RootPath\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1",
+        "$RootPath\*\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1"
     ) -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($resolved) { return $resolved.Path }
-    return (Join-Path $RootPath "Engine\Scripts\LiteDeploy.PreCheck.ps1")
+    return (Join-Path $RootPath "Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1")
 }
 
 function Get-LiteDeployRuntimeConfig {
@@ -166,8 +191,10 @@ function Get-LiteDeployRuntimeConfig {
         if (-not $resolved -or -not (Test-Path -LiteralPath $resolved.Path -PathType Leaf)) { continue }
 
         try {
-            $runtimeConfig = Get-Content -LiteralPath $resolved.Path -Raw -ErrorAction Stop |
-                ConvertFrom-Json -ErrorAction Stop
+            $rawContent = Get-Content -LiteralPath $resolved.Path -Raw -ErrorAction Stop
+            $cleanContent = $rawContent -replace '^\xEF\xBB\xBF', ''
+            $runtimeConfig = $cleanContent | ConvertFrom-Json -ErrorAction Stop
+
             return [PSCustomObject]@{
                 Path   = $resolved.Path
                 Config = $runtimeConfig
@@ -211,7 +238,7 @@ if ($isWinPE) {
 }
 
 # ==============================================================================
-# 2. NETWORK VALIDATIONS
+# 3. NETWORK VALIDATIONS
 # ==============================================================================
 
 function Test-LiteDeployNetworkHardware {
@@ -275,80 +302,89 @@ function Test-LiteDeployIPAddress {
         $lastReport = -1
 
         while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-            try {
-                $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
-                Where-Object { $_.NetworkInterfaceType -ne 'Loopback' -and $_.OperationalStatus -eq 'Up' }
+            $remaining = [math]::Max(0, [int]($TimeoutSeconds - $timer.Elapsed.TotalSeconds))
+            if ($remaining -ne $lastReport -and ($remaining % 5 -eq 0 -or $remaining -le 5)) {
+                $lastReport = $remaining
+                Write-Host -NoNewline "`r [DHCP]    Waiting for IP address configuration ($($remaining)s remaining)...   "
+            }
 
-                foreach ($nic in $nics) {
-                    foreach ($addr in $nic.GetIPProperties().UnicastAddresses) {
-                        $family = $addr.Address.AddressFamily
-                        $ipStr = $addr.Address.IPAddressToString
-                        if ($family -eq 'InterNetwork' -and $ipStr -notlike "169.254.*" -and $ipStr -ne "127.0.0.1") {
-                            if ([string]::IsNullOrWhiteSpace($ipv4Address)) { $ipv4Address = $ipStr }
+            if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
+                $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+                Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }
+                if ($ips) {
+                    $ipv4Address = ($ips | Select-Object -First 1).IPAddress
+                    $ipAddress = $ipv4Address
+                    break
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($ipAddress)) {
+                try {
+                    $allNics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | 
+                    Where-Object { $_.OperationalStatus -eq 'Up' -and $_.NetworkInterfaceType -ne 'Loopback' }
+                    foreach ($adapter in $allNics) {
+                        $prop = $adapter.GetIPProperties()
+                        foreach ($uni in $prop.UnicastAddresses) {
+                            $addrStr = $uni.Address.ToString()
+                            if ($uni.Address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and $addrStr -notlike "127.*" -and $addrStr -notlike "169.254.*") {
+                                $ipv4Address = $addrStr
+                                $ipAddress = $addrStr
+                                break
+                            }
                         }
-                        elseif ($family -eq 'InterNetworkV6' -and $ipStr -ne "::1" -and $ipStr -notlike "fe80:*") {
-                            if ([string]::IsNullOrWhiteSpace($ipv6Address)) { $ipv6Address = $ipStr }
-                        }
+                        if ($ipAddress) { break }
                     }
                 }
-                $ipAddress = if ($ipv4Address) { $ipv4Address } else { $ipv6Address }
+                catch {}
             }
-            catch {}
+
             if ($ipAddress) { break }
-
-            $elapsedSec = [math]::Floor($timer.Elapsed.TotalSeconds)
-            if ($elapsedSec -gt $lastReport -and $elapsedSec % 3 -eq 0 -and $elapsedSec -gt 0) {
-                Write-Host "           Waiting for DHCP IP assignment ($($elapsedSec)s / $($TimeoutSeconds)s)..." -ForegroundColor DarkGray
-                $lastReport = $elapsedSec
-            }
-
-            Start-Sleep -Milliseconds 250
+            Start-Sleep -Milliseconds 1000
         }
-        return [PSCustomObject]@{ IPAddress = $ipAddress; IPv4Address = $ipv4Address; IPv6Address = $ipv6Address; HasValidIP = [bool]$ipAddress }
+        Write-Host "`r" + (" " * 80) + "`r" -NoNewline
+
+        return [PSCustomObject]@{
+            IPAddress   = $ipAddress
+            IPv4Address = $ipv4Address
+            IPv6Address = $ipv6Address
+        }
     }
     catch {
-        return [PSCustomObject]@{ IPAddress = ""; IPv4Address = ""; IPv6Address = ""; HasValidIP = $false }
+        return [PSCustomObject]@{ IPAddress = ""; IPv4Address = ""; IPv6Address = "" }
     }
 }
 
 function Test-LiteDeployDeploymentShare {
-    param([string]$SharePath, [int]$TimeoutMs = 5000)
-    try {
-        if ([string]::IsNullOrWhiteSpace($SharePath)) { return [PSCustomObject]@{ Reachable = $false; Server = "" } }
-        $cleanPath = Format-LiteDeployUncPath -Path $SharePath
-        $server = $cleanPath.TrimStart('\').Split('\')[0]
-        if ([string]::IsNullOrWhiteSpace($server)) { return [PSCustomObject]@{ Reachable = $false; Server = "" } }
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SharePath,
+        [int]$TimeoutMs = 5000
+    )
+    $cleanPath = Format-LiteDeployUncPath -Path $SharePath
+    $server = ($cleanPath.TrimStart('\')).Split('\')[0]
+    $reachable = $false
 
-        $smbOK = $false
-        $tcp = New-Object System.Net.Sockets.TcpClient
+    if (-not [string]::IsNullOrWhiteSpace($server)) {
         try {
-            $connect = $tcp.BeginConnect($server, 445, $null, $null)
-            if ($connect.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
-                $tcp.EndConnect($connect)
-                $smbOK = $true
+            $tcp = [System.Net.Sockets.TcpClient]::new()
+            $connectTask = $tcp.ConnectAsync($server, 445)
+            $completed = $connectTask.Wait($TimeoutMs)
+            if ($completed -and $tcp.Connected) {
+                $reachable = $true
             }
-            else { $tcp.Close() }
+            $tcp.Close()
+            $tcp.Dispose()
         }
-        catch {} finally { $tcp.Dispose() }
-
-        # Secondary fallback: If socket check timed out during WinPE DNS lookup, test UNC path directly
-        if (-not $smbOK) {
-            try {
-                if (Test-Path -Path $cleanPath -ErrorAction SilentlyContinue) {
-                    $smbOK = $true
-                }
-            }
-            catch {}
+        catch {
+            $reachable = $false
         }
-
-        return [PSCustomObject]@{ Reachable = $smbOK; Server = $server }
     }
-    catch { return [PSCustomObject]@{ Reachable = $false; Server = "" } }
-}
 
-# ==============================================================================
-# 3. SHARE MOUNTING
-# ==============================================================================
+    return [PSCustomObject]@{
+        Server    = $server
+        Reachable = $reachable
+    }
+}
 
 function Connect-LiteDeployDeploymentShare {
     param(
@@ -358,24 +394,28 @@ function Connect-LiteDeployDeploymentShare {
         [switch]$ShowGuiError
     )
 
+    $cleanDrive = $DriveLetter.TrimEnd('\')
+    $driveName = $cleanDrive.TrimEnd(':')
     $isWinPE = Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT" -ErrorAction SilentlyContinue
-    $driveName = $DriveLetter.TrimEnd(':', '\')
-    $cleanDrive = "$($driveName):"
 
-    # Purge stale net use mappings or orphaned sessions prior to drive verification
+    # Clean existing mapping to prevent stale credential locks
     if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
-        # Test if the existing drive connection is actually responsive
-        $driveResponsive = Test-Path -Path "$($cleanDrive)\" -ErrorAction SilentlyContinue
-        if (-not $driveResponsive) {
-            Write-Warning "Stale or unmapped drive detected on $($cleanDrive). Purging existing SMB session..."
-            try {
-                if (Get-Command Remove-SmbMapping -ErrorAction SilentlyContinue) {
-                    Remove-SmbMapping -LocalPath $cleanDrive -Force -UpdateProfile -ErrorAction SilentlyContinue | Out-Null
-                }
+        try {
+            if (Get-Command Remove-SmbMapping -ErrorAction SilentlyContinue) {
+                Remove-SmbMapping -LocalPath $cleanDrive -Force -UpdateProfile -ErrorAction SilentlyContinue | Out-Null
             }
-            catch {}
-            Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue | Out-Null
         }
+        catch {}
+        try {
+            [void](net.exe use "$($cleanDrive)" /delete /y 2>$null)
+        }
+        catch {}
+        try {
+            $wsh = New-Object -ComObject WScript.Network
+            $wsh.RemoveNetworkDrive($cleanDrive, $true, $true)
+        }
+        catch {}
+        Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue | Out-Null
     }
 
     # Fast-Path: Check if drive Z:\ is already connected
@@ -544,13 +584,13 @@ function Get-LiteDeployBootConfig {
     if (-not $configFound) {
         Write-LiteDeployLog " [WARNING] BootConfig.json file was not found." -Level "WARNING" -ForegroundColor Yellow
         if ($isWinPE -or $ShowGuiError) {
-            Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\), external media, or script path.`n`Please rebuild the boot image." -Title "LiteDeploy - Config Missing"
+            Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\), external media, or script path.`n`nPlease rebuild the boot image." -Title "LiteDeploy - Config Missing"
         }
     }
 
     # Resolution & Validations
-    $netAdapterFound = $true; $netAdapterName = ""; $ipAddress = ""; $ipv4Address = ""; $ipv6Address = ""
-    $serverReachable = $true; $serverName = ""; $shareMounted = $false; $mountedDrive = ""; $mediaDriveLetter = ""; $engineScriptPath = ""; $userCred = $null
+    $netAdapterFound = $false; $netAdapterName = ""; $isLinkConnected = $false; $ipAddress = ""; $ipv4Address = ""; $ipv6Address = ""
+    $serverReachable = $false; $serverName = ""; $shareMounted = $false; $mountedDrive = ""; $mediaDriveLetter = ""; $engineScriptPath = ""; $userCred = $null
 
     if ($deploymentType -eq "Media") {
         if ($FoundConfigPath) {
@@ -566,7 +606,7 @@ function Get-LiteDeployBootConfig {
             $serverReachable = $false
             Write-LiteDeployLog " [WARNING] Misconfigured Network Deployment: NetworkPath is missing in BootConfig.json." -Level "WARNING" -ForegroundColor Yellow
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "NetworkPath is missing in BootConfig.json.`n`Please update BootConfig.json with a valid network share path." -Title "LiteDeploy - Misconfigured NetworkPath"
+                Show-LiteDeployGuiError -Message "NetworkPath is missing in BootConfig.json.`n`nPlease update BootConfig.json with a valid network share path." -Title "LiteDeploy - Misconfigured NetworkPath"
             }
         }
         else {
@@ -574,25 +614,51 @@ function Get-LiteDeployBootConfig {
             if ($networkPath) {
                 Write-LiteDeployLog " [INFO]    Deployment Mode: Network (Share: $($networkPath))." -Level "INFO" -ForegroundColor DarkCyan
             }
-            $netAdapterFound = $false
-            $netAdapterName = ""
-            $isLinkConnected = $false
 
-            # Step 1: Check NIC Hardware & Driver
+            # Step 1: Check Local Network Adapter
             Write-Host ""
-            Write-LiteDeployLog " [CHECK]   Scanning Network Adapters..." -Level "INFO" -ForegroundColor Cyan
+            Write-LiteDeployLog " [CHECK]   Scanning for Network Hardware Adapters..." -Level "INFO" -ForegroundColor Cyan
+            $netHw = Test-LiteDeployNetworkHardware
+            $netAdapterFound = $netHw.AdapterFound
+            $netAdapterName = $netHw.AdapterName
+            $isLinkConnected = $netHw.IsLinkConnected
+
             while (-not $netAdapterFound) {
+                Write-LiteDeployLog " [WARNING] No Network Adapter Detected in WinPE!" -Level "WARNING" -ForegroundColor Yellow
+                $shouldRetry = $true
+                if ($isWinPE -or $ShowGuiError) {
+                    $msg = "No Network Hardware Detected: WinPE could not detect any network adapter.`n`nPlease ensure network drivers are injected into the boot image, or connect an external adapter.`n`nWould you like to scan again?"
+                    $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Hardware Missing" -IsRetryDialog $true
+                }
+                else {
+                    $shouldRetry = $false
+                }
+                if (-not $shouldRetry) { break }
+
+                if ($isWinPE) {
+                    try { wpeutil.exe InitializeNetwork 2>$null } catch {}
+                }
+                try { [System.Console]::Out.Flush() } catch {}
+                Write-LiteDeployLog " [RETRY]   Re-scanning network hardware adapters..." -Level "RETRY" -ForegroundColor DarkYellow
+                
                 $netHw = Test-LiteDeployNetworkHardware
                 $netAdapterFound = $netHw.AdapterFound
                 $netAdapterName = $netHw.AdapterName
                 $isLinkConnected = $netHw.IsLinkConnected
+            }
 
-                if (-not $netAdapterFound) {
-                    Write-LiteDeployLog " [ERROR]   Network Card Not Detected! (Driver missing)" -Level "ERROR" -ForegroundColor Red
+            if ($netAdapterFound) {
+                Write-LiteDeployLog " [SUCCESS] Adapter Found: '$($netAdapterName)'." -Level "SUCCESS" -ForegroundColor Green
+
+                # Step 2: Check Physical Link / Cable Connection
+                Write-Host ""
+                Write-LiteDeployLog " [CHECK]   Verifying Network Link Connection..." -Level "INFO" -ForegroundColor Cyan
+                while (-not $isLinkConnected) {
+                    Write-LiteDeployLog " [WARNING] Network Cable Disconnected on '$($netAdapterName)'!" -Level "WARNING" -ForegroundColor Yellow
                     $shouldRetry = $true
                     if ($isWinPE -or $ShowGuiError) {
-                        $msg = "Network Card Not Detected: No active network adapter found.`n`Please load the required network card driver.`n`nWould you like to try scanning again?"
-                        $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Driver Missing" -IsRetryDialog $true
+                        $msg = "Network Cable Disconnected: Adapter '$($netAdapterName)' is detected, but no network link/cable is connected.`n`nPlease connect an Ethernet cable to the network port.`n`nWould you like to check again?"
+                        $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Cable Disconnected" -IsRetryDialog $true
                     }
                     else {
                         $shouldRetry = $false
@@ -603,43 +669,15 @@ function Get-LiteDeployBootConfig {
                         try { wpeutil.exe InitializeNetwork 2>$null } catch {}
                     }
                     try { [System.Console]::Out.Flush() } catch {}
-                    Write-LiteDeployLog " [RETRY]   Re-scanning network hardware adapters..." -Level "RETRY" -ForegroundColor DarkYellow
-                }
-                else {
-                    Write-LiteDeployLog " [SUCCESS] Adapter Found: '$($netAdapterName)'." -Level "SUCCESS" -ForegroundColor Green
-                }
-            }
+                    Write-LiteDeployLog " [RETRY]   Re-checking network cable connection on '$($netAdapterName)'..." -Level "RETRY" -ForegroundColor DarkYellow
 
-            # Step 2: Check Physical Link / Cable Connection
-            if ($netAdapterFound) {
-                Write-Host ""
-                Write-LiteDeployLog " [CHECK]   Verifying Network Link Connection..." -Level "INFO" -ForegroundColor Cyan
-                while (-not $isLinkConnected) {
                     $netHw = Test-LiteDeployNetworkHardware
                     $isLinkConnected = $netHw.IsLinkConnected
                     if ($netHw.AdapterName) { $netAdapterName = $netHw.AdapterName }
+                }
 
-                    if (-not $isLinkConnected) {
-                        Write-LiteDeployLog " [WARNING] Network Cable Disconnected on '$($netAdapterName)'!" -Level "WARNING" -ForegroundColor Yellow
-                        $shouldRetry = $true
-                        if ($isWinPE -or $ShowGuiError) {
-                            $msg = "Network Cable Disconnected: Adapter '$($netAdapterName)' is detected, but no network link/cable is connected.`n`Please connect an Ethernet cable to the network port.`n`nWould you like to check again?"
-                            $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Cable Disconnected" -IsRetryDialog $true
-                        }
-                        else {
-                            $shouldRetry = $false
-                        }
-                        if (-not $shouldRetry) { break }
-
-                        if ($isWinPE) {
-                            try { wpeutil.exe InitializeNetwork 2>$null } catch {}
-                        }
-                        try { [System.Console]::Out.Flush() } catch {}
-                        Write-LiteDeployLog " [RETRY]   Re-checking network cable connection on '$($netAdapterName)'..." -Level "RETRY" -ForegroundColor DarkYellow
-                    }
-                    else {
-                        Write-LiteDeployLog " [SUCCESS] Network Link Active (Cable Connected)." -Level "SUCCESS" -ForegroundColor Green
-                    }
+                if ($isLinkConnected) {
+                    Write-LiteDeployLog " [SUCCESS] Network Link Active (Cable Connected)." -Level "SUCCESS" -ForegroundColor Green
                 }
             }
 
@@ -660,7 +698,7 @@ function Get-LiteDeployBootConfig {
                         Write-LiteDeployLog " [WARNING] Could not obtain IP Address (30s DHCP Timeout) on '$($netAdapterName)'!" -Level "WARNING" -ForegroundColor Yellow
                         $shouldRetry = $true
                         if ($isWinPE -or $ShowGuiError) {
-                            $msg = "No IP Address Assigned: Network adapter '$($netAdapterName)' is connected, but could not obtain an IPv4/IPv6 address after 30 seconds.`n`Please check your DHCP server or network connection.`n`nWould you like to try obtaining an IP address again?"
+                            $msg = "No IP Address Assigned: Network adapter '$($netAdapterName)' is connected, but could not obtain an IPv4/IPv6 address after 30 seconds.`n`nPlease check your DHCP server or network connection.`n`nWould you like to try obtaining an IP address again?"
                             $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - IP Address Assignment Failed" -IsRetryDialog $true
                         }
                         else {
@@ -701,7 +739,7 @@ function Get-LiteDeployBootConfig {
                         Write-LiteDeployLog " [ERROR]   Server '$($serverName)' is Unreachable on SMB Port 445!" -Level "ERROR" -ForegroundColor Red
                         $shouldRetry = $true
                         if ($isWinPE -or $ShowGuiError) {
-                            $msg = "Deployment Server '$($serverName)' (from NetworkPath: $($networkPath)) could not be reached on SMB Port 445.`n`Please ensure the deployment server is online, SMB sharing is enabled, and firewall allows port 445.`n`nWould you like to try connecting again?"
+                            $msg = "Deployment Server '$($serverName)' (from NetworkPath: $($networkPath)) could not be reached on SMB Port 445.`n`nPlease ensure the deployment server is online, SMB sharing is enabled, and firewall allows port 445.`n`nWould you like to try connecting again?"
                             $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Server Unreachable" -IsRetryDialog $true
                         }
                         else {
@@ -743,7 +781,7 @@ function Get-LiteDeployBootConfig {
 
                             if ($cfg.PSObject.Properties['Metadata'] -and $cfg.Metadata) {
                                 if ($cfg.Metadata.PSObject.Properties['Name'] -and $cfg.Metadata.Name) { $appName = $cfg.Metadata.Name }
-                                if ($cfg.Metadata.PSObject.Properties['Environment'] -and $cfg.Metadata.Environment) { $envName = $cfg.Metadata.Environment }
+                                if ($cfg.Metadata.Environment) { $envName = $cfg.Metadata.Environment }
                                 if ($cfg.Metadata.PSObject.Properties['Version'] -and $cfg.Metadata.Version) { $appVersion = $cfg.Metadata.Version }
                             }
                             if ($cfg.PSObject.Properties['Deployment'] -and $cfg.Deployment -and
@@ -802,35 +840,13 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     if ($isMounted -or $isMedia) {
         $enginePath = if ($bootObj -and $bootObj.PSObject.Properties['EngineScriptPath']) { $bootObj.EngineScriptPath } else { "" }
+        if (-not $enginePath -or -not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
+            $driveLetter = if ($bootObj.PSObject.Properties['DriveLetter'] -and $bootObj.DriveLetter) { $bootObj.DriveLetter } else { "Z:" }
+            $enginePath = Resolve-LiteDeployEnginePath -RootPath $driveLetter
+        }
+
         if ($enginePath -and (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-            Write-LiteDeployLog "Connection successful. Launching engine script: $($enginePath)..." -Level "INFO" -ForegroundColor Cyan
-            
-            # Check for HostShell script via EngineScriptPath folder or root DriveLetter, consume if present, and minimize console shell
-            $engineFolder = Split-Path -Parent $enginePath
-            $driveLetter = if ($bootObj.PSObject.Properties['DriveLetter']) { $bootObj.DriveLetter } else { "" }
-            $hostShellResolved = Resolve-Path -Path @(
-                "$engineFolder\LiteDeploy.HostShell.ps1",
-                "$driveLetter\Engine\Scripts\LiteDeploy.HostShell.ps1",
-                "$driveLetter\*\Engine\Scripts\LiteDeploy.HostShell.ps1"
-            ) -ErrorAction SilentlyContinue | Select-Object -First 1
-            $hostShellPath = if ($hostShellResolved) { $hostShellResolved.Path } else { $null }
-
-            if ($hostShellPath) {
-                try {
-                    . $hostShellPath
-                    if (Get-Command Set-HostShellWindow -ErrorAction SilentlyContinue) {
-                        Set-HostShellWindow -Action Minimize
-                    }
-                    Write-LiteDeployLog "HostShell script '$($hostShellPath)' loaded successfully." -Level "INFO" -NoConsole
-                }
-                catch {
-                    Write-LiteDeployLog "Failed to load HostShell script '$($hostShellPath)': $_" -Level "WARNING" -NoConsole
-                }
-            }
-            else {
-                Write-LiteDeployLog "HostShell script 'LiteDeploy.HostShell.ps1' not found. Continuing without window minimization." -Level "INFO" -NoConsole
-            }
-
+            Write-LiteDeployLog "Connection successful. Launching DeploymentEngine: $($enginePath)..." -Level "INFO" -ForegroundColor Cyan
             try {
                 $null = & $enginePath -BootObject $bootObj
             }
@@ -841,17 +857,13 @@ if ($MyInvocation.InvocationName -ne '.') {
                     Show-LiteDeployGuiError -Message "Engine Script Execution Failed: $($enginePath) encountered an unhandled error:`n`n$_" -Title "LiteDeploy - Execution Error"
                 }
             }
-
-            if (Get-Command Set-HostShellWindow -ErrorAction SilentlyContinue) {
-                try { Set-HostShellWindow -Action Restore } catch {}
-            }
         }
         else {
-            $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\LiteDeploy.PreCheck.ps1" }
-            Write-LiteDeployLog " [ERROR] Engine script not found: 'LiteDeploy.PreCheck.ps1' is missing at '$($targetPath)'." -Level "ERROR" -ForegroundColor Red
-            Write-Warning "Engine script missing: Unable to locate LiteDeploy.PreCheck.ps1 at '$($targetPath)'."
+            $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1" }
+            Write-LiteDeployLog " [ERROR] DeploymentEngine script not found: 'LiteDeploy.DeploymentEngine.ps1' is missing at '$($targetPath)'." -Level "ERROR" -ForegroundColor Red
+            Write-Warning "DeploymentEngine script missing: Unable to locate LiteDeploy.DeploymentEngine.ps1 at '$($targetPath)'."
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "Engine Script Missing: LiteDeploy.PreCheck.ps1 was not found on deployment share/media.`n`Target Path: $($targetPath)`n`Please ensure the engine script exists on the deployment share." -Title "LiteDeploy - Script Missing"
+                Show-LiteDeployGuiError -Message "DeploymentEngine Script Missing: LiteDeploy.DeploymentEngine.ps1 was not found on deployment share/media.`n`nTarget Path: $($targetPath)`n`nPlease ensure the engine script exists on the deployment share." -Title "LiteDeploy - Script Missing"
             }
             Write-Host ""
             Write-Host " [NOTICE]  Deployment initialization paused." -ForegroundColor Yellow

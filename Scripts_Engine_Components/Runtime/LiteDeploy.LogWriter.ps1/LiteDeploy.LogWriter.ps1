@@ -186,6 +186,24 @@ function Write-LiteDeployLog {
             }
             $jsonEntry = $jsonRecord | ConvertTo-Json -Compress
             Add-Content -Path $targetJsonFile -Value $jsonEntry -ErrorAction SilentlyContinue
+
+            # 3. Live Mirroring to Remote Deployment Share / Media Log Directory (if initialized)
+            $remoteLogDir = ""
+            if (Test-Path "Variable:global:LiteDeployRemoteLogDir") {
+                $remoteLogDir = $global:LiteDeployRemoteLogDir
+            }
+            elseif (Test-Path "Variable:global:LiteDeployDeployment") {
+                if ($global:LiteDeployDeployment -and $global:LiteDeployDeployment.PSObject.Properties['LogLocations'] -and $global:LiteDeployDeployment.LogLocations.RemoteLogDir) {
+                    $remoteLogDir = $global:LiteDeployDeployment.LogLocations.RemoteLogDir
+                }
+            }
+
+            if ($remoteLogDir -and (Test-Path -LiteralPath $remoteLogDir -ErrorAction SilentlyContinue)) {
+                $remoteLogFile = Join-Path $remoteLogDir $LogFileName
+                Add-Content -Path $remoteLogFile -Value $logEntry -ErrorAction SilentlyContinue
+                $remoteJsonFile = Join-Path $remoteLogDir $jsonFileName
+                Add-Content -Path $remoteJsonFile -Value $jsonEntry -ErrorAction SilentlyContinue
+            }
         }
     }
     catch {}

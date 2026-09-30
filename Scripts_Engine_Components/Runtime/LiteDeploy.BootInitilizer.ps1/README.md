@@ -81,11 +81,11 @@ flowchart TD
     end
 
     SetMediaEngine --> Handoff["Return Result PSCustomObject (Includes Strict-Mode Guards)"]
-    MountSuccess --> SetNetEngine["Set EngineScriptPath = Z:/Engine/Scripts/LiteDeploy.PreCheck.ps1"]
+    MountSuccess --> SetNetEngine["Set EngineScriptPath = Z:/Engine/Scripts/LiteDeploy.DeploymentEngine.ps1"]
     SetNetEngine --> Handoff
     Handoff --> LaunchEngine{"Standalone Launcher Run?"}
     LaunchEngine -- "Yes" --> HostShellCheck["Discover LiteDeploy.HostShell.ps1 & Set-HostShellWindow -Action Minimize"]
-    HostShellCheck --> ExecScript["Execute Engine Pre-Check (& $res.EngineScriptPath -BootObject $res)"]
+    HostShellCheck --> ExecScript["Execute Deployment Engine (& $res.EngineScriptPath -BootObject $res)"]
 ```
 
 ---

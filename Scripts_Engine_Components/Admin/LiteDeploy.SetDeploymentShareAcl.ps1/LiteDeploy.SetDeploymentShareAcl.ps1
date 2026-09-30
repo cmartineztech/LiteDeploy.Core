@@ -66,16 +66,35 @@ if ($Metadata) {
 function New-LiteDeployFolderStructure {
     param([string]$Path)
     
-    $enginePath = Join-Path $Path "Engine"
-    $logsPath   = Join-Path $Path "WorkLogs\Deployments"
+    $directories = @(
+        "Config",
+        "Content\BootMedia\ISO",
+        "Content\BootMedia\WIM",
+        "Content\Drivers",
+        "Content\OperatingSystems",
+        "Content\Packages",
+        "Content\Temp",
+        "Content\Unattend",
+        "Engine\Scripts\Admin",
+        "Engine\Scripts\Runtime",
+        "Engine\Tools",
+        "WorkFlows",
+        "WorkLogs\Admin",
+        "WorkLogs\Deployments"
+    )
 
-    Write-Host "[+] Creating folder structure under '$Path'..." -ForegroundColor Cyan
-    New-Item -Path $enginePath -ItemType Directory -Force | Out-Null
-    New-Item -Path $logsPath -ItemType Directory -Force | Out-Null
+    Write-Host "[+] Creating complete DeploymentShare_Layout folder structure under '$Path'..." -ForegroundColor Cyan
+    foreach ($dir in $directories) {
+        $targetDir = Join-Path $Path $dir
+        if (-not (Test-Path -LiteralPath $targetDir)) {
+            New-Item -Path $targetDir -ItemType Directory -Force | Out-Null
+        }
+    }
     
     return @{
-        EnginePath = $enginePath
-        LogsPath   = $logsPath
+        EnginePath         = (Join-Path $Path "Engine")
+        AdminLogsPath      = (Join-Path $Path "WorkLogs\Admin")
+        DeploymentLogsPath = (Join-Path $Path "WorkLogs\Deployments")
     }
 }
 
@@ -108,7 +127,7 @@ function Set-LiteDeploySmbShare {
     }
 
     # Grant Administrators + all specified users/groups FullAccess at the SMB share level
-    $shareAccess = @("Administrators") + $FullAccessIdentities | Where-Object { $_ } | Select-Object -Unique
+    $shareAccess = @("Administrators", "SYSTEM") + $FullAccessIdentities | Where-Object { $_ } | Select-Object -Unique
     New-SmbShare -Name $Name -Path $Path -FullAccess $shareAccess -ReadAccess "Everyone" | Out-Null
     Write-Host "[+] SMB Share '$Name' configured." -ForegroundColor Green
 }
@@ -116,21 +135,26 @@ function Set-LiteDeploySmbShare {
 function Set-LiteDeployNtfSAcl {
     param(
         [string]$RootPath,
-        [string]$LogsPath,
+        [string]$AdminLogsPath,
+        [string]$DeploymentLogsPath,
         [string[]]$ReadIdentities
     )
 
+    # 1. Root Share Permissions
     Write-Host "[+] Applying Root Share Read & Execute Permissions on '$RootPath'..." -ForegroundColor Cyan
     $rootAcl = Get-Acl $RootPath
-    $rootAcl.SetAccessRuleProtection($true, $false) # Protect ACL, retain system rights
+    $rootAcl.SetAccessRuleProtection($true, $false) # Protect ACL, retain explicit rights
 
-    # Admin Rule
     $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "Administrators", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow"
     )
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "SYSTEM", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow"
+    )
     $rootAcl.SetAccessRule($adminRule)
+    $rootAcl.SetAccessRule($systemRule)
 
-    # Apply Read & Execute to all specified Users/AD Groups
+    # Apply Read & Execute to all specified Users/AD Groups across general share payloads
     foreach ($identity in $ReadIdentities) {
         if (-not [string]::IsNullOrWhiteSpace($identity)) {
             Write-Host "    -> Granting ReadAndExecute to '$identity'" -ForegroundColor Gray
@@ -142,30 +166,45 @@ function Set-LiteDeployNtfSAcl {
     }
     Set-Acl -Path $RootPath -AclObject $rootAcl
 
-    Write-Host "[+] Applying Granular Write & CREATOR OWNER Permissions on '$LogsPath'..." -ForegroundColor Cyan
-    $logsAcl = Get-Acl $LogsPath
-    $logsAcl.SetAccessRuleProtection($true, $false)
+    # 2. Lock Down WorkLogs\Admin (Strictly Administrators & SYSTEM - Deployers have ZERO access)
+    Write-Host "[+] Locking Down Admin Logs on '$AdminLogsPath' (Admins & SYSTEM only)..." -ForegroundColor Cyan
+    $adminLogsAcl = Get-Acl $AdminLogsPath
+    $adminLogsAcl.SetAccessRuleProtection($true, $false)
+    $adminLogsAcl.SetAccessRule($adminRule)
+    $adminLogsAcl.SetAccessRule($systemRule)
+    Set-Acl -Path $AdminLogsPath -AclObject $adminLogsAcl
+    Write-Host "    -> WorkLogs\Admin restricted strictly to Administrators." -ForegroundColor Green
 
-    # Rule A: Grant specified Users/Groups ability to create files/folders inside WorkLogs\Deployments ONLY
+    # 3. Configure WorkLogs\Deployments (Cross-Read & CREATOR OWNER Full Control)
+    Write-Host "[+] Configuring Deployment Logs on '$DeploymentLogsPath'..." -ForegroundColor Cyan
+    $depLogsAcl = Get-Acl $DeploymentLogsPath
+    $depLogsAcl.SetAccessRuleProtection($true, $false)
+    $depLogsAcl.SetAccessRule($adminRule)
+    $depLogsAcl.SetAccessRule($systemRule)
+
     foreach ($identity in $ReadIdentities) {
         if (-not [string]::IsNullOrWhiteSpace($identity)) {
-            $createRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                $identity, "CreateFiles, CreateDirectories, Traverse, ReadAttributes", "None", "None", "Allow"
+            # Rule A: Allow listing and reading existing deployment logs for peer diagnostics
+            $readLogsRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $identity, "ReadAndExecute, Synchronize", "ContainerInherit, ObjectInherit", "None", "Allow"
             )
-            $logsAcl.SetAccessRule($createRule)
+            $depLogsAcl.SetAccessRule($readLogsRule)
+
+            # Rule B: Allow creating new deployment folders and log files under WorkLogs\Deployments
+            $createFolderRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $identity, "CreateFiles, CreateDirectories, AppendData", "None", "None", "Allow"
+            )
+            $depLogsAcl.SetAccessRule($createFolderRule)
         }
     }
 
-    # Rule B: Grant CREATOR OWNER Full Control over whatever subfolder/file they create
+    # Rule C: Grant CREATOR OWNER Full Control over their own created deployment session folders
     $creatorOwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "CREATOR OWNER", "FullControl", "ContainerInherit, ObjectInherit", "InheritOnly", "Allow"
     )
+    $depLogsAcl.SetAccessRule($creatorOwnerRule)
 
-    # Rule C: Grant Administrators Full Access over logs
-    $logsAcl.SetAccessRule($adminRule)
-    $logsAcl.SetAccessRule($creatorOwnerRule)
-
-    Set-Acl -Path $LogsPath -AclObject $logsAcl
+    Set-Acl -Path $DeploymentLogsPath -AclObject $depLogsAcl
     Write-Host "[+] NTFS ACLs successfully configured." -ForegroundColor Green
 }
 
@@ -194,13 +233,14 @@ function Invoke-LiteDeployAclSetup {
     Set-LiteDeploySmbShare -Name $ShareName -Path $SharePath -FullAccessIdentities $allReadIdentities
 
     # 4. Set NTFS ACLs
-    Set-LiteDeployNtfSAcl -RootPath $SharePath -LogsPath $paths.LogsPath -ReadIdentities $allReadIdentities
+    Set-LiteDeployNtfSAcl -RootPath $SharePath -AdminLogsPath $paths.AdminLogsPath -DeploymentLogsPath $paths.DeploymentLogsPath -ReadIdentities $allReadIdentities
 
     Write-Host "`n====================================================" -ForegroundColor Green
     Write-Host " LiteDeploy Share & ACL Setup Completed!" -ForegroundColor Green
-    Write-Host " Share UNC   : \\localhost\$ShareName" -ForegroundColor Yellow
-    Write-Host " Engine Path : \\localhost\$ShareName\Engine" -ForegroundColor Yellow
-    Write-Host " Log Path    : \\localhost\$ShareName\WorkLogs\Deployments" -ForegroundColor Yellow
+    Write-Host " Share UNC       : \\localhost\$ShareName" -ForegroundColor Yellow
+    Write-Host " Engine Path     : \\localhost\$ShareName\Engine" -ForegroundColor Yellow
+    Write-Host " Admin Logs      : \\localhost\$ShareName\WorkLogs\Admin (Locked)" -ForegroundColor Yellow
+    Write-Host " Deployment Logs : \\localhost\$ShareName\WorkLogs\Deployments (Read/Own)" -ForegroundColor Yellow
     Write-Host "====================================================`n" -ForegroundColor Green
 }
 

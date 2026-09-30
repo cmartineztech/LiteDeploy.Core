@@ -94,8 +94,11 @@ if ([string]::IsNullOrWhiteSpace($scriptDir)) {
 }
 
 $targetStateFile = "DeploymentState.json"
-if (-not [string]::IsNullOrWhiteSpace($StatePath)) {
+if (-not [string]::IsNullOrWhiteSpace($StatePath) -and $PSBoundParameters.ContainsKey("StatePath")) {
     $targetStateFile = $StatePath
+}
+elseif ($env:SystemDrive -and (Test-Path "$($env:SystemDrive)\~LiteDeploy\DeploymentState.json")) {
+    $targetStateFile = "$($env:SystemDrive)\~LiteDeploy\DeploymentState.json"
 }
 if (-not [System.IO.Path]::IsPathRooted($targetStateFile)) {
     $targetStateFile = Join-Path $scriptDir $targetStateFile

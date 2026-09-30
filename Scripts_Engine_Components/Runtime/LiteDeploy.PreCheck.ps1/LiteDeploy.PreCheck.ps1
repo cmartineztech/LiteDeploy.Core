@@ -341,10 +341,16 @@ function Set-PreCheckProgress([int]$Percent, [string]$Message) {
 }
 
 function Find-Configuration {
+    $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
     $paths = @(
-        (Join-Path $PSScriptRoot "..\01-Config\BootConfig.json"),
         (Join-Path $PSScriptRoot "Config\BootConfig.json"),
-        (Join-Path $PSScriptRoot "BootConfig.json")
+        (Join-Path $PSScriptRoot "BootConfig.json"),
+        (Join-Path $PSScriptRoot "..\Config\BootConfig.json"),
+        (Join-Path $PSScriptRoot "..\..\Config\BootConfig.json"),
+        (Join-Path $PSScriptRoot "..\..\..\Config\BootConfig.json"),
+        (Join-Path $sysDrive "~LiteDeploy\Config\BootConfig.json"),
+        (Join-Path $sysDrive "Config\BootConfig.json"),
+        "Z:\Config\BootConfig.json"
     )
     foreach ($path in $paths) {
         if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) { return (Resolve-Path -LiteralPath $path).Path }
@@ -705,19 +711,18 @@ function Resolve-LiteDeploySelectWorkflowPath {
 
     $candidates = [System.Collections.Generic.List[string]]::new()
 
-    # Production layout: all engine scripts are siblings under Engine\Scripts.
+    # Production share (same directory: Engine\Scripts\Runtime\)
     $candidates.Add((Join-Path $PSScriptRoot "LiteDeploy.SelectWorkFlow.ps1"))
+    # Dev repository layout
+    $candidates.Add((Join-Path $PSScriptRoot "..\LiteDeploy.SelectWorkFlow.ps1\LiteDeploy.SelectWorkFlow.ps1"))
 
-    # When available, use the same engine folder selected by BootInitializer.
+    # When available, use the same engine folder selected by BootInitializer
     if ($BootObject -and $BootObject.PSObject.Properties['EngineScriptPath'] -and $BootObject.EngineScriptPath) {
         $engineFolder = Split-Path -Parent ([string]$BootObject.EngineScriptPath)
         if ($engineFolder) {
             $candidates.Add((Join-Path $engineFolder "LiteDeploy.SelectWorkFlow.ps1"))
         }
     }
-
-    # Development repository layout: next component in working order.
-    $candidates.Add((Join-Path $PSScriptRoot "..\07-SelectWorkflow\LiteDeploy.SelectWorkFlow.ps1"))
 
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {

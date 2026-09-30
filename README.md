@@ -32,6 +32,7 @@ Runtime Scope (WinPE Execution & Target Deployment):
 | :--- | :--- | :--- | :--- |
 | **SetConfig** | [Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` for `BootWim`, `DeploymentShare`, and `Media` deployment modes. | Exists |
 | **SetDeploymentShareAcl** | [Scripts_Engine_Components/Admin/LiteDeploy.SetDeploymentShareAcl.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions folder hierarchy, SMB shares, and CREATOR-OWNER log isolation ACLs. | Exists |
+| **SyncComponents** | [Scripts_Engine_Components/Admin/LiteDeploy.SyncComponents.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository modules to Deployment Shares, WinPE Builder staging, and Media roots. | Exists |
 | **ImportOSMedia** | [Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1](Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1) | Ingests Windows setup media/ISOs, extracts edition metadata via DISM/7-Zip, and publishes `catalog.json`. | Exists |
 | **Credentials** | [Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1](Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1) | Integration architecture for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). | Documented |
 | **WinPEBuilder** | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds bootable WinPE ISO media or `Boot.wim` for WDS/PXE. | Separate repo |
@@ -45,7 +46,7 @@ Runtime Scope (WinPE Execution & Target Deployment):
 | **BootInitializer** | [Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches PreCheck. | Exists |
 | **PreCheck** | [Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1) | 9-point system readiness and hardware assessment WPF UI with software rendering. | Exists |
 | **SelectWorkflow** | [Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1) | WPF wizard for computer naming, workflow selection, disk targeting, and driver pack resolution. | Exists |
-| **DeploymentEngine** | — | Orchestrates Windows Setup `/NoReboot`, offline staging, handoff verification, and FullOS resume. | Planned |
+| **DeploymentEngine** | [Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1) | Orchestrates PreCheck, SelectWorkflow, and deployment pipeline execution in WinPE. | Exists |
 | **Progress** | [Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1](Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). | Exists |
 
 On a client device, the live runtime chain is:
@@ -53,11 +54,10 @@ On a client device, the live runtime chain is:
 ```text
 startnet.cmd
   → LiteDeploy.BootInitilizer.ps1 (Parent Shell)
-    → LiteDeploy.PreCheck.ps1 (Readiness Assessment)
-      → LiteDeploy.SelectWorkFlow.ps1 (Technician Selections)
-        → LiteDeploy.DeploymentEngine.ps1 (Planned Orchestrator)
-          ├── LiteDeploy.Progress.ps1 (Parallel Progress Reader)
-          └── Windows Setup (/NoReboot) → Controlled First Reboot → FullOS Resume
+    → LiteDeploy.DeploymentEngine.ps1 (Pipeline Orchestrator)
+      ├── LiteDeploy.PreCheck.ps1 (Readiness Assessment)
+      ├── LiteDeploy.SelectWorkFlow.ps1 (Technician Selections)
+      └── LiteDeploy.Progress.ps1 (Parallel Progress Reader)
 ```
 
 ## Repository Structure
