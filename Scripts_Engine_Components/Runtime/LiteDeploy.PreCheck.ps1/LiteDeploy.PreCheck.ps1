@@ -18,8 +18,32 @@ param(
     [ValidateSet("On", "Off")][string]$TopMost = "On",
     [switch]$ShowBackdrop,
     [ValidateRange(0, 60)][int]$SuccessCloseSeconds = 3,
-    [psobject]$BootObject = $null
+    [psobject]$BootObject = $null,
+    [switch]$Metadata
 )
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "PreCheck"
+        Name                 = "LiteDeploy System Pre-Check"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "WinPE"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @("LogWriter")
+        Description          = "9-point system readiness and hardware assessment WPF wizard."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # ------------------------------------------------------------------------------
 # 1. STA MODE & WPF ASSEMBLY LOAD

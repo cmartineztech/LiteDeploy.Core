@@ -26,10 +26,39 @@
     Window control relies on the classic Console Host (conhost), which is standard in Windows PE.
 #>
 
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
+)
+
 #region 1 - Bootstrap
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "HostShell"
+        Name                 = "LiteDeploy WinPE HostShell"
+        Version              = "2.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "WinPE"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Console window toolkit for WinPE: geometry, styling, positioning, themes, and shell presets."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 if ($env:WT_SESSION) {
     Write-Warning "Windows Terminal detected. Use the classic Console Host or Windows PE for reliable window control."

@@ -53,10 +53,34 @@ param(
     [string]$WindowTitle = "",
 
     [switch]$ShowBackdrop,
-    [switch]$KeepOpen
+    [switch]$KeepOpen,
+    [switch]$Metadata
 )
 
-Set-StrictMode -Version Latest
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "ProgressHost"
+        Name                 = "LiteDeploy Native Progress Host"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "Universal"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Zero-dependency WPF progress dashboard rendering real-time deployment state from DeploymentState.json."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
+
+Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
 # Absolute StatePath Resolution (PowerShell 5.1 Compatible Syntax)

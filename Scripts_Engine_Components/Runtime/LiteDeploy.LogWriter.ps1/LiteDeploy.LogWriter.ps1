@@ -55,11 +55,37 @@ param(
     [string]$LogPath = "",
 
     [Parameter(Mandatory = $false)]
-    [switch]$NoConsole
+    [switch]$NoConsole,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "LogWriter"
+        Name                 = "LiteDeploy Logging Engine"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "Universal"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Provides CMTrace-compatible XML and structured NDJSON dual-logging across WinPE and FullOS."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 function Get-LiteDeployLogPath {
     param(

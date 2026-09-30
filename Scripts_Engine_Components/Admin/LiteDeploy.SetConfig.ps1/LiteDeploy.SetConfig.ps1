@@ -63,11 +63,37 @@ param(
     [string]$Comment = "",
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath
+    [string]$OutputPath,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "SetConfig"
+        Name                 = "LiteDeploy Configuration Engine"
+        Version              = "1.0.0"
+        Category             = "Admin"
+        TargetEnvironment    = "Host"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Generates BootConfig.json for BootWim, DeploymentShare, and Media modes."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # ==============================================================================
 # CONFIGURATION VARIABLES & PRESETS (Manageable PS Objects with Comments)

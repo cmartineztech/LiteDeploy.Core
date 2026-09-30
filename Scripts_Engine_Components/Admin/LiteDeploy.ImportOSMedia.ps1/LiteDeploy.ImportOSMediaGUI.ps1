@@ -19,8 +19,32 @@ param(
     [Parameter(Mandatory = $false)][string]$DefaultDeploymentShare = (Split-Path -Parent $PSScriptRoot),
     [ValidateSet("Light", "Dark")][string]$Theme = "Light",
     [string]$WindowTitle = "LiteDeploy - Windows OS Media Importer & Catalog Manager",
-    [switch]$DarkMode
+    [switch]$DarkMode,
+    [Parameter(Mandatory = $false)][switch]$Metadata
 )
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "ImportOSMediaGUI"
+        Name                 = "LiteDeploy OS Media Importer GUI"
+        Version              = "2.0.0"
+        Category             = "Admin"
+        TargetEnvironment    = "Host"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @("ImportOSMedia")
+        Description          = "WPF management frontend for Windows OS media ingestion and catalog management."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # Enforce Administrator Rights & Self-Elevate if required
 $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()

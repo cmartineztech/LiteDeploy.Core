@@ -1,3 +1,32 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
+)
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "DriverPicker"
+        Name                 = "LiteDeploy Driver Folder Picker"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "WinPE"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Reusable WinPE-compatible WPF folder browser dialog for custom driver paths."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
+
 function Show-DriverPathDialog {
     [CmdletBinding()]
     param(

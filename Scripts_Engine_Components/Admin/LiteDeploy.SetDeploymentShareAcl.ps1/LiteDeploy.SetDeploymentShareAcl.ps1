@@ -29,8 +29,37 @@ param(
     [string[]]$AdditionalUsers = @(),
 
     [Parameter(Mandatory = $false)]
-    [string[]]$ADGroups = @()
+    [string[]]$ADGroups = @(),
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
 )
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "SetDeploymentShareAcl"
+        Name                 = "LiteDeploy Share ACL Hardener"
+        Version              = "1.0.0"
+        Category             = "Admin"
+        TargetEnvironment    = "Host"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Provisions share directory layout, SMB permissions, and isolated NTFS log ACLs."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # --- Internal Helper Functions ---
 

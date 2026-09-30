@@ -1,7 +1,31 @@
 [CmdletBinding()]
 param(
-    [psobject]$BootObject = $null
+    [psobject]$BootObject = $null,
+    [switch]$Metadata
 )
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "SelectWorkflow"
+        Name                 = "LiteDeploy Workflow Selection Wizard"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "WinPE"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @("LogWriter", "DriverPicker")
+        Description          = "Technician UI wizard for computer naming, workflow selection, target disk verification, and driver injection."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # Ensured Single-Threaded Apartment (STA) mode for WPF
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {

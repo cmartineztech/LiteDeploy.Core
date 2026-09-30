@@ -20,11 +20,37 @@ param(
     [switch]$MountShare,
 
     [Parameter(Mandatory = $false)]
-    [switch]$ShowGuiError
+    [switch]$ShowGuiError,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Metadata
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "BootInitializer"
+        Name                 = "LiteDeploy WinPE Boot Initializer"
+        Version              = "1.0.0"
+        Category             = "Runtime"
+        TargetEnvironment    = "WinPE"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @("LogWriter", "HostShell")
+        Description          = "WinPE parent shell: discovers BootConfig.json, validates network, mounts Z:\, and launches PreCheck."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
 
 # ==============================================================================
 # 1. HELPERS & GUI DIALOGS

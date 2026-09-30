@@ -1,7 +1,7 @@
-#Requires -RunAsAdministrator
 [CmdletBinding(DefaultParameterSetName = 'Import')]
 param(
-    [Parameter(Mandatory = $true, HelpMessage = "Path to the root LiteDeploy deployment share directory.")]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Import', HelpMessage = "Path to the root LiteDeploy deployment share directory.")]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Rebuild', HelpMessage = "Path to the root LiteDeploy deployment share directory.")]
     [ValidateScript({ Test-Path $_ -PathType Container })]
     [string]$DeploymentShare,
 
@@ -26,12 +26,46 @@ param(
     [Parameter(Mandatory = $false, ParameterSetName = 'Import', HelpMessage = "Override or supply OS Name directly (bypasses Read-Host prompt in DISM mode).")]
     [string]$OSName,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Return the generated local OS object output to pipeline.")]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Import', HelpMessage = "Return the generated local OS object output to pipeline.")]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Rebuild', HelpMessage = "Return the generated local OS object output to pipeline.")]
     [switch]$PassThru,
 
-    [Parameter(Mandatory = $false, ParameterSetName = 'Rebuild', HelpMessage = "Rebuild central catalog.json from local os.json files.")]
-    [switch]$RebuildCatalog
+    [Parameter(Mandatory = $true, ParameterSetName = 'Rebuild', HelpMessage = "Rebuild central catalog.json from local os.json files.")]
+    [switch]$RebuildCatalog,
+
+    [Parameter(Mandatory = $true, ParameterSetName = 'Metadata', HelpMessage = "Return component metadata.")]
+    [switch]$Metadata
 )
+
+# ==============================================================================
+# COMPONENT METADATA
+# ==============================================================================
+
+function Get-LiteDeployComponentMetadata {
+    return [PSCustomObject]@{
+        ComponentId          = "ImportOSMedia"
+        Name                 = "LiteDeploy OS Media Ingestion Engine"
+        Version              = "2.0.0"
+        Category             = "Admin"
+        TargetEnvironment    = "Host"
+        MinPowerShellVersion = "5.1"
+        Author               = "LiteDeploy Team"
+        Dependencies         = @()
+        Description          = "Automates Windows setup media ingestion, WIM edition cataloging, and catalog.json publishing."
+    }
+}
+
+if ($Metadata) {
+    Get-LiteDeployComponentMetadata
+    return
+}
+
+# Enforce Administrator Rights for media operations
+$identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "LiteDeploy.ImportOSMedia.ps1 requires administrative privileges. Please launch from an elevated PowerShell prompt."
+}
 
 # ===========================================================================
 # Helper Function 0: Safe Property Accessor for StrictMode v2
