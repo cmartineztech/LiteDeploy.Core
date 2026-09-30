@@ -39,7 +39,7 @@ param(
     [string]$Message = "",
 
     [Parameter(Mandatory = $false, Position = 1)]
-    [ValidateSet("INFO", "SUCCESS", "INIT", "WARNING", "RETRY", "ERROR")]
+    [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "WARNING", "RETRY", "ERROR")]
     [string]$Level = "INFO",
 
     [Parameter(Mandatory = $false, Position = 2)]
@@ -109,7 +109,7 @@ function Write-LiteDeployLog {
         [string]$Message,
 
         [Parameter(Mandatory = $false, Position = 1)]
-        [ValidateSet("INFO", "SUCCESS", "INIT", "WARNING", "RETRY", "ERROR")]
+        [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "WARNING", "RETRY", "ERROR")]
         [string]$Level = "INFO",
 
         [Parameter(Mandatory = $false, Position = 2)]
@@ -136,6 +136,7 @@ function Write-LiteDeployLog {
         $selectedColor = switch ($Level.ToUpper()) {
             "SUCCESS" { [System.ConsoleColor]::Green }
             "INIT"    { [System.ConsoleColor]::DarkGray }
+            "CHECK"   { [System.ConsoleColor]::Cyan }
             "WARNING" { [System.ConsoleColor]::Yellow }
             "RETRY"   { [System.ConsoleColor]::DarkYellow }
             "ERROR"   { [System.ConsoleColor]::Red }

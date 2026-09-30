@@ -246,31 +246,35 @@ function Initialize-LiteDeployDeploymentShareLogDir {
         "~LiteDeploy"
     }
 
-    # Discover the best base root directory for WorkLogs on the media/share:
-    $candidateLogDirs = [System.Collections.Generic.List[string]]::new()
-
-    # Priority 1: Derived from discovered BootConfig.json location on media
-    # e.g., D:\~LiteDeploy\Config\BootConfig.json -> D:\~LiteDeploy\WorkLogs\Deployments\<Uid>
-    if ($BootCtx -and $BootCtx.PSObject.Properties['ConfigPath'] -and $BootCtx.ConfigPath) {
-        $configDir = Split-Path -Parent $BootCtx.ConfigPath
-        $parentOfConfig = Split-Path -Parent $configDir
-        if ($parentOfConfig -and $parentOfConfig -ne $remoteShareDrive) {
-            $candidateLogDirs.Add((Join-Path $parentOfConfig "WorkLogs\Deployments\$DeploymentUid"))
-        }
-    }
-
-    # Priority 2: <Drive>:\<LocalRootName>\WorkLogs\Deployments\<Uid> (e.g. D:\~LiteDeploy\WorkLogs\Deployments\<Uid>)
-    $candidateLogDirs.Add((Join-Path $remoteShareDrive "$localRootName\WorkLogs\Deployments\$DeploymentUid"))
-
-    # Priority 3: <Drive>:\WorkLogs\Deployments\<Uid> (e.g. Z:\WorkLogs\Deployments\<Uid> or D:\WorkLogs\Deployments\<Uid>)
-    $candidateLogDirs.Add((Join-Path $remoteShareDrive "WorkLogs\Deployments\$DeploymentUid"))
+    $cleanShareDrive = $remoteShareDrive.TrimEnd('\')
 
     try {
-        if (Test-Path -LiteralPath "$remoteShareDrive\" -ErrorAction SilentlyContinue) {
+        if (Test-Path -LiteralPath "$cleanShareDrive\" -ErrorAction SilentlyContinue) {
+            # Discover candidate log directories on the media/share:
+            $candidateLogDirs = [System.Collections.Generic.List[string]]::new()
+
+            # Priority 1: Derived from discovered BootConfig.json location on media
+            # e.g., D:\~LiteDeploy\Config\BootConfig.json -> D:\~LiteDeploy\WorkLogs\Deployments\<Uid>
+            if ($BootCtx -and $BootCtx.PSObject.Properties['ConfigPath'] -and $BootCtx.ConfigPath) {
+                try {
+                    $configDir = Split-Path -Parent $BootCtx.ConfigPath
+                    $parentOfConfig = Split-Path -Parent $configDir
+                    if ($parentOfConfig -and $parentOfConfig.TrimEnd('\') -ne $cleanShareDrive) {
+                        $candidateLogDirs.Add([System.IO.Path]::Combine($parentOfConfig, "WorkLogs", "Deployments", $DeploymentUid))
+                    }
+                } catch {}
+            }
+
+            # Priority 2: <Drive>:\<LocalRootName>\WorkLogs\Deployments\<Uid> (e.g. D:\~LiteDeploy\WorkLogs\Deployments\<Uid>)
+            $candidateLogDirs.Add([System.IO.Path]::Combine("$cleanShareDrive\", $localRootName, "WorkLogs", "Deployments", $DeploymentUid))
+
+            # Priority 3: <Drive>:\WorkLogs\Deployments\<Uid> (e.g. Z:\WorkLogs\Deployments\<Uid>)
+            $candidateLogDirs.Add([System.IO.Path]::Combine("$cleanShareDrive\", "WorkLogs", "Deployments", $DeploymentUid))
+
             foreach ($targetLogDir in $candidateLogDirs) {
                 try {
                     # 1. Create target DeploymentId directory on deployment share / media
-                    if (-not (Test-Path -LiteralPath $targetLogDir)) {
+                    if (-not (Test-Path -LiteralPath $targetLogDir -ErrorAction SilentlyContinue)) {
                         $null = New-Item -Path $targetLogDir -ItemType Directory -Force -ErrorAction Stop
                     }
 
