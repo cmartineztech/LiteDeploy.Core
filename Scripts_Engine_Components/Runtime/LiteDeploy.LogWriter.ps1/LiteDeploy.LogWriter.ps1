@@ -146,7 +146,13 @@ function Write-LiteDeployLog {
 
     # 1. Real-Time Console Output
     if (-not $NoConsole -and $Message) {
-        Write-Host $Message -ForegroundColor $selectedColor
+        $cleanMsg = $Message.Trim()
+        $consoleLine = if ($cleanMsg.StartsWith("[") -or $cleanMsg.StartsWith("=") -or $cleanMsg.StartsWith("-") -or [string]::IsNullOrWhiteSpace($Component)) {
+            $Message
+        } else {
+            " [$($Level.PadRight(7))] [$Component] $cleanMsg"
+        }
+        Write-Host $consoleLine -ForegroundColor $selectedColor
     }
 
     # 2. CMTrace Native XML Log Writing

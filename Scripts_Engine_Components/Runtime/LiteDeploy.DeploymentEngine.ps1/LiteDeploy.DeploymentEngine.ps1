@@ -294,7 +294,7 @@ function Initialize-LiteDeployDeploymentShareLogDir {
                         }
                     }
 
-                    Write-LiteDeployLog "Created and synchronized deployment logs to '$targetLogDir'." -Level "SUCCESS" -ForegroundColor Green
+                    Write-LiteDeployLog "Created and synchronized deployment logs to '$targetLogDir'." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
                     return $targetLogDir
                 }
                 catch {
@@ -305,7 +305,7 @@ function Initialize-LiteDeployDeploymentShareLogDir {
         }
     }
     catch {
-        Write-LiteDeployLog "Warning: Could not initialize deployment log directory on '$remoteShareDrive': $_" -Level "WARNING" -ForegroundColor Yellow
+        Write-LiteDeployLog "Warning: Could not initialize deployment log directory on '$remoteShareDrive': $_" -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
     }
 
     return $null
@@ -426,13 +426,13 @@ function Start-LiteDeployPipeline {
     $global:LiteDeployDeployment = $deployment
     Save-LiteDeployDeploymentState -DeploymentState $deployment
 
-    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan
-    Write-LiteDeployLog "LiteDeploy Deployment Engine v1.0.0" -Level "INIT" -ForegroundColor Cyan
-    Write-LiteDeployLog "Deployment UID: $deployUid" -Level "INIT" -ForegroundColor Yellow
+    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
+    Write-LiteDeployLog "LiteDeploy Deployment Engine v1.0.0" -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
+    Write-LiteDeployLog "Deployment UID: $deployUid" -Level "INIT" -ForegroundColor Yellow -Component "DeploymentEngine"
     if ($remoteLogDir) {
-        Write-LiteDeployLog "Remote Logs   : $remoteLogDir" -Level "INIT" -ForegroundColor Green
+        Write-LiteDeployLog "Remote Logs   : $remoteLogDir" -Level "INIT" -ForegroundColor Green -Component "DeploymentEngine"
     }
-    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan
+    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
 
     try {
         # Hide/Minimize console window to focus UI dialogs
@@ -444,137 +444,137 @@ function Start-LiteDeployPipeline {
         # PHASE 1: PRE-CHECK (Hardware, Network, and Readiness Assessment)
         # --------------------------------------------------------------------------
         $preCheckPassed = $false
-            $deployment.CurrentPhase = 1
+        $deployment.CurrentPhase = 1
 
-            if ($SkipPreCheck) {
-                Write-LiteDeployLog "SkipPreCheck switch specified. Bypassing Phase 1 (PreCheck)." -Level "WARNING" -ForegroundColor Yellow
-                $preCheckPassed = $true
-                $deployment.PreCheck.Passed = $true
-                $deployment.PreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                Save-LiteDeployDeploymentState -DeploymentState $deployment
-            }
-            else {
-                $deployment.Status = "PreCheck"
-                Save-LiteDeployDeploymentState -DeploymentState $deployment
-
-                $preCheckScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.PreCheck.ps1" -ScriptFileName "LiteDeploy.PreCheck.ps1"
-                if (-not $preCheckScript) {
-                    Write-LiteDeployLog "Phase 1 Failed: 'LiteDeploy.PreCheck.ps1' could not be found." -Level "ERROR" -ForegroundColor Red
-                    $deployment.Status = "Failed"
-                    $deployment.Execution.Errors += "PreCheckScriptNotFound"
-                    $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    Save-LiteDeployDeploymentState -DeploymentState $deployment
-                    return $deployment
-                }
-
-                Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "CHECK" -ForegroundColor Cyan
-                try {
-                    # Execute PreCheck directly in the current STA PowerShell process
-                    $preCheckOutput = & $preCheckScript
-            
-                    # PreCheck returns boolean ($true/$false) or exits when closed
-                    if ($preCheckOutput -is [bool]) {
-                        $preCheckPassed = $preCheckOutput
-                    }
-                    elseif (Test-Path Variable:global:PreCheckPassed) {
-                        $preCheckPassed = [bool]$global:PreCheckPassed
-                    }
-                    else {
-                        $preCheckPassed = ($preCheckOutput -ne $false)
-                    }
-                }
-                catch {
-                    Write-LiteDeployLog "Phase 1: Unhandled exception during PreCheck execution: $_" -Level "ERROR" -ForegroundColor Red
-                    $deployment.Status = "Failed"
-                    $deployment.Execution.Errors += "PreCheckException: $_"
-                    $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    Save-LiteDeployDeploymentState -DeploymentState $deployment
-                    return $deployment
-                }
-
-                if (-not $preCheckPassed) {
-                    Write-LiteDeployLog "Phase 1: PreCheck did not pass or was cancelled by user. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow
-                    $deployment.Status = "Cancelled"
-                    $deployment.PreCheck.Passed = $false
-                    $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    Save-LiteDeployDeploymentState -DeploymentState $deployment
-                    return $deployment
-                }
-
-                $deployment.PreCheck.Passed = $true
-                $deployment.PreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                Save-LiteDeployDeploymentState -DeploymentState $deployment
-                Write-LiteDeployLog "Phase 1: System Readiness Pre-Check completed successfully." -Level "SUCCESS" -ForegroundColor Green
-            }
-
-            # --------------------------------------------------------------------------
-            # PHASE 2: WORKFLOW SELECTION (Computer Identity, OS Workflow, Disk, Drivers)
-            # --------------------------------------------------------------------------
-            $deployment.CurrentPhase = 2
-            $deployment.Status = "WorkflowSelection"
+        if ($SkipPreCheck) {
+            Write-LiteDeployLog "SkipPreCheck switch specified. Bypassing Phase 1 (PreCheck)." -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
+            $preCheckPassed = $true
+            $deployment.PreCheck.Passed = $true
+            $deployment.PreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+        }
+        else {
+            $deployment.Status = "PreCheck"
             Save-LiteDeployDeploymentState -DeploymentState $deployment
 
-            $workflowScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.SelectWorkFlow.ps1" -ScriptFileName "LiteDeploy.SelectWorkFlow.ps1"
-            if (-not $workflowScript) {
-                Write-LiteDeployLog "Phase 2 Failed: 'LiteDeploy.SelectWorkFlow.ps1' could not be found." -Level "ERROR" -ForegroundColor Red
+            $preCheckScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.PreCheck.ps1" -ScriptFileName "LiteDeploy.PreCheck.ps1"
+            if (-not $preCheckScript) {
+                Write-LiteDeployLog "Phase 1 Failed: 'LiteDeploy.PreCheck.ps1' could not be found." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
                 $deployment.Status = "Failed"
-                $deployment.Execution.Errors += "SelectWorkflowScriptNotFound"
+                $deployment.Execution.Errors += "PreCheckScriptNotFound"
                 $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                 Save-LiteDeployDeploymentState -DeploymentState $deployment
                 return $deployment
             }
 
-            Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "INIT" -ForegroundColor Cyan
-            $workflowOutput = $null
+            Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "CHECK" -ForegroundColor Cyan -Component "DeploymentEngine"
             try {
-                # Execute SelectWorkflow directly in the current STA PowerShell process
-                $workflowOutput = & $workflowScript
+                # Execute PreCheck directly in the current STA PowerShell process
+                $preCheckOutput = & $preCheckScript
+        
+                # PreCheck returns boolean ($true/$false) or exits when closed
+                if ($preCheckOutput -is [bool]) {
+                    $preCheckPassed = $preCheckOutput
+                }
+                elseif (Test-Path Variable:global:PreCheckPassed) {
+                    $preCheckPassed = [bool]$global:PreCheckPassed
+                }
+                else {
+                    $preCheckPassed = ($preCheckOutput -ne $false)
+                }
             }
             catch {
-                Write-LiteDeployLog "Phase 2: Unhandled exception during SelectWorkflow execution: $_" -Level "ERROR" -ForegroundColor Red
+                Write-LiteDeployLog "Phase 1: Unhandled exception during PreCheck execution: $_" -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
                 $deployment.Status = "Failed"
-                $deployment.Execution.Errors += "SelectWorkflowException: $_"
+                $deployment.Execution.Errors += "PreCheckException: $_"
                 $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                 Save-LiteDeployDeploymentState -DeploymentState $deployment
                 return $deployment
             }
 
-            # Evaluate SelectWorkflow result
-            $deploymentRequested = $false
-            if ($workflowOutput -is [bool]) {
-                $deploymentRequested = $workflowOutput
-            }
-            elseif ($workflowOutput -and $workflowOutput.PSObject.Properties['DeploymentRequested']) {
-                $deploymentRequested = [bool]$workflowOutput.DeploymentRequested
-            }
-            else {
-                $deploymentRequested = ($workflowOutput -eq $true)
-            }
-
-            if (-not $deploymentRequested) {
-                Write-LiteDeployLog "Phase 2: Workflow selection was cancelled by technician. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow
+            if (-not $preCheckPassed) {
+                Write-LiteDeployLog "Phase 1: PreCheck did not pass or was cancelled by user. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
                 $deployment.Status = "Cancelled"
-                $deployment.Workflow.Confirmed = $false
+                $deployment.PreCheck.Passed = $false
                 $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                 Save-LiteDeployDeploymentState -DeploymentState $deployment
                 return $deployment
             }
 
-            $deployment.Workflow.Confirmed = $true
-            $deployment.Workflow.SelectionData = $workflowOutput
-            $deployment.Workflow.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-            $deployment.Status = "ReadyForDeployment"
+            $deployment.PreCheck.Passed = $true
+            $deployment.PreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
             Save-LiteDeployDeploymentState -DeploymentState $deployment
-            Sync-LiteDeployLogsToShare -RemoteLogDir $deployment.Execution.RemoteLogDir
+            Write-LiteDeployLog "Phase 1: System Readiness Pre-Check completed successfully." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        }
 
-            Write-LiteDeployLog "Phase 2: Workflow configuration confirmed. Ready for deployment execution." -Level "SUCCESS" -ForegroundColor Green
+        # --------------------------------------------------------------------------
+        # PHASE 2: WORKFLOW SELECTION (Computer Identity, OS Workflow, Disk, Drivers)
+        # --------------------------------------------------------------------------
+        $deployment.CurrentPhase = 2
+        $deployment.Status = "WorkflowSelection"
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
 
-            # --------------------------------------------------------------------------
-            # PHASE 3: ORCHESTRATION SUMMARY / EXECUTION HANDOFF
-            # --------------------------------------------------------------------------
-            Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green
-            Write-LiteDeployLog "LiteDeploy Pre-Flight Orchestration Complete [UID: $deployUid]." -Level "SUCCESS" -ForegroundColor Green
-            Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green
+        $workflowScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.SelectWorkFlow.ps1" -ScriptFileName "LiteDeploy.SelectWorkFlow.ps1"
+        if (-not $workflowScript) {
+            Write-LiteDeployLog "Phase 2 Failed: 'LiteDeploy.SelectWorkFlow.ps1' could not be found." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "SelectWorkflowScriptNotFound"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
+        $workflowOutput = $null
+        try {
+            # Execute SelectWorkflow directly in the current STA PowerShell process
+            $workflowOutput = & $workflowScript
+        }
+        catch {
+            Write-LiteDeployLog "Phase 2: Unhandled exception during SelectWorkflow execution: $_" -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "SelectWorkflowException: $_"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        # Evaluate SelectWorkflow result
+        $deploymentRequested = $false
+        if ($workflowOutput -is [bool]) {
+            $deploymentRequested = $workflowOutput
+        }
+        elseif ($workflowOutput -and $workflowOutput.PSObject.Properties['DeploymentRequested']) {
+            $deploymentRequested = [bool]$workflowOutput.DeploymentRequested
+        }
+        else {
+            $deploymentRequested = ($workflowOutput -eq $true)
+        }
+
+        if (-not $deploymentRequested) {
+            Write-LiteDeployLog "Phase 2: Workflow selection was cancelled by technician. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
+            $deployment.Status = "Cancelled"
+            $deployment.Workflow.Confirmed = $false
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        $deployment.Workflow.Confirmed = $true
+        $deployment.Workflow.SelectionData = $workflowOutput
+        $deployment.Workflow.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        $deployment.Status = "ReadyForDeployment"
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+        Sync-LiteDeployLogsToShare -RemoteLogDir $deployment.Execution.RemoteLogDir
+
+        Write-LiteDeployLog "Phase 2: Workflow configuration confirmed. Ready for deployment execution." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+
+        # --------------------------------------------------------------------------
+        # PHASE 3: ORCHESTRATION SUMMARY / EXECUTION HANDOFF
+        # --------------------------------------------------------------------------
+        Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "LiteDeploy Pre-Flight Orchestration Complete [UID: $deployUid]." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
 
             return $deployment
         }
