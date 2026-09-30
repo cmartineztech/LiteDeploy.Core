@@ -83,6 +83,11 @@ LiteDeploy Core/
 │       ├── LiteDeploy.PreCheck.ps1/
 │       ├── LiteDeploy.SelectWorkFlow.ps1/
 │       └── LiteDeployProgress.ps1/
+├── Templates/                    # Master component blueprints, manifests & inventory scanner
+│   ├── LiteDeploy.Component.Template.ps1
+│   ├── LiteDeploy.Component.Manifest.json
+│   ├── Get-LiteDeployComponentInventory.ps1
+│   └── README.md
 ├── _Docs/                        # Product architecture specifications and plans
 │   └── architecture/             # Deployment plan, sequence diagrams, catalog specs, project status
 └── _Experiments/                 # Historical prototypes, test harnesses, and laboratory scripts
