@@ -164,6 +164,7 @@ function Resolve-LiteDeployEnginePath {
     if ([string]::IsNullOrWhiteSpace($RootPath)) { return "" }
     $resolved = Resolve-Path -Path @(
         (Join-Path $PSScriptRoot "LiteDeploy.DeploymentEngine.ps1"),
+        (Join-Path $PSScriptRoot "..\LiteDeploy.DeploymentEngine.ps1\LiteDeploy.DeploymentEngine.ps1"),
         "$RootPath\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1",
         "$RootPath\*\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1"
     ) -ErrorAction SilentlyContinue | Select-Object -First 1

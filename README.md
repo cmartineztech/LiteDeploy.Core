@@ -19,7 +19,8 @@ Runtime Scope (WinPE Execution & Target Deployment):
   BootInitializer         Device startup entry point (startnet parent process, network, Z:\ mount)
   PreCheck                9-point hardware, firmware, network, and source readiness UI
   SelectWorkflow          Computer identity, workflow, target disk, and driver picker UI
-  — DeploymentEngine —    Orchestration engine (planned): Setup /NoReboot, offline staging, handoff
+  DiskFormat              Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, and WinRE flags
+  — DeploymentEngine —    Orchestration engine: sequences PreCheck, SelectWorkflow, DiskFormat, and Setup
   Progress                Read-only deployment progress UI (WinPE & FullOS)
   Credentials             [DeployVault] + [WinPECT]: Encrypted secrets across the WinPE → FullOS reboot
 ```
@@ -43,10 +44,12 @@ Runtime Scope (WinPE Execution & Target Deployment):
 | :--- | :--- | :--- | :--- |
 | **LogWriter** | [Scripts_Engine_Components/Runtime/LiteDeploy.LogWriter.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.LogWriter.ps1) | Standardized dual-logging module (CMTrace-compatible XML + NDJSON). | Exists |
 | **HostShell** | [Scripts_Engine_Components/Runtime/LiteDeploy.HostShell.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.HostShell.ps1) | WinPE console window geometry, positioning, themes, and shell presets. | Exists |
-| **BootInitializer** | [Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches PreCheck. | Exists |
+| **BootInitializer** | [Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches DeploymentEngine. | Exists |
 | **PreCheck** | [Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1) | 9-point system readiness and hardware assessment WPF UI with software rendering. | Exists |
 | **SelectWorkflow** | [Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1) | WPF wizard for computer naming, workflow selection, disk targeting, and driver pack resolution. | Exists |
-| **DeploymentEngine** | [Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1) | Orchestrates PreCheck, SelectWorkflow, and deployment pipeline execution in WinPE. | Exists |
+| **DeploymentEngine** | [Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1) | Orchestrates PreCheck, SelectWorkflow, DiskFormat, ApplyOSImage, and deployment pipeline execution in WinPE. | Exists |
+| **DiskFormat** | [Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1) | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE attribute assignment. | Exists |
+| **ApplyOSImage** | [Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1) | Orchestrates Windows Setup (`setup.exe /NoReboot`) with automated unattended answer file generation. | Exists |
 | **Progress** | [Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1](Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). | Exists |
 
 On a client device, the live runtime chain is:
@@ -57,6 +60,8 @@ startnet.cmd
     → LiteDeploy.DeploymentEngine.ps1 (Pipeline Orchestrator)
       ├── LiteDeploy.PreCheck.ps1 (Readiness Assessment)
       ├── LiteDeploy.SelectWorkFlow.ps1 (Technician Selections)
+      ├── LiteDeploy.DiskFormat.ps1 (Target Disk Preparation)
+      ├── LiteDeploy.ApplyOSImage.ps1 (Setup.exe Engine & Unattend Generation)
       └── LiteDeploy.Progress.ps1 (Parallel Progress Reader)
 ```
 
@@ -77,7 +82,10 @@ LiteDeploy Core/
 │   │   ├── LiteDeploy.SetConfig.ps1/
 │   │   └── LiteDeploy.SetDeploymentShareAcl.ps1/
 │   └── Runtime/                  # WinPE & client deployment runtime components
+│       ├── LiteDeploy.ApplyOSImage.ps1/
 │       ├── LiteDeploy.BootInitilizer.ps1/
+│       ├── LiteDeploy.DeploymentEngine.ps1/
+│       ├── LiteDeploy.DiskFormat.ps1/
 │       ├── LiteDeploy.HostShell.ps1/
 │       ├── LiteDeploy.LogWriter.ps1/
 │       ├── LiteDeploy.PreCheck.ps1/

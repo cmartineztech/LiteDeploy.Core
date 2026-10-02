@@ -49,6 +49,8 @@ LiteDeploy supports three distinct deployment modes:
 | **`-NetworkPath`** | `[string]` | **Mandatory** for `BootWim` & `DeploymentShare` | `""` | UNC Network path (e.g. `\\Server\Share$`). |
 | **`-Environment`** | `[string]` | Optional | `$null` | Environment identifier (e.g. `Production`, `Dev`). |
 | **`-Comment`** | `[string]` | Optional | `""` | Note added to `_Comments` field in the JSON file. |
+| **`-RegisteredOrganization`** | `[string]` | Optional | `""` | Organization name registered to Windows (`ComputerSetup`). |
+| **`-RegisteredOwner`** | `[string]` | Optional | `""` | Owner / user name registered to Windows (`ComputerSetup`). |
 | **`-OutputPath`** | `[string]` | Optional | `'BootConfig.json'` | Target filepath (resolves relative to caller `$PWD`). |
 
 ---
@@ -77,6 +79,8 @@ LiteDeploy supports three distinct deployment modes:
 | **`ComputerSetup.Language`** | `String` | System language locale code (Default: `"en-US"`). |
 | **`ComputerSetup.KeyboardLocale`** | `String` | Keyboard input locale code (Default: `"0409:00000409"`). |
 | **`ComputerSetup.TimeZone`** | `String` | System time zone identifier (Default: `"Eastern Standard Time"`). |
+| **`ComputerSetup.RegisteredOrganization`** | `String` | Registered organization name for Windows setup (Default: `""`). |
+| **`ComputerSetup.RegisteredOwner`** | `String` | Registered owner name for Windows setup (Default: `""`). |
 | **`Drivers`** | `Object` | Top-level object for hardware driver detection and management. Omitted in `BootWim`. |
 | **`Drivers.AutoDetectDrivers`** | `Boolean` | Automatically detect Make/Model via WMI and inject matching driver pack (`true`/`false`). |
 | **`Drivers.AllowManualSelection`** | `Boolean` | Allow operator/technician to manually browse or select driver pack (`true`/`false`). |
@@ -102,4 +106,9 @@ LiteDeploy supports three distinct deployment modes:
 ### Generate Configuration for Offline USB Media
 ```powershell
 .\Scripts_Engine_Components\Admin\LiteDeploy.SetConfig.ps1\LiteDeploy.SetConfig.ps1 -BootConfig -Mode Media -Environment "Production" -Comment "USB Offline Media"
+```
+
+### Generate Configuration with Organization and Owner
+```powershell
+.\Scripts_Engine_Components\Admin\LiteDeploy.SetConfig.ps1\LiteDeploy.SetConfig.ps1 -BootConfig -Mode DeploymentShare -NetworkPath "\\Server01\DeploymentShare$" -RegisteredOrganization "Contoso Corp" -RegisteredOwner "IT Admin"
 ```

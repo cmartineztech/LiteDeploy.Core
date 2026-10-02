@@ -43,7 +43,9 @@
         "ImageEngine": "Setup.exe",
         "Language": "en-US",
         "KeyboardLocale": "0409:00000409",
-        "TimeZone": "Eastern Standard Time"
+        "TimeZone": "Eastern Standard Time",
+        "RegisteredOrganization": "",
+        "RegisteredOwner": ""
       },
       "Drivers": {
         "AutoDetectDrivers": true,
@@ -80,7 +82,9 @@
         "ImageEngine": "Setup.exe",
         "Language": "en-US",
         "KeyboardLocale": "0409:00000409",
-        "TimeZone": "Eastern Standard Time"
+        "TimeZone": "Eastern Standard Time",
+        "RegisteredOrganization": "",
+        "RegisteredOwner": ""
       },
       "Drivers": {
         "AutoDetectDrivers": true,

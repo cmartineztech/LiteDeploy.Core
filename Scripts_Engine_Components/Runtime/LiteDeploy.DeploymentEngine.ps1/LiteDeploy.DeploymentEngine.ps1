@@ -61,7 +61,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("LogWriter", "PreCheck", "SelectWorkflow", "ProgressHost")
+        Dependencies         = @("LogWriter", "PreCheck", "SelectWorkflow", "DiskFormat", "ApplyOSImage", "ProgressHost")
         Description          = "Runtime pipeline orchestrator: sequences PreCheck, SelectWorkflow, and deployment execution."
     }
 }
@@ -114,6 +114,8 @@ function Resolve-RuntimeComponent {
     $candidates.Add((Join-Path $PSScriptRoot $ScriptFileName))
     $candidates.Add((Join-Path $PSScriptRoot "Runtime\$ScriptFileName"))
     $candidates.Add((Join-Path $PSScriptRoot "..\Runtime\$ScriptFileName"))
+    $candidates.Add((Join-Path $PSScriptRoot "..\$ComponentName\$ScriptFileName"))
+    $candidates.Add((Join-Path $PSScriptRoot "..\\$ScriptFileName"))
 
     # 2. WinPE RAM root (~LiteDeploy\Engine\Scripts\...)
     $candidates.Add((Join-Path $sysDrive "~LiteDeploy\Engine\Scripts\Runtime\$ScriptFileName"))
@@ -365,6 +367,28 @@ function New-LiteDeployDeploymentObject {
             SelectionData = $null
             CompletedTime = $null
         }
+        Disk          = [PSCustomObject]@{
+            Formatted               = $false
+            DiskNumber              = $null
+            BootMode                = $null
+            OSPartitionNumber       = $null
+            OSDriveLetter           = $null
+            SystemPartitionNumber   = $null
+            RecoveryPartitionNumber = $null
+            TotalSizeGB             = $null
+            CompletedTime           = $null
+        }
+        OSInstall     = [PSCustomObject]@{
+            StartedTime     = $null
+            CompletedTime   = $null
+            Engine          = "Setup.exe"
+            SetupPath       = $null
+            ImageIndex      = $null
+            UnattendPath    = $null
+            Applied         = $false
+            ExitCode        = $null
+            DurationSeconds = 0
+        }
         Execution     = [PSCustomObject]@{
             CurrentStep     = "Initialized"
             PercentComplete = 0
@@ -570,13 +594,196 @@ function Start-LiteDeployPipeline {
         Write-LiteDeployLog "Phase 2: Workflow configuration confirmed. Ready for deployment execution." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
 
         # --------------------------------------------------------------------------
-        # PHASE 3: ORCHESTRATION SUMMARY / EXECUTION HANDOFF
+        # PHASE 3: DISK PREPARATION (Wipe, Layout, Format, Recovery Flags)
+        # --------------------------------------------------------------------------
+        $deployment.CurrentPhase = 3
+        $deployment.Status = "DiskPreparation"
+        $deployment.Execution.CurrentStep = "FormattingTargetDisk"
+        $deployment.Execution.PercentComplete = 25
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+
+        $diskFormatScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.DiskFormat.ps1" -ScriptFileName "LiteDeploy.DiskFormat.ps1"
+        if (-not $diskFormatScript) {
+            Write-LiteDeployLog "Phase 3 Failed: 'LiteDeploy.DiskFormat.ps1' could not be found." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "DiskFormatScriptNotFound"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        # Resolve target disk index from workflow selection (default to 0)
+        $targetDiskIndex = 0
+        if ($workflowOutput -and $workflowOutput.PSObject.Properties['TargetDiskIndex'] -and ($null -ne $workflowOutput.TargetDiskIndex)) {
+            $rawDisk = "$($workflowOutput.TargetDiskIndex)"
+            if ($rawDisk -match '(\d+)') {
+                $targetDiskIndex = [int]$matches[1]
+            }
+        }
+
+        # Resolve firmware boot mode (UEFI vs LEGACY)
+        $detectedBootMode = "UEFI"
+        if ($env:firmware_type -and ($env:firmware_type -match "(?i)Legacy|BIOS")) {
+            $detectedBootMode = "LEGACY"
+        }
+
+        # Temporary OS staging drive letter in WinPE (defaults to "W")
+        $osStagingDriveLetter = "W"
+
+        Write-LiteDeployLog "Phase 3: Formatting Disk $targetDiskIndex for $detectedBootMode deployment (Staging: ${osStagingDriveLetter}:)..." -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
+
+        $formatResult = $null
+        try {
+            $formatResult = & $diskFormatScript -DiskNumber $targetDiskIndex -BootMode $detectedBootMode -OSTempDriveLetter $osStagingDriveLetter -BootObject $BootObject
+        }
+        catch {
+            Write-LiteDeployLog "Phase 3 Failed: Unhandled exception during disk formatting: $_" -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "DiskFormatException: $_"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        if (-not $formatResult -or -not $formatResult.Success) {
+            Write-LiteDeployLog "Phase 3 Failed: Disk formatting did not succeed." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "DiskFormatFailed"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        $deployment.Disk.Formatted               = $true
+        $deployment.Disk.DiskNumber              = $formatResult.DiskNumber
+        $deployment.Disk.BootMode                = $formatResult.BootMode
+        $deployment.Disk.OSPartitionNumber       = $formatResult.OSPartitionNumber
+        $deployment.Disk.OSDriveLetter           = $formatResult.OSDriveLetter
+        $deployment.Disk.SystemPartitionNumber   = $formatResult.SystemPartitionNumber
+        $deployment.Disk.RecoveryPartitionNumber = $formatResult.RecoveryPartitionNumber
+        $deployment.Disk.TotalSizeGB             = $formatResult.TotalSizeGB
+        $deployment.Disk.CompletedTime           = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+
+        $deployment.Status = "ReadyForStaging"
+        $deployment.Execution.PercentComplete = 30
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+        Sync-LiteDeployLogsToShare -RemoteLogDir $deployment.Execution.RemoteLogDir
+
+        Write-LiteDeployLog "Phase 3: Disk $targetDiskIndex formatted successfully ($($formatResult.TotalSizeGB) GB, OS at $($formatResult.OSDriveLetter))." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+
+        # --------------------------------------------------------------------------
+        # PHASE 4: OS IMAGE APPLICATION (Setup.exe Engine & Unattend Generation)
+        # --------------------------------------------------------------------------
+        $deployment.CurrentPhase = 4
+        $deployment.Status = "ApplyingOSImage"
+        $deployment.Execution.CurrentStep = "ApplyingOperatingSystem"
+        $deployment.Execution.PercentComplete = 35
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+
+        $applyImageScript = Resolve-RuntimeComponent -ComponentName "LiteDeploy.ApplyOSImage.ps1" -ScriptFileName "LiteDeploy.ApplyOSImage.ps1"
+        if (-not $applyImageScript) {
+            Write-LiteDeployLog "Phase 4 Failed: 'LiteDeploy.ApplyOSImage.ps1' could not be found." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "ApplyOSImageScriptNotFound"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        # Extract selected OS SetupPath / ImagePath / ImageIndex from Workflow selection
+        $selectedSetupPath  = ""
+        $selectedImagePath  = ""
+        $selectedImageIndex = 0
+        if ($workflowOutput) {
+            if ($workflowOutput.PSObject.Properties['WorkflowTag'] -and $workflowOutput.WorkflowTag) {
+                $tag = $workflowOutput.WorkflowTag
+                if ($tag.PSObject.Properties['SetupPath'] -and $tag.SetupPath) {
+                    $selectedSetupPath = $tag.SetupPath
+                }
+                if ($tag.PSObject.Properties['ImagePath'] -and $tag.ImagePath) {
+                    $selectedImagePath = $tag.ImagePath
+                }
+                if ($tag.PSObject.Properties['Index'] -and ($null -ne $tag.Index)) {
+                    $selectedImageIndex = [int]$tag.Index
+                }
+            }
+            if ($selectedImageIndex -le 0 -and $workflowOutput.PSObject.Properties['ImageIndex'] -and ($null -ne $workflowOutput.ImageIndex)) {
+                $selectedImageIndex = [int]$workflowOutput.ImageIndex
+            }
+            if ($selectedImageIndex -le 0 -and $workflowOutput.PSObject.Properties['Index'] -and ($null -ne $workflowOutput.Index)) {
+                $selectedImageIndex = [int]$workflowOutput.Index
+            }
+        }
+
+        # Resolve BootConfig object if not already attached
+        $bootConfigObj = if ($BootObject -and $BootObject.PSObject.Properties['Config']) {
+            $BootObject.Config
+        } else {
+            $null
+        }
+
+        Write-LiteDeployLog "Phase 4: Initiating OS installation (Image Index: $(if ($selectedImageIndex -gt 0) { $selectedImageIndex } else { 1 })) on $($formatResult.OSDriveLetter) via Setup.exe..." -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
+
+        $deployment.OSInstall.StartedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+
+        $applyResult = $null
+        try {
+            $applyResult = & $applyImageScript `
+                -SetupPath $selectedSetupPath `
+                -ImagePath $selectedImagePath `
+                -ImageIndex $selectedImageIndex `
+                -Destination $formatResult.OSDriveLetter `
+                -WorkflowSelection $workflowOutput `
+                -DiskResult $formatResult `
+                -BootConfig $bootConfigObj `
+                -BootObject $BootObject
+        }
+        catch {
+            Write-LiteDeployLog "Phase 4 Failed: Unhandled exception during OS image application: $_" -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "ApplyOSImageException: $_"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        if (-not $applyResult -or -not $applyResult.Success) {
+            Write-LiteDeployLog "Phase 4 Failed: OS image application did not succeed." -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
+            $deployment.Status = "Failed"
+            $deployment.Execution.Errors += "ApplyOSImageFailed"
+            $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            Save-LiteDeployDeploymentState -DeploymentState $deployment
+            return $deployment
+        }
+
+        $deployment.OSInstall.Applied         = $true
+        $deployment.OSInstall.Engine          = $applyResult.Engine
+        $deployment.OSInstall.SetupPath       = $applyResult.SetupPath
+        $deployment.OSInstall.ImageIndex      = $applyResult.ImageIndex
+        $deployment.OSInstall.UnattendPath    = $applyResult.UnattendPath
+        $deployment.OSInstall.ExitCode        = $applyResult.ExitCode
+        $deployment.OSInstall.DurationSeconds = $applyResult.DurationSeconds
+        $deployment.OSInstall.CompletedTime   = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+
+        $deployment.Status = "OSImageApplied"
+        $deployment.Execution.PercentComplete = 70
+        Save-LiteDeployDeploymentState -DeploymentState $deployment
+        Sync-LiteDeployLogsToShare -RemoteLogDir $deployment.Execution.RemoteLogDir
+
+        Write-LiteDeployLog "Phase 4: Windows OS image applied successfully (Image Index: $($applyResult.ImageIndex)) in $($applyResult.DurationSeconds) seconds (Exit code: $($applyResult.ExitCode))." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+
+        # --------------------------------------------------------------------------
+        # PHASE 5: ORCHESTRATION SUMMARY / OFFLINE STAGING HANDOFF
         # --------------------------------------------------------------------------
         Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
-        Write-LiteDeployLog "LiteDeploy Pre-Flight Orchestration Complete [UID: $deployUid]." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "LiteDeploy Pre-Flight, Disk Preparation & OS Apply Complete [UID: $deployUid]." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "Target Disk : Disk $targetDiskIndex ($detectedBootMode) | OS Partition: $($formatResult.OSDriveLetter)" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "OS Applied  : $($applyResult.SetupPath) (Exit Code: $($applyResult.ExitCode))" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog "Unattend XML: $($applyResult.UnattendPath)" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
         Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
 
-            return $deployment
+        return $deployment
         }
         finally {
             # Synchronize final logs to deployment share

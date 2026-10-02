@@ -106,8 +106,55 @@ Required changes:
 - Accept `BootObject` directly.
 - Load OS editions from ImportOSMedia `catalog.json`.
 - Load workflows and optional deployment profiles from JSON.
-- Return a structured deployment selection containing stable IDs and numeric disk number.
 - Preserve current UI behavior while making its content catalog-driven.
+
+Completed:
+
+- Returns a structured deployment selection containing stable IDs, computer name, workflow, driver path, and numeric target disk number.
+
+### Disk Preparation Engine
+
+Location: `Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1/LiteDeploy.DiskFormat.ps1`
+
+Implemented:
+
+- Bare-metal target disk wiping with partition table removal (`Clear-Disk`)
+- Automated offline disk recovery and read-only clearing for WinPE SAN policies
+- Certified UEFI/GPT partition layout: ESP (500MB, FAT32), MSR (16MB), OS volume, tail WinRE (1024MB, NTFS)
+- Certified LEGACY/MBR partition layout: System Reserved (500MB Active NTFS), OS volume, tail WinRE (1024MB, Type 0x27)
+- WinRE GPT attribute stamping (`0x8000000000000001`) via diskpart pipeline with stdout error interception
+- Optional OS volume mounting to temporary staging letter (e.g. `W:`) with drive collision checks
+- Component Standard v1.0 compliance (`-Metadata`, `Set-StrictMode -Version 2.0`, `LogWriter` integration)
+- Structured `PSCustomObject` output contract reporting all created partition numbers and sizes
+
+### OS Image Application Engine (ApplyOSImage)
+
+Location: `Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1/LiteDeploy.ApplyOSImage.ps1`
+
+Implemented:
+
+- Windows Setup (`setup.exe`) engine orchestration with mandatory `/NoReboot` and `/DiagnosticPrompt enable`
+- Automated unattended XML answer file generation via template string key substitution (`Autopilot.xml` -> `X:\unattended.xml`)
+- Dynamic mapping of computer name, target disk/partition IDs, regional locales, time zone, and registration identity from `BootConfig.json` and workflow selections
+- Direct `/ImageIndex <index>` command-line targeting
+- Exit code verification (`0`, `3010`) and offline installation artifact validation (`W:\Windows`)
+- Component Standard v1.0 compliance (`-Metadata`, `Set-StrictMode -Version 2.0`, `LogWriter` integration)
+- Structured `PSCustomObject` output contract reporting duration, setup path, image index, unattend path, and exit status
+
+### Deployment Engine (WinPE Orchestrator)
+
+Location: `Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1/LiteDeploy.DeploymentEngine.ps1`
+
+Implemented:
+
+- Main WinPE pipeline orchestrator and phase sequencer
+- Single-Threaded Apartment (STA) verification
+- Structured logging with LogWriter and console restoration
+- Phase 1: PreCheck invocation and readiness gating
+- Phase 2: SelectWorkflow invocation and structured selection capture
+- Phase 3: Target disk preparation via `LiteDeploy.DiskFormat.ps1`
+- Persistent state tracking (`DeploymentState.json`) and share synchronization
+- Failure handling and diagnostic preservation
 
 ### OS media importer
 
@@ -132,6 +179,22 @@ Implemented:
 Decision:
 
 `Content/OperatingSystems/catalog.json` is the authoritative OS catalog. Do not build a competing catalog format.
+
+### Configuration Engine (SetConfig)
+
+Location: `Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1/LiteDeploy.SetConfig.ps1`
+
+Implemented:
+
+- Mode-aware `BootConfig.json` generator (`BootWim`, `DeploymentShare`, `Media`)
+- Master template configuration catalog (`LiteDeploy.Template.BootConfig.json`)
+- Strict parameter validation and UNC network path requirements
+- `ComputerSetup` identity specification:
+  - Computer name prompting, prefixing, and NetBIOS length enforcement
+  - Drive selection and imaging engine toggles (`Setup.exe` vs `Dism.exe`)
+  - Regional locales (`Language`, `KeyboardLocale`, `TimeZone`)
+  - Registered organization and owner properties (`RegisteredOrganization`, `RegisteredOwner`, default `""`) for unattended Windows answer file generation across `DeploymentShare` and `Media` modes
+- Component Standard v1.0 compliance (`-Metadata`, `Set-StrictMode -Version 2.0`)
 
 Required additions:
 
@@ -195,10 +258,10 @@ Integration decisions:
 - Versioned package catalog and JSON schema
 - Optional deployment-profile catalog
 - Cross-catalog resolver and reference validator
-- `LiteDeploy.DeploymentEngine.ps1`
+- `LiteDeploy.DeploymentEngine.ps1` (FullOS continuation & workflow runner; WinPE orchestration implemented)
 - Atomic deployment-state manager
 - Deployment lock/single-instance manager
-- Target-disk safety executor
+- Target-disk safety executor (`LiteDeploy.DiskFormat.ps1` implemented for WinPE)
 - Unattended-file generator
 - Windows Setup command builder and result validator
 - Offline Windows volume locator

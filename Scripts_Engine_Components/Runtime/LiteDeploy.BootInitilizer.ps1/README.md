@@ -118,8 +118,8 @@ When `Deployment.Type` is `"Network"` and `NetworkPath` is configured, the scrip
    * **Instant Early Exit**: As soon as an IP is detected (e.g. at 1.5s), the loop breaks **immediately** without waiting for the remaining 30 seconds.
    * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - IP Address Assignment Failed"*.
 4. **`NetworkPath` Validation & Universal Path Normalization**:
-   * Accepts both forward slash and backslash formats in `BootConfig.json` (e.g. `"/X1/DeploymentShare$"`, `"//X1/DeploymentShare$"`, or `"\\\\X1\\DeploymentShare$"`).
-   * Automatically normalizes any path to standard Windows UNC (`\\X1\DeploymentShare$`).
+   * Accepts both forward slash and backslash formats in `BootConfig.json` (e.g. `"/DeploymentServer/DeploymentShare$"`, `"//DeploymentServer/DeploymentShare$"`, or `"\\\\DeploymentServer\\DeploymentShare$"`).
+   * Automatically normalizes any path to standard Windows UNC (`\\DeploymentServer\DeploymentShare$`).
    * Tests TCP 445 socket connectivity to the deployment server via `.NET` `TcpClient` with a 5000ms timeout and `Test-Path` fallback for WinPE DNS lookup delays.
    * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - Server Unreachable"* displaying the target server name and `NetworkPath`.
 

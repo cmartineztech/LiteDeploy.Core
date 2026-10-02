@@ -63,6 +63,12 @@ param(
     [string]$Comment = "",
 
     [Parameter(Mandatory = $false)]
+    [string]$RegisteredOrganization = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$RegisteredOwner = "",
+
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath,
 
     [Parameter(Mandatory = $false)]
@@ -115,6 +121,8 @@ $ImageEngine                  = "Setup.exe"            # Imaging engine: Setup.e
 $Language                     = "en-US"                # Default system language locale
 $KeyboardLocale               = "0409:00000409"        # Default keyboard layout / input locale (US English)
 $TimeZone                     = "Eastern Standard Time"# Default system time zone
+$RegisteredOrganization       = if ($PSBoundParameters.ContainsKey('RegisteredOrganization')) { $RegisteredOrganization } else { "" } # Default Registered Organization
+$RegisteredOwner              = if ($PSBoundParameters.ContainsKey('RegisteredOwner')) { $RegisteredOwner } else { "" }               # Default Registered Owner
 $AutoDetectDrivers            = $true                  # Auto-detect driver pack by WMI Make/Model
 $AllowManualSelection         = $true                  # Allow technician to manually select driver pack
 $AutoOnlineDownloadOnMedia    = $true                  # Enable on-the-fly driver downloading when on Media
@@ -231,6 +239,8 @@ if ($Mode -ne 'BootWim') {
         'Language'                     = $Language
         'KeyboardLocale'               = $KeyboardLocale
         'TimeZone'                     = $TimeZone
+        'RegisteredOrganization'       = $RegisteredOrganization
+        'RegisteredOwner'              = $RegisteredOwner
     }
     $ConfigObject['Drivers'] = [ordered]@{
         'AutoDetectDrivers'         = $AutoDetectDrivers
@@ -279,6 +289,8 @@ if ($ConfigObject.Contains('ComputerSetup')) {
     Write-Host " Language         : $($ConfigObject.ComputerSetup.Language)"
     Write-Host " KeyboardLocale   : $($ConfigObject.ComputerSetup.KeyboardLocale)"
     Write-Host " TimeZone         : $($ConfigObject.ComputerSetup.TimeZone)"
+    Write-Host " RegOrganization  : $(if ([string]::IsNullOrWhiteSpace($ConfigObject.ComputerSetup.RegisteredOrganization)) { '(blank)' } else { $ConfigObject.ComputerSetup.RegisteredOrganization })"
+    Write-Host " RegOwner         : $(if ([string]::IsNullOrWhiteSpace($ConfigObject.ComputerSetup.RegisteredOwner)) { '(blank)' } else { $ConfigObject.ComputerSetup.RegisteredOwner })"
 }
 if ($ConfigObject.Contains('Drivers')) {
     Write-Host " AutoDetectDrivers: $($ConfigObject.Drivers.AutoDetectDrivers)"

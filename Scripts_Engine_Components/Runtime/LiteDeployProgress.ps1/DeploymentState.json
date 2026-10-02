@@ -1,4 +1,4 @@
-﻿{
+{
     "phase":  "Finalize",
     "workflowName":  "Standard Workstation Workflow",
     "deploymentId":  "LD-206072-001",
@@ -7,7 +7,7 @@
     "message":  "Completing Installation",
     "status":  "Completed",
     "computerModel":  "Latitude 7450",
-    "computerName":  "X1-DESKTOP01",
+    "computerName":  "DESKTOP-01",
     "productName":  "LiteDeploy",
     "source":  "Local (Media) Repository",
     "operatingSystem":  "Windows 11 Enterprise 25H2",

@@ -121,7 +121,7 @@ The native host engine, functions, and testing emulator read and write a unified
   "overallPercent": 50,
   "overallText": "Action 4 of 8",
   "logMessage": "Applying image index 6 from Windows11-25H2-en-US-x64.iso...",
-  "computerName": "X1-DESKTOP01",
+  "computerName": "DESKTOP-01",
   "computerModel": "Latitude 7450",
   "operatingSystem": "Windows 11 Enterprise 25H2",
   "source": "USB Repository",

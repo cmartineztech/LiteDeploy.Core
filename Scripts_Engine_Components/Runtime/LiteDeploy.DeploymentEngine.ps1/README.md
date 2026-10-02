@@ -14,7 +14,9 @@
 It executes in WinPE immediately following `BootInitializer`, coordinating the sequenced transitions across deployment phases:
 1. **Phase 1: Pre-Flight Assessment (`PreCheck`)** — Validates network reachability, RAM, storage, CPU architecture, and Secure Boot readiness.
 2. **Phase 2: Workflow & Identity Selection (`SelectWorkflow`)** — Collects computer name, OS workflow image, target physical disk, and driver pack choices.
-3. **Phase 3: Execution Handoff** — Aggregates and verifies pipeline outputs before launching Windows Setup / disk staging steps.
+3. **Phase 3: Disk Preparation (`DiskFormat`)** — Wipes and partitions target disk (UEFI/GPT or Legacy/MBR), mounts temporary staging volume, and stamps WinRE flags.
+4. **Phase 4: OS Image Application (`ApplyOSImage`)** — Generates customized `X:\unattended.xml` from `Autopilot.xml` template and executes `setup.exe /NoReboot`.
+5. **Phase 5: Execution Handoff & Summary** — Aggregates and verifies pipeline outputs before offline staging handoff.
 
 ---
 
@@ -33,7 +35,7 @@ Get-LiteDeployComponentMetadata
 | **TargetEnvironment** | `WinPE` |
 | **MinPowerShellVersion** | `5.1` |
 | **Author** | `LiteDeploy Team` |
-| **Dependencies** | `LogWriter`, `PreCheck`, `SelectWorkflow`, `ProgressHost` |
+| **Dependencies** | `LogWriter`, `PreCheck`, `SelectWorkflow`, `DiskFormat`, `ApplyOSImage`, `ProgressHost` |
 
 ---
 
@@ -96,9 +98,24 @@ The returned and persisted `$Deployment` state object (`X:\~LiteDeploy\Deploymen
         SelectionData  = $workflowOutput
         CompletedTime  = "2026-09-29T22:55:30.000Z"
     }
+    Disk            = [PSCustomObject]@{
+        Formatted      = $true
+        DiskNumber     = 0
+        OSDriveLetter  = "W:\"
+        CompletedTime  = "2026-09-29T22:56:00.000Z"
+    }
+    OSInstall       = [PSCustomObject]@{
+        Applied        = $true
+        Engine         = "Setup.exe"
+        SetupPath      = "Z:\Content\OS\setup.exe"
+        UnattendPath   = "X:\unattended.xml"
+        ExitCode       = 0
+        DurationSeconds= 210
+        CompletedTime  = "2026-09-29T22:59:30.000Z"
+    }
     Execution       = [PSCustomObject]@{
         CurrentStep    = "Initialized"
-        PercentComplete = 0
+        PercentComplete = 70
         LocalLogDir    = "X:\~LiteDeploy\WorkLogs"
         Errors         = @()
     }

@@ -14,6 +14,7 @@ sequenceDiagram
     participant Pre as PreCheck UI
     participant Select as Workflow UI
     participant EnginePE as Deployment Engine<br/>WinPE
+    participant DiskFormat as DiskFormat Engine<br/>WinPE
     participant Vault as DeployVault / WPCT
     participant ProgressPE as Progress UI<br/>WinPE process
     participant Setup as Windows Setup
@@ -37,6 +38,9 @@ sequenceDiagram
     else Deployment requested
         Boot->>EnginePE: Start orchestration with BootObject + selection
         EnginePE->>EnginePE: Revalidate disk, image, drivers, workflow
+        EnginePE->>DiskFormat: Invoke with disk index, boot mode, staging W:
+        DiskFormat->>DiskFormat: Wipe, partition ESP/OS/Recovery, stamp 0x8000000000000001 WinRE flags
+        DiskFormat-->>EnginePE: Structured disk summary (OS & recovery partition indexes)
         EnginePE->>Vault: Resolve only required credential IDs
         Vault-->>EnginePE: In-memory PSCredential map
         EnginePE->>EnginePE: Generate non-secret Unattend.xml and state
@@ -82,6 +86,7 @@ flowchart LR
         BI[BootInitializer]
         UI[PreCheck + Workflow UI]
         EPE[Deployment Engine]
+        DF[DiskFormat Engine]
         PPE[Progress UI process]
         BO[BootObject<br/>in memory only]
     end
@@ -105,6 +110,7 @@ flowchart LR
     Content --> EPE
     DV -->|Required IDs only| EPE
     BI --> BO --> UI --> EPE
+    EPE --> DF
     EPE --> Sel
     EPE --> State
     EPE --> Bin

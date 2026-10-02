@@ -117,7 +117,7 @@ function Emulate-TaskSequenceExecution {
         overallPercent  = 0
         overallText     = "Action 1 of 5"
         logMessage      = "Mounting deployment media repository..."
-        computerName    = "X1-DESKTOP01"
+        computerName    = "DESKTOP-01"
         computerModel   = "Latitude 7450"
         operatingSystem = "Windows 11 Enterprise 25H2"
         source          = "Local (Media) Repository"

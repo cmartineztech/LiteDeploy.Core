@@ -774,20 +774,8 @@ $null = $window.ShowDialog()
 if ($backdropWindow) { $backdropWindow.Close() }
 
 if ($script:ContinueRequested) {
-    $selectWorkflowPath = Resolve-LiteDeploySelectWorkflowPath
-    if (-not $selectWorkflowPath) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "LiteDeploy.SelectWorkFlow.ps1 was not found beside PreCheck or in components/07-SelectWorkflow.",
-            "LiteDeploy - Workflow Selection Missing",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return $false
-    }
-
-    # Use the call operator in the current PowerShell process. BootObject and its
-    # PSCredential remain in memory and are never serialized or placed on a command line.
-    return (& $selectWorkflowPath -BootObject $BootObject)
+    # If orchestrated by DeploymentEngine, return boolean status to allow Phase 1 -> Phase 2 transition
+    return $global:PreCheckPassed
 }
 
 return $global:PreCheckPassed

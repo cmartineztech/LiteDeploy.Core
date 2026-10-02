@@ -580,8 +580,8 @@ function Get-LiteDeployOperatingSystemsCatalog {
 
     foreach ($osFolder in $candidateOsFolders) {
         if ($osFolder -and (Test-Path -LiteralPath $osFolder)) {
-            $osFiles = Get-ChildItem -Path $osFolder -Recurse -Filter "os.json" -ErrorAction SilentlyContinue
-            if ($osFiles -and $osFiles.Count -gt 0) {
+            $osFiles = @(Get-ChildItem -Path $osFolder -Recurse -Filter "os.json" -ErrorAction SilentlyContinue)
+            if ($osFiles.Count -gt 0) {
                 $discoveredList = [System.Collections.Generic.List[object]]::new()
                 foreach ($f in $osFiles) {
                     try {
@@ -612,8 +612,8 @@ function Populate-WorkflowTreeView {
     $TreeView.Items.Clear()
     $validOsFound = $false
 
-    if ($CatalogResult -and $CatalogResult.OperatingSystems -and $CatalogResult.OperatingSystems.Count -gt 0) {
-        foreach ($os in $CatalogResult.OperatingSystems) {
+    if ($CatalogResult -and $CatalogResult.OperatingSystems -and @($CatalogResult.OperatingSystems).Length -gt 0) {
+        foreach ($os in @($CatalogResult.OperatingSystems)) {
             # Check if OS is explicitly disabled
             if ($os.PSObject.Properties['enabled'] -and $os.enabled -eq $false) {
                 continue
@@ -635,8 +635,8 @@ function Populate-WorkflowTreeView {
                 @()
             }
 
-            if ($editions.Count -gt 0) {
-                foreach ($ed in $editions) {
+            if (@($editions).Length -gt 0) {
+                foreach ($ed in @($editions)) {
                     $childItem = [System.Windows.Controls.TreeViewItem]::new()
                     $childItem.Style = $Window.FindResource("ChildNodeStyle")
                     
@@ -1080,7 +1080,7 @@ function Get-WmiAvailableBytes {
 
     try {
         $partitions = @(Get-WmiObject -Class Win32_DiskPartition -Filter "DiskIndex = $DiskIndex" -ErrorAction Stop)
-        if ($ExpectedPartitionCount -gt 0 -and $partitions.Count -eq 0) {
+        if ($ExpectedPartitionCount -gt 0 -and @($partitions).Length -eq 0) {
             return $null
         }
 
@@ -1179,7 +1179,7 @@ function Get-WinPEPhysicalDisks {
         $diskList = @()
     }
 
-    if ($diskList.Count -eq 0) {
+    if (@($diskList).Length -eq 0) {
         try {
             $wmiDisks = @(Get-WmiObject -Class Win32_DiskDrive -ErrorAction Stop | Where-Object {
                 $_.InterfaceType -ne "USB" -and $_.MediaType -notlike "*Removable*" -and [double]$_.Size -gt 0
@@ -1196,7 +1196,7 @@ function Get-WinPEPhysicalDisks {
         }
     }
 
-    if ($diskList.Count -gt 0) {
+    if (@($diskList).Length -gt 0) {
         return $diskList
     }
 
@@ -1211,7 +1211,15 @@ if ($null -ne $gridDisks) {
 }
 
 # Unified Action Handler (Start Deployment / Validate All Sections)
-$script:DeploymentRequested = $false
+$script:DeploymentRequested      = $false
+$script:ComputerName             = ""
+$script:ComputerDescription      = ""
+$script:SelectedWorkflowTag      = $null
+$script:SelectedOSName           = ""
+$script:SelectedDiskIndex        = $null
+$script:SelectedDiskModel        = ""
+$script:AutoDetectDrivers        = $false
+$script:SelectedDriverFolderPath = ""
 
 if ($null -ne $btnNext) {
     $btnNext.Add_Click({
@@ -1282,7 +1290,13 @@ if ($null -ne $btnNext) {
             if ($null -eq $firstInvalidControl) { $firstInvalidControl = $gridDisks }
             $hasError = $true
         } else {
-            $script:SelectedDiskIndex = $selectedDisk.Index
+            $script:SelectedDiskIndex = if ($selectedDisk.PSObject.Properties['DiskNumber'] -and ($null -ne $selectedDisk.DiskNumber)) {
+                [int]$selectedDisk.DiskNumber
+            } elseif ("$($selectedDisk.Index)" -match '(\d+)') {
+                [int]$matches[1]
+            } else {
+                0
+            }
             $script:SelectedDiskModel = $selectedDisk.Model
         }
 
@@ -1342,7 +1356,7 @@ if ($null -ne $btnRefresh) {
             [object[]]$detectedDisks = @(Get-WinPEPhysicalDisks)
             $gridDisks.ItemsSource = $detectedDisks
             if ($null -ne $txtDiskError) {
-                if ($detectedDisks.Count -eq 0) {
+                if (@($detectedDisks).Length -eq 0) {
                     $txtDiskError.Text = ""
                     $txtDiskError.Visibility = [System.Windows.Visibility]::Hidden
                     Show-DeploymentWarning -Message "No internal disks were detected. Load the storage driver and refresh."
@@ -1361,4 +1375,31 @@ $window.Add_KeyDown({
 
 # Display Window
 $window.ShowDialog() | Out-Null
-return $script:DeploymentRequested
+
+if (-not $script:DeploymentRequested) {
+    return [PSCustomObject]@{
+        DeploymentRequested = $false
+        Status              = "Cancelled"
+        ComputerName        = $null
+        ComputerDescription = $null
+        WorkflowName        = $null
+        WorkflowTag         = $null
+        TargetDiskIndex     = $null
+        TargetDiskModel     = $null
+        DriverFolderPath    = $null
+        AutoDetectDrivers   = $false
+    }
+}
+
+return [PSCustomObject]@{
+    DeploymentRequested = $true
+    Status              = "Confirmed"
+    ComputerName        = $script:ComputerName
+    ComputerDescription = $script:ComputerDescription
+    WorkflowName        = $script:SelectedOSName
+    WorkflowTag         = $script:SelectedWorkflowTag
+    TargetDiskIndex     = $script:SelectedDiskIndex
+    TargetDiskModel     = $script:SelectedDiskModel
+    DriverFolderPath    = $script:SelectedDriverFolderPath
+    AutoDetectDrivers   = $script:AutoDetectDrivers
+}

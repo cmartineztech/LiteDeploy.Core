@@ -33,7 +33,8 @@ Related project documents:
 | `LiteDeploy.PreCheck.ps1` | WinPE | Validates configuration, networking, storage, memory, firmware, Secure Boot, and TPM readiness. Returns a structured result to the parent. |
 | `LiteDeploy.SelectWorkFlow.ps1` | WinPE | Collects computer identity, workflow, target disk, and driver selection. Returns a structured selection object. |
 | `LiteDeploy.SelecWorkflowDriverPicker.ps1` | WinPE | Reusable WinPE-compatible WPF directory picker used by workflow selection. |
-| `LiteDeploy.DeploymentEngine.ps1` | Both | Planned orchestration engine. In WinPE it validates and starts Setup; in FullOS it resumes workflow actions from persisted state. |
+| `LiteDeploy.DeploymentEngine.ps1` | Both | Runtime pipeline orchestrator. In WinPE it sequences PreCheck, SelectWorkflow, DiskFormat, and Setup; in FullOS it resumes workflow actions from persisted state. |
+| `LiteDeploy.DiskFormat.ps1` | WinPE | Wipes target storage, applies certified UEFI/GPT or Legacy/MBR layout, mounts temporary OS staging volume (W:), and stamps WinRE recovery attributes (0x8000000000000001). |
 | `LiteDeploy.Progress.ps1` | Both | Read-only WPF progress client. It renders `DeploymentState.json`; it does not own deployment operations. |
 | [DeployVault](https://github.com/cmartinezone/DeployVault) | WinPE/server | Resolves only the credential IDs declared by the selected workflow. The vault files remain on the deployment source. |
 | [WinPECT](https://github.com/cmartinezone/WinPECT) | WinPE to FullOS | Encrypts the required `PSCredential` objects for the target machine and imports them into SYSTEM-owned DPAPI CLIXML after boot. |
@@ -51,6 +52,8 @@ The development repository organizes modules under `Scripts_Engine_Components/` 
   LiteDeploy.SelectWorkFlow.ps1
   LiteDeploy.SelecWorkflowDriverPicker.ps1
   LiteDeploy.DeploymentEngine.ps1
+  LiteDeploy.DiskFormat.ps1
+  LiteDeploy.ApplyOSImage.ps1
   LiteDeploy.Progress.ps1
 ```
 
@@ -69,16 +72,17 @@ The deployment engine resolves sibling scripts from `$PSScriptRoot`. It does not
 7. Workflow selection returns a structured selection object.
 8. If the technician cancels, BootInitializer stops without changing a disk.
 
-### Phase B: validation, credentials, and Setup preparation
+### Phase B: validation, disk preparation, credentials, and Setup preparation
 
 1. The deployment engine validates the target disk number again against current hardware immediately before any destructive operation.
-2. It resolves the selected image, edition/index, drivers, workflow definition, and required credential IDs.
-3. It obtains `DeploymentShare` from `BootObject.Credential` when FullOS needs access to the share.
-4. It resolves only the selected workflow's required IDs through DeployVault.
-5. Missing, disabled, or duplicate required credentials stop deployment before disk modification.
-6. It generates the unattended answer file without passwords or serialized credentials.
-7. It creates the deployment state and starts the WinPE progress host as a separate process.
-8. It launches Windows Setup, waits for it to exit, and records the exit code.
+2. It invokes `LiteDeploy.DiskFormat.ps1` with the selected disk index, firmware boot mode (UEFI/GPT or Legacy/MBR), and temporary OS staging letter (`W:`). The disk is cleared, partition structure created, NTFS/FAT32 volumes formatted, and `0x8000000000000001` WinRE attributes applied.
+3. It resolves the selected image, edition/index, drivers, workflow definition, and required credential IDs.
+4. It obtains `DeploymentShare` from `BootObject.Credential` when FullOS needs access to the share.
+5. It resolves only the selected workflow's required IDs through DeployVault.
+6. Missing, disabled, or duplicate required credentials stop deployment before disk modification.
+7. It generates the unattended answer file without passwords or serialized credentials, mapping computer identity and registration details (`RegisteredOrganization`, `RegisteredOwner`, `TimeZone`, `KeyboardLocale`) directly from `BootConfig.json` (`ComputerSetup`).
+8. It creates the deployment state and starts the WinPE progress host as a separate process.
+9. It launches Windows Setup, waits for it to exit, and records the exit code.
 
 Conceptual invocation:
 
@@ -225,7 +229,7 @@ The existing PreCheck currently returns only a Boolean when dot-sourced. It must
 ```json
 {
   "DeploymentRequested": true,
-  "ComputerName": "X1-DESKTOP01",
+  "ComputerName": "DESKTOP-01",
   "ComputerDescription": "Finance laptop",
   "WorkflowId": "W11-ENT-STD",
   "WorkflowName": "Windows 11 Enterprise",
