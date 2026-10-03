@@ -11,10 +11,10 @@ sequenceDiagram
     autonumber
     participant Startnet as startnet.cmd
     participant Boot as BootInitializer<br/>WinPE parent
-    participant Pre as PreCheck UI
+    participant Pre as HardwarePreCheck UI
     participant Select as Workflow UI
     participant EnginePE as Deployment Engine<br/>WinPE
-    participant DiskFormat as DiskFormat Engine<br/>WinPE
+    participant DiskPreparation as DiskPreparation Engine<br/>WinPE
     participant Vault as DeployVault / WPCT
     participant ProgressPE as Progress UI<br/>WinPE process
     participant Setup as Windows Setup
@@ -26,7 +26,7 @@ sequenceDiagram
     Startnet->>Boot: Launch PowerShell 5.1 STA shell
     Boot->>Boot: Load config, network, share credential
     Boot->>Pre: Invoke with BootObject
-    Pre-->>Boot: Structured PreCheck result
+    Pre-->>Boot: Structured HardwarePreCheck result
     alt Failed or cancelled
         Boot->>Boot: Stop without changing disk
     else Passed and Continue
@@ -38,9 +38,9 @@ sequenceDiagram
     else Deployment requested
         Boot->>EnginePE: Start orchestration with BootObject + selection
         EnginePE->>EnginePE: Revalidate disk, image, drivers, workflow
-        EnginePE->>DiskFormat: Invoke with disk index, boot mode, staging W:
-        DiskFormat->>DiskFormat: Wipe, partition ESP/OS/Recovery, stamp 0x8000000000000001 WinRE flags
-        DiskFormat-->>EnginePE: Structured disk summary (OS & recovery partition indexes)
+        EnginePE->>DiskPreparation: Invoke with disk index, boot mode, staging W:
+        DiskPreparation->>DiskPreparation: Wipe, partition ESP/OS/Recovery, stamp 0x8000000000000001 WinRE flags
+        DiskPreparation-->>EnginePE: Structured disk summary (OS & recovery partition indexes)
         EnginePE->>Vault: Resolve only required credential IDs
         Vault-->>EnginePE: In-memory PSCredential map
         EnginePE->>EnginePE: Generate non-secret Unattend.xml and state
@@ -84,9 +84,9 @@ flowchart LR
 
     subgraph PE[WinPE - SYSTEM process]
         BI[BootInitializer]
-        UI[PreCheck + Workflow UI]
+        UI[HardwarePreCheck + Workflow UI]
         EPE[Deployment Engine]
-        DF[DiskFormat Engine]
+        DF[DiskPreparation Engine]
         PPE[Progress UI process]
         BO[BootObject<br/>in memory only]
     end

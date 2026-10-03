@@ -14,14 +14,15 @@ Admin Scope (Preparation & Share Provisioning):
   WinPEBuilder            Builds ISO or Boot.wim for WDS/PXE (separate repository)
 
 Runtime Scope (WinPE Execution & Target Deployment):
-  LogWriter               Central CMTrace XML + NDJSON logging used by all components
-  HostShell               WinPE console window geometry, presets, and theme management
-  BootInitializer         Device startup entry point (startnet parent process, network, Z:\ mount)
-  PreCheck                9-point hardware, firmware, network, and source readiness UI
-  SelectWorkflow          Computer identity, workflow, target disk, and driver picker UI
-  DiskFormat              Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, and WinRE flags
-  — DeploymentEngine —    Orchestration engine: sequences PreCheck, SelectWorkflow, DiskFormat, and Setup
-  Progress                Read-only deployment progress UI (WinPE & FullOS)
+  LogWriter            Central CMTrace XML logging used by all components
+  HostShell            WinPE console window geometry, presets, and theme management
+  BootInitializer      Device startup entry point (startnet parent process, network, Z:\ mount)
+  DeploymentEngine     Sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation
+  HardwarePreCheck     9-point hardware, firmware, network, and source readiness UI
+  WorkflowSelection    Computer identity, workflow, target disk, and driver picker UI
+  DiskPreparation      Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, and WinRE flags
+  OSInstallation       Windows Setup (setup.exe /NoReboot) and unattended answer file
+  Progress            Read-only deployment progress UI (WinPE & FullOS)
   Credentials             [DeployVault] + [WinPECT]: Encrypted secrets across the WinPE → FullOS reboot
 ```
 
@@ -31,37 +32,37 @@ Runtime Scope (WinPE Execution & Target Deployment):
 
 | Component | Path | Description | Status |
 | :--- | :--- | :--- | :--- |
-| **SetConfig** | [Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` for `BootWim`, `DeploymentShare`, and `Media` deployment modes. | Exists |
-| **SetDeploymentShareAcl** | [Scripts_Engine_Components/Admin/LiteDeploy.SetDeploymentShareAcl.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions folder hierarchy, SMB shares, and CREATOR-OWNER log isolation ACLs. | Exists |
-| **SyncComponents** | [Scripts_Engine_Components/Admin/LiteDeploy.SyncComponents.ps1](Scripts_Engine_Components/Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository modules to Deployment Shares, WinPE Builder staging, and Media roots. | Exists |
-| **ImportOSMedia** | [Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1](Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1) | Ingests Windows setup media/ISOs, extracts edition metadata via DISM/7-Zip, and publishes `catalog.json`. | Exists |
-| **Credentials** | [Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1](Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1) | Integration architecture for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). | Documented |
+| **SetConfig** | [Engine/Scripts/Admin/LiteDeploy.SetConfig.ps1](Engine/Scripts/Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` for `BootWim`, `DeploymentShare`, and `Media` deployment modes. | Exists |
+| **SetDeploymentShareAcl** | [Engine/Scripts/Admin/LiteDeploy.SetDeploymentShareAcl.ps1](Engine/Scripts/Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions folder hierarchy, SMB shares, and CREATOR-OWNER log isolation ACLs. | Exists |
+| **SyncComponents** | [Engine/Scripts/Admin/LiteDeploy.SyncComponents.ps1](Engine/Scripts/Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository modules to Deployment Shares, WinPE Builder staging, and Media roots. | Exists |
+| **ImportOSMedia** | [Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1](Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1) | Ingests Windows setup media/ISOs, extracts edition metadata via DISM/7-Zip, and publishes `catalog.json`. | Exists |
+| **Credentials** | [Engine/Scripts/Admin/LiteDeploy.Credentials.ps1](Engine/Scripts/Admin/LiteDeploy.Credentials.ps1) | Integration architecture for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). | Documented |
 | **WinPEBuilder** | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds bootable WinPE ISO media or `Boot.wim` for WDS/PXE. | Separate repo |
 
 ### Runtime Engine (`Runtime`)
 
 | Component | Path | Description | Status |
 | :--- | :--- | :--- | :--- |
-| **LogWriter** | [Scripts_Engine_Components/Runtime/LiteDeploy.LogWriter.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.LogWriter.ps1) | Standardized dual-logging module (CMTrace-compatible XML + NDJSON). | Exists |
-| **HostShell** | [Scripts_Engine_Components/Runtime/LiteDeploy.HostShell.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.HostShell.ps1) | WinPE console window geometry, positioning, themes, and shell presets. | Exists |
-| **BootInitializer** | [Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches DeploymentEngine. | Exists |
-| **PreCheck** | [Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1) | 9-point system readiness and hardware assessment WPF UI with software rendering. | Exists |
-| **SelectWorkflow** | [Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1) | WPF wizard for computer naming, workflow selection, disk targeting, and driver pack resolution. | Exists |
-| **DeploymentEngine** | [Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1) | Orchestrates PreCheck, SelectWorkflow, DiskFormat, ApplyOSImage, and deployment pipeline execution in WinPE. | Exists |
-| **DiskFormat** | [Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1) | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE attribute assignment. | Exists |
-| **ApplyOSImage** | [Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1](Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1) | Orchestrates Windows Setup (`setup.exe /NoReboot`) with automated unattended answer file generation. | Exists |
-| **Progress** | [Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1](Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). | Exists |
+| **LogWriter** | [Engine/Scripts/Runtime/000-LogWriter](Engine/Scripts/Runtime/000-LogWriter) | Standardized CMTrace XML logging module. Component id `LogWriter`. | Exists |
+| **HostShell** | [Engine/Scripts/Runtime/000-HostShell](Engine/Scripts/Runtime/000-HostShell) | WinPE console window geometry, positioning, themes, and shell presets. Component id `HostShell`. | Exists |
+| **Progress** | [Engine/Scripts/Runtime/000-Progress](Engine/Scripts/Runtime/000-Progress) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). Component id `Progress`. | Exists |
+| **BootInitializer** | [Engine/Scripts/Runtime/010-BootInitializer](Engine/Scripts/Runtime/010-BootInitializer) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches DeploymentEngine. Component id `BootInitializer`. | Exists |
+| **DeploymentEngine** | [Engine/Scripts/Runtime/020-DeploymentEngine](Engine/Scripts/Runtime/020-DeploymentEngine) | Orchestrates HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation in WinPE. Component id `DeploymentEngine`. | Exists |
+| **HardwarePreCheck** | [Engine/Scripts/Runtime/030-HardwarePreCheck](Engine/Scripts/Runtime/030-HardwarePreCheck) | 9-point system readiness and hardware assessment WPF UI with software rendering. Component id `HardwarePreCheck`. | Exists |
+| **WorkflowSelection** | [Engine/Scripts/Runtime/040-WorkflowSelection](Engine/Scripts/Runtime/040-WorkflowSelection) | WPF wizard for computer naming, workflow selection, disk targeting, and driver pack resolution. Component id `WorkflowSelection`. | Exists |
+| **DiskPreparation** | [Engine/Scripts/Runtime/050-DiskPreparation](Engine/Scripts/Runtime/050-DiskPreparation) | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE attribute assignment. Component id `DiskPreparation`. | Exists |
+| **OSInstallation** | [Engine/Scripts/Runtime/080-OSInstallation](Engine/Scripts/Runtime/080-OSInstallation) | Orchestrates Windows Setup (`setup.exe /NoReboot`) with automated unattended answer file generation. Component id `OSInstallation`. | Exists |
 
 On a client device, the live runtime chain is:
 
 ```text
 startnet.cmd
-  → LiteDeploy.BootInitilizer.ps1 (Parent Shell)
+  → LiteDeploy.BootInitializer.ps1 (Parent Shell)
     → LiteDeploy.DeploymentEngine.ps1 (Pipeline Orchestrator)
-      ├── LiteDeploy.PreCheck.ps1 (Readiness Assessment)
-      ├── LiteDeploy.SelectWorkFlow.ps1 (Technician Selections)
-      ├── LiteDeploy.DiskFormat.ps1 (Target Disk Preparation)
-      ├── LiteDeploy.ApplyOSImage.ps1 (Setup.exe Engine & Unattend Generation)
+      ├── LiteDeploy.HardwarePreCheck.ps1 (Readiness Assessment)
+      ├── LiteDeploy.WorkflowSelection.ps1 (Technician Selections)
+      ├── LiteDeploy.DiskPreparation.ps1 (Target Disk Preparation)
+      ├── LiteDeploy.OSInstallation.ps1 (Setup.exe Engine & Unattend Generation)
       └── LiteDeploy.Progress.ps1 (Parallel Progress Reader)
 ```
 
@@ -69,28 +70,33 @@ startnet.cmd
 
 ```text
 LiteDeploy Core/
-├── DeploymentShare_Layout/       # Root deployment share template & folder skeleton
+├── DeploymentShare/              # Root deployment share template & folder skeleton
 │   ├── Config/                   # Boot configuration & runtime policy files
 │   ├── Content/                  # Deployment payloads (BootMedia, Drivers, OperatingSystems, Packages, Temp, Unattend)
 │   ├── Engine/                   # Scripts (Admin/Runtime) and execution tools
 │   ├── WorkFlows/                # JSON workflow definitions (Standard, Intune Ready, etc.)
 │   └── WorkLogs/                 # Execution log destinations (Admin, Deployments)
-├── Scripts_Engine_Components/    # Core PowerShell engine modules and management tools
-│   ├── Admin/                    # Administrative & share setup scripts
-│   │   ├── LiteDeploy.Credentials.ps1/
-│   │   ├── LiteDeploy.ImportOSMedia.ps1/
-│   │   ├── LiteDeploy.SetConfig.ps1/
-│   │   └── LiteDeploy.SetDeploymentShareAcl.ps1/
-│   └── Runtime/                  # WinPE & client deployment runtime components
-│       ├── LiteDeploy.ApplyOSImage.ps1/
-│       ├── LiteDeploy.BootInitilizer.ps1/
-│       ├── LiteDeploy.DeploymentEngine.ps1/
-│       ├── LiteDeploy.DiskFormat.ps1/
-│       ├── LiteDeploy.HostShell.ps1/
-│       ├── LiteDeploy.LogWriter.ps1/
-│       ├── LiteDeploy.PreCheck.ps1/
-│       ├── LiteDeploy.SelectWorkFlow.ps1/
-│       └── LiteDeployProgress.ps1/
+├── Engine/
+│   └── Scripts/                  # Core PowerShell engine modules and management tools
+│       ├── Admin/                # Administrative & share setup scripts
+│       │   ├── LiteDeploy.Credentials.ps1/
+│       │   ├── LiteDeploy.ImportOSMedia.ps1/
+│       │   ├── LiteDeploy.SetConfig.ps1/
+│       │   └── LiteDeploy.SetDeploymentShareAcl.ps1/
+│       └── Runtime/              # WinPE & client deployment runtime components
+│           ├── 000-LogWriter/
+│           ├── 000-HostShell/
+│           ├── 000-Progress/
+│           ├── 010-BootInitializer/
+│           ├── 020-DeploymentEngine/
+│           ├── 030-HardwarePreCheck/
+│           ├── 040-WorkflowSelection/
+│           ├── 050-DiskPreparation/
+│           ├── 060-DriverStaging/
+│           ├── 070-AnswerFileGenerator/
+│           ├── 080-OSInstallation/
+│           ├── 090-CredentialTransfer/
+│           └── 100-DeploymentCleanup/
 ├── Templates/                    # Master component blueprints & inventory scanner
 │   ├── LiteDeploy.Component.Template.ps1
 │   ├── Get-LiteDeployComponentInventory.ps1

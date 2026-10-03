@@ -3,7 +3,7 @@
     Discovers and enumerates all LiteDeploy components across the repository.
 
 .DESCRIPTION
-    Scans the Scripts_Engine_Components directory, executes or inspects components for standard
+    Scans the Engine\Scripts directory, executes or inspects components for standard
     metadata, and outputs a consolidated inventory table.
 
 .EXAMPLE
@@ -25,7 +25,7 @@ $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($RootPath)) {
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    $RootPath = if ($scriptDir) { Join-Path $scriptDir "..\Scripts_Engine_Components" } else { ".\Scripts_Engine_Components" }
+    $RootPath = if ($scriptDir) { Join-Path $scriptDir "..\Engine\Scripts" } else { ".\Engine\Scripts" }
 }
 
 $resolvedRoot = (Resolve-Path -LiteralPath $RootPath).Path

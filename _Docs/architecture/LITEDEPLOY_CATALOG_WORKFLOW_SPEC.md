@@ -9,7 +9,7 @@ Related documents:
 - [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md)
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md)
-- [ImportOSMedia/README.md](../../Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1/README.md)
+- [ImportOSMedia/README.md](../../Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/README.md)
 
 ## 1. Catalog relationship model
 
@@ -97,13 +97,13 @@ Display names may change without breaking references. IDs must not contain a pas
   Engine\Scripts\...
 ```
 
-The initial empty share tree in this repository is [DeploymentShare_Layout](../../DeploymentShare_Layout). It uses the folder name `WorkFlows`. Catalog JSON in that tree is placeholder-only until ImportOSMedia and workflow publishing exist.
+The initial empty share tree in this repository is [DeploymentShare](../../DeploymentShare). It uses the folder name `WorkFlows`. Catalog JSON in that tree is placeholder-only until ImportOSMedia and workflow publishing exist.
 
 Forward-slash paths stored in JSON are repository-relative. Runtime code resolves them against the validated deployment root and normalizes them with `Join-Path`. Catalog paths must not escape the deployment root through `..`, rooted paths, or alternate data streams.
 
 ## 4. Operating-system catalog
 
-`Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMedia.ps1` already creates:
+`Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMedia.ps1` already creates:
 
 ```text
 Content/OperatingSystems/<media-folder>/os.json

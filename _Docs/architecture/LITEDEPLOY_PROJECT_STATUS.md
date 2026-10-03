@@ -32,8 +32,8 @@ The intended production chain is:
 ```text
 startnet.cmd
     → BootInitializer
-    → PreCheck
-    → SelectWorkflow
+    → HardwarePreCheck
+    → WorkflowSelection
     → DeploymentEngine (WinPE)
     → setup.exe /NoReboot
     → Offline handoff staging
@@ -48,7 +48,7 @@ startnet.cmd
 
 ### Boot initialization
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeploy.BootInitilizer.ps1/LiteDeploy.BootInitilizer.ps1`
+Location: `Engine/Scripts/Runtime/010-BootInitializer/LiteDeploy.BootInitializer.ps1`
 
 Implemented:
 
@@ -58,17 +58,17 @@ Implemented:
 - Deployment-share mapping
 - Technician credential prompt
 - `BootObject` construction
-- Same-process invocation of PreCheck
+- Same-process invocation of HardwarePreCheck
 
 Required changes:
 
 - Become the explicit sequence orchestrator.
-- Consume structured PreCheck and workflow results.
+- Consume structured HardwarePreCheck and workflow results.
 - Invoke the planned Deployment Engine.
 
-### PreCheck UI
+### HardwarePreCheck UI
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeploy.PreCheck.ps1/LiteDeploy.PreCheck.ps1`
+Location: `Engine/Scripts/Runtime/030-HardwarePreCheck/LiteDeploy.HardwarePreCheck.ps1`
 
 Implemented:
 
@@ -87,8 +87,8 @@ Required changes:
 
 Locations:
 
-- `Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1/LiteDeploy.SelectWorkFlow.ps1`
-- `Scripts_Engine_Components/Runtime/LiteDeploy.SelectWorkFlow.ps1/LiteDeploy.SelecWorkflowDriverPicker.ps1`
+- `Engine/Scripts/Runtime/040-WorkflowSelection/LiteDeploy.WorkflowSelection.ps1`
+- `Engine/Scripts/Runtime/040-WorkflowSelection/LiteDeploy.WorkflowSelectionDriverPicker.ps1`
 
 Implemented:
 
@@ -114,7 +114,7 @@ Completed:
 
 ### Disk Preparation Engine
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeploy.DiskFormat.ps1/LiteDeploy.DiskFormat.ps1`
+Location: `Engine/Scripts/Runtime/050-DiskPreparation/LiteDeploy.DiskPreparation.ps1`
 
 Implemented:
 
@@ -127,9 +127,9 @@ Implemented:
 - Component Standard v1.0 compliance (`-Metadata`, `Set-StrictMode -Version 2.0`, `LogWriter` integration)
 - Structured `PSCustomObject` output contract reporting all created partition numbers and sizes
 
-### OS Image Application Engine (ApplyOSImage)
+### OS Image Application Engine (OSInstallation)
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeploy.ApplyOSImage.ps1/LiteDeploy.ApplyOSImage.ps1`
+Location: `Engine/Scripts/Runtime/080-OSInstallation/LiteDeploy.OSInstallation.ps1`
 
 Implemented:
 
@@ -143,16 +143,16 @@ Implemented:
 
 ### Deployment Engine (WinPE Orchestrator)
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeploy.DeploymentEngine.ps1/LiteDeploy.DeploymentEngine.ps1`
+Location: `Engine/Scripts/Runtime/020-DeploymentEngine/LiteDeploy.DeploymentEngine.ps1`
 
 Implemented:
 
 - Main WinPE pipeline orchestrator and phase sequencer
 - Single-Threaded Apartment (STA) verification
 - Structured logging with LogWriter and console restoration
-- Phase 1: PreCheck invocation and readiness gating
-- Phase 2: SelectWorkflow invocation and structured selection capture
-- Phase 3: Target disk preparation via `LiteDeploy.DiskFormat.ps1`
+- Phase 1: HardwarePreCheck invocation and readiness gating
+- Phase 2: WorkflowSelection invocation and structured selection capture
+- Phase 3: Target disk preparation via `LiteDeploy.DiskPreparation.ps1`
 - Persistent state tracking (`DeploymentState.json`) and share synchronization
 - Failure handling and diagnostic preservation
 
@@ -160,9 +160,9 @@ Implemented:
 
 Locations:
 
-- `Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMedia.ps1`
-- `Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMediaGUI.ps1`
-- `Scripts_Engine_Components/Admin/LiteDeploy.ImportOSMedia.ps1/README.md`
+- `Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMedia.ps1`
+- `Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/LiteDeploy.ImportOSMediaGUI.ps1`
+- `Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/README.md`
 
 Implemented:
 
@@ -182,7 +182,7 @@ Decision:
 
 ### Configuration Engine (SetConfig)
 
-Location: `Scripts_Engine_Components/Admin/LiteDeploy.SetConfig.ps1/LiteDeploy.SetConfig.ps1`
+Location: `Engine/Scripts/Admin/LiteDeploy.SetConfig.ps1/LiteDeploy.SetConfig.ps1`
 
 Implemented:
 
@@ -205,7 +205,7 @@ Required additions:
 
 ### Progress UI
 
-Location: `Scripts_Engine_Components/Runtime/LiteDeployProgress.ps1/LiteDeploy.Progress.ps1`
+Location: `Engine/Scripts/Runtime/000-Progress/LiteDeploy.Progress.ps1`
 
 Implemented:
 
@@ -232,7 +232,7 @@ Locations:
 
 - [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted share vault (separate repository)
 - [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository)
-- `Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1/` — LiteDeploy integration notes and [EndToEndDeploymentGuide.md](../../Scripts_Engine_Components/Admin/LiteDeploy.Credentials.ps1/EndToEndDeploymentGuide.md)
+- `Engine/Scripts/Admin/LiteDeploy.Credentials.ps1/` — LiteDeploy integration notes and [EndToEndDeploymentGuide.md](../../Engine/Scripts/Admin/LiteDeploy.Credentials.ps1/EndToEndDeploymentGuide.md)
 
 Implemented:
 
@@ -261,7 +261,7 @@ Integration decisions:
 - `LiteDeploy.DeploymentEngine.ps1` (FullOS continuation & workflow runner; WinPE orchestration implemented)
 - Atomic deployment-state manager
 - Deployment lock/single-instance manager
-- Target-disk safety executor (`LiteDeploy.DiskFormat.ps1` implemented for WinPE)
+- Target-disk safety executor (`LiteDeploy.DiskPreparation.ps1` implemented for WinPE)
 - Unattended-file generator
 - Windows Setup command builder and result validator
 - Offline Windows volume locator
@@ -283,7 +283,7 @@ Integration decisions:
 ## 4. Decisions already made
 
 1. BootInitializer remains the WinPE parent process.
-2. PreCheck and SelectWorkflow run in the same PowerShell process as BootInitializer.
+2. HardwarePreCheck and WorkflowSelection run in the same PowerShell process as BootInitializer.
 3. UI scripts close and return structured results; they do not start their successors.
 4. Workflows are OS-agnostic.
 5. ImportOSMedia owns OS-media ingestion and the OS catalog.
@@ -339,7 +339,7 @@ Build one complete vertical deployment path before adding more UI or package typ
 
 ```text
 BootInitializer
-    → structured PreCheck result
+    → structured HardwarePreCheck result
     → catalog-driven structured Workflow result
     → DeploymentEngine state initialization
     → generate Unattend.xml
@@ -402,7 +402,7 @@ These decisions should be finalized during implementation:
 The next milestone is complete only when a VM can:
 
 1. Start from WinPE.
-2. Pass PreCheck.
+2. Pass HardwarePreCheck.
 3. Select a real ImportOSMedia catalog edition and a JSON workflow.
 4. Run Setup without allowing Setup to perform the first reboot.
 5. Stage the engine and encrypted credentials.
