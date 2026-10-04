@@ -1,19 +1,26 @@
 # LiteDeploy WinPE Initialization Engine Documentation
 
-**Script**: `Engine\Scripts\Runtime\010-BootInitializer\LiteDeploy.BootInitializer.ps1`  
-**Documentation File**: `Engine\Scripts\Runtime\010-BootInitializer\README.md`  
+**Production script**: `Engine\Scripts\Runtime\010-BootInitializer\LiteDeploy.BootInitializer.ps1`  
+**Draft (current design)**: `Engine\Scripts\Runtime\010-BootInitializer\LiteDeploy.BootInitializer.Draft.ps1`  
+**Documentation**: `Engine\Scripts\Runtime\010-BootInitializer\README.md`  
 **Target Environment**: Windows PE (WinPE 5.1 / 10 / 11) & Windows Host  
 **PowerShell Version**: PowerShell 5.1+ (`Set-StrictMode -Version 2.0`)  
+
+> This README describes the **draft** behavior. Promote the draft over the production script when ready to ship.
 
 ---
 
 ## 1. Overview & Purpose
 
-`LiteDeploy.BootInitializer.ps1` is the core initialization, configuration discovery, network validation, interactive authentication, and SMB share mounting engine for **LiteDeploy**.
+BootInitializer is the WinPE entry component for **LiteDeploy**. It:
 
-The WinPE ISO or `Boot.wim` that launches this script is built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) for USB/ISO media or WDS/PXE.
+1. Discovers `BootConfig.json`
+2. Validates network when `Deployment.Type` is `Network`
+3. Prompts for credentials and maps the deployment share to `Z:\` (network mode)
+4. Loads full deployment configuration from the share when available
+5. Builds a `BootObject` and launches `LiteDeploy.DeploymentEngine.ps1`
 
-It automatically discovers `BootConfig.json` using dynamic RAM drive detection (`$env:SystemDrive`), performs network hardware & IP checks (when `DeploymentType` is `"Network"`), verifies deployment server reachability over SMB Port 445, prompts for user credentials securely via native `Get-Credential`, mounts the remote deployment share to drive **`Z:\`**, discovers `LiteDeploy.HostShell.ps1`, minimizes the console shell, and launches the target engine pre-check script (`LiteDeploy.HardwarePreCheck.ps1`).
+The WinPE ISO / `Boot.wim` is typically built with [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) for USB/ISO or WDS/PXE.
 
 ---
 
@@ -21,212 +28,230 @@ It automatically discovers `BootConfig.json` using dynamic RAM drive detection (
 
 ```mermaid
 flowchart TD
-    Start["Boot Environment Startup (powercfg & wpeinit if WinPE)"] --> DiscoverConfig["Get-LiteDeployBootConfig"]
+    Start["WinPE startup: powercfg, wpeinit, UpdateBootInfo, InitializeNetwork"] --> DiscoverConfig["Get-LiteDeployBootConfig"]
 
-    subgraph Discovery ["1. Dynamic BootConfig.json Discovery"]
-        P1["Priority 1: WinPE RAM ($env:SystemDrive)"]
-        P2["Priority 2: Removable USB & Optical Media"]
-        
+    subgraph Discovery ["1. BootConfig.json Discovery"]
+        P1["RAM: X:\\~LiteDeploy\\Config\\BootConfig.json"]
+        P2["USB / optical media"]
         P1 --> CheckRAM{"Found in RAM?"}
-        CheckRAM -- "Yes (PXE/WIM Embedded)" --> CheckMode{"Deployment Type?"}
-        CheckRAM -- "No" --> P2
-        P2 --> CheckMedia{"Found on USB/Media?"}
-        CheckMedia -- "No" --> ConfigErr["Show-LiteDeployGuiError ('Config Missing')"]
-        CheckMedia -- "Yes" --> CheckMode
+        CheckRAM -- Yes --> CheckMode{"Deployment.Type?"}
+        CheckRAM -- No --> P2
+        P2 --> CheckMedia{"Found on media?"}
+        CheckMedia -- No --> ConfigErr["GUI Config Missing + pause"]
+        CheckMedia -- Yes --> CheckMode
     end
 
-    subgraph MediaMode ["2. Media Mode (Offline)"]
-        CheckMode -- "Media" --> MediaPath["Extract Drive Letter & LocalRootName"]
-        MediaPath --> SetMediaEngine["Resolve EngineScriptPath via Resolve-Path"]
+    subgraph MediaMode ["2. Media mode"]
+        CheckMode -- Media --> MediaEngine["Engine under Drive:\\LocalRootName\\Engine\\Scripts\\Runtime\\..."]
     end
 
-    subgraph NetworkMode ["3. Network Pre-Validation Pipeline"]
-        CheckMode -- "Network" --> PathCheck{"NetworkPath Configured?"}
-        PathCheck -- "Missing" --> PathErr["Show-LiteDeployGuiError ('Misconfigured NetworkPath')"]
-        PathCheck -- "Valid" --> NormPath["Format-LiteDeployUncPath (Normalize Slashes & Trim)"]
-        
-        NormPath --> Step1["Step 1: Scan Network Adapters (Multi-Adapter Prioritization)"]
-        Step1 -- "NIC Missing" --> DriverErr["Show-LiteDeployGuiError ('Network Driver Missing - Retry/Cancel')"]
-        DriverErr -- "Retry" --> Reload1["Flush Console & Print [RETRY]"] --> Step1
-        
-        Step1 -- "NIC Present" --> Step2["Step 2: Verify Physical Cable Link Connection"]
-        Step2 -- "Cable Disconnected" --> CableErr["Show-LiteDeployGuiError ('Cable Disconnected - Retry/Cancel')"]
-        CableErr -- "Retry" --> Reload2["Flush Console & Print [RETRY]"] --> Step1
-        
-        Step2 -- "Link Connected" --> Step3["Step 3: Poll Unicast IP Address (30s Window / Fast Break)"]
-        Step3 -- "DHCP Timeout" --> IPErr["Show-LiteDeployGuiError ('IP Assignment Failed - Retry/Cancel')"]
-        IPErr -- "Retry" --> Reload3["Flush Console & Print [RETRY]"] --> Step1
-        
-        Step3 -- "IP Assigned" --> NetAccessCheck{"Local Network Access (NIC + IP)?"}
-        
-        NetAccessCheck -- "No (No IP/NIC)" --> SkipServerCheck["Set ServerReachable = False (Skip SMB Test)"]
-        NetAccessCheck -- "Yes (NIC + IP)" --> Step4["Step 4: Test SMB Port 445 Connectivity (5000ms + Test-Path)"]
-        
-        Step4 -- "Server Offline / Port 445 Blocked" --> ServerErr["Show-LiteDeployGuiError ('Server Unreachable - Retry/Cancel')"]
-        ServerErr -- "Retry" --> Reload4["Flush Console & Print [RETRY]"] --> Step1
-        Step4 -- "Port 445 Reachable" --> ConnectShare["Connect-LiteDeployDeploymentShare"]
+    subgraph NetworkMode ["3. Network pre-validation"]
+        CheckMode -- Network --> PathCheck{"NetworkPath set?"}
+        PathCheck -- Missing --> PathErr["GUI Misconfigured NetworkPath"]
+        PathCheck -- Valid --> Steps["NIC → Link → DHCP → SMB 445"]
+        Steps --> ConnectShare["Connect-LiteDeployDeploymentShare"]
     end
 
-    subgraph AuthMount ["4. Pure PowerShell Auth & Drive Mount (Z:)"]
-        ConnectShare --> CheckMounted{"Is Z: Already Connected?"}
-        CheckMounted -- "Yes" --> MountSuccess["Return Mounted = True & $global:LiteDeployCredential"]
-        CheckMounted -- "No" --> PromptCred["Prompt Credentials (Get-Credential)"]
-        
-        PromptCred --> TryMount["New-PSDrive / New-SmbMapping -Name Z (Out-Null Suppressed)"]
-        TryMount -- "Success" --> MountSuccess
-        TryMount -- "Failure" --> AuthErr["Show-LiteDeployGuiError ('Invalid Credentials - Retry/Cancel')"]
-        
-        AuthErr -- "Retry" --> ReloadAuth["Flush Console & Print [RETRY]"] --> PromptCred
-        AuthErr -- "Cancel / Close" --> MountFail["Pause Initialization & Print Notice ('run startnet')"]
+    subgraph AuthMount ["4. Auth & Z: mount"]
+        ConnectShare --> Cred["Get-Credential until success or cancel"]
+        Cred -- Success --> LoadConfig["Load Z:\\Config\\BootConfig.json"]
+        Cred -- Cancel --> Pause["Write-LiteDeployPauseNotice / startnet"]
     end
 
-    SetMediaEngine --> Handoff["Return Result PSCustomObject (Includes Strict-Mode Guards)"]
-    MountSuccess --> SetNetEngine["Set EngineScriptPath = Z:/Engine/Scripts/LiteDeploy.DeploymentEngine.ps1"]
-    SetNetEngine --> Handoff
-    Handoff --> LaunchEngine{"Standalone Launcher Run?"}
-    LaunchEngine -- "Yes" --> HostShellCheck["Discover LiteDeploy.HostShell.ps1 & Set-HostShellWindow -Action Minimize"]
-    HostShellCheck --> ExecScript["Execute Deployment Engine (& $res.EngineScriptPath -BootObject $res)"]
+    MediaEngine --> Handoff["Return BootObject"]
+    LoadConfig --> Handoff
+    Handoff --> Launch["Standalone: Launching DeploymentEngine..."]
+    Launch --> Exec["& EngineScriptPath -BootObject BootObject"]
 ```
 
 ---
 
-## 3. Configuration Discovery Priority Hierarchy
+## 3. Configuration Discovery
 
-`Get-LiteDeployBootConfig` searches for `BootConfig.json` across locations in strict priority order. Internal fixed SATA, NVMe, and RAID disks are excluded to avoid consuming staging configs from previous OS installations.
+Internal SATA / NVMe / RAID volumes are excluded.
 
-| Priority | Scope | Description & Scanned Paths |
+| Priority | Scope | Paths |
 | :--- | :--- | :--- |
-| **Priority 1 (Highest)** | **WinPE RAM (`$env:SystemDrive`)** | `$env:SystemDrive\~LiteDeploy\Config\BootConfig.json`<br>`$env:SystemDrive\*\Config\BootConfig.json`<br>`$env:SystemDrive\Windows\System32\BootConfig.json`<br>*(Bypasses external media scanning when found for instant PXE/WIM boot)* |
-| **Priority 2** | **External Media** | Evaluated **only if not found in RAM**. Scans Removable USB Flash Drives, USB HDDs/SSDs (`BusType -in @('USB','1394','SD')`), CD-ROM/DVD-ROM Optical Media (`<Drive>:\~LiteDeploy\Config\BootConfig.json`, `<Drive>:\*\Config\BootConfig.json`). |
+| **1** | WinPE RAM | `$env:SystemDrive\~LiteDeploy\Config\BootConfig.json` only |
+| **2** | External media | `<Drive>:\~LiteDeploy\Config\BootConfig.json` and `<Drive>:\*\Config\BootConfig.json` |
+
+### Layouts by mode
+
+| Mode | Deployment configuration | DeploymentEngine |
+| :--- | :--- | :--- |
+| **Network (`Z:`)** | `Z:\Config\BootConfig.json` | `Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1` |
+| **Media (USB)** | `<Drive>\<LocalRootName>\Config\BootConfig.json` | `<Drive>\<LocalRootName>\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1` |
+
+`Deployment.LocalRootName` defaults to `~LiteDeploy`. If the USB folder name changes (e.g. `DeploymentMedia`), set `LocalRootName` in `BootConfig.json` manually. Discovery may still find the file via wildcard; engine/content resolution follows `LocalRootName`.
 
 ---
 
-## 4. Pre-Validation Engine Checklist
+## 4. Network Pre-Validation
 
-When `Deployment.Type` is `"Network"` and `NetworkPath` is configured, the script executes an interactive 4-step pre-validation pipeline:
+When `Deployment.Type` is `"Network"` and `NetworkPath` is set:
 
-1. **Network Hardware Recognition & Multi-Adapter Prioritization**:
-   * Scans active physical, USB, or virtual Ethernet network cards via `Get-NetAdapter` and `.NET` `NetworkInterface::GetAllNetworkInterfaces()`.
-   * Automatically prioritizes any adapter with an active link (`Status -eq 'Up'`).
-   * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - Network Driver Missing"*. Clicking **Retry** re-initializes WinPE networking (`wpeutil InitializeNetwork`) and re-scans hardware; clicking **Cancel** pauses initialization and drops to the WinPE shell.
-2. **Physical Cable Link State Verification**:
-   * Instantly verifies physical link connectivity (`MediaConnectionState -eq 'Connected'` / `OperationalStatus -eq 'Up'`).
-   * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - Network Cable Disconnected"*. Clicking **Retry** re-evaluates physical link state; clicking **Cancel** pauses initialization and drops to the WinPE shell.
-3. **IPv4 / IPv6 Address Assignment (30s Adaptive Polling)**:
-   * Polls for assigned IPv4 or IPv6 unicast addresses for up to 30 seconds (ideal for enterprise Spanning Tree Protocol switches).
-   * Filters out loopback (`127.0.0.1`, `::1`), APIPA (`169.254.x.x`), and IPv6 link-local (`fe80::*`).
-   * **Instant Early Exit**: As soon as an IP is detected (e.g. at 1.5s), the loop breaks **immediately** without waiting for the remaining 30 seconds.
-   * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - IP Address Assignment Failed"*.
-4. **`NetworkPath` Validation & Universal Path Normalization**:
-   * Accepts both forward slash and backslash formats in `BootConfig.json` (e.g. `"/DeploymentServer/DeploymentShare$"`, `"//DeploymentServer/DeploymentShare$"`, or `"\\\\DeploymentServer\\DeploymentShare$"`).
-   * Automatically normalizes any path to standard Windows UNC (`\\DeploymentServer\DeploymentShare$`).
-   * Tests TCP 445 socket connectivity to the deployment server via `.NET` `TcpClient` with a 5000ms timeout and `Test-Path` fallback for WinPE DNS lookup delays.
-   * **Failure Action**: Triggers an interactive GUI Retry/Cancel dialog titled *"LiteDeploy - Server Unreachable"* displaying the target server name and `NetworkPath`.
+1. **NIC** — `Get-NetAdapter` with `.NET` fallback  
+2. **Link** — cable / operational Up  
+3. **DHCP** — up to 30s poll; early exit on first valid IPv4 (skips loopback/APIPA)  
+4. **SMB 445** — UNC normalized; TCP connect with 5000ms timeout  
+
+Retry/Cancel GUI for steps 1–4 uses `Invoke-LiteDeployGuiRetry` (optional `wpeutil InitializeNetwork` + retry log).
 
 ---
 
-## 5. Pure Native PowerShell Credential & Drive Mapping (`Z:\`)
+## 5. Credentials & Drive Mapping
 
-* **100% Pure PowerShell**: Uses native PowerShell cmdlets (`New-PSDrive` and `New-SmbMapping`) for persistent SMB mapping.
-* **Interactive Retry Loop**: Prompts for credentials via `Get-Credential`. If authentication fails, pops up a Windows Forms **Retry / Cancel** GUI dialog titled *"LiteDeploy - Authentication Failure"*. Clicking **Retry** re-prompts until successful or cancelled.
-* **Graceful Cancellation Guidance**: If the user closes or cancels any prompt, initialization pauses cleanly with clear console instructions:
-  `[NOTICE] Deployment initialization paused.`
-  `To restart this process, run 'startnet' below.`
-* **System-Wide SMB Access**: Under the hood, `-Persist` registers the authenticated SMB session with the Windows `MPR` / `WNet` Kernel driver. All child PowerShell processes, CMD windows, DISM commands, and `HardwarePreCheck.ps1` inherit access to `Z:\`.
+* Clears stale `Z:` with `net use Z: /delete /y` and `Remove-PSDrive`
+* Maps with `New-PSDrive` (fallback `New-SmbMapping`)
+* CredUI message (no UNC in the dialog):  
+  `Please enter your username and password to connect to the deployment share.`
+* Full UNC is shown on the console CHECK line before the prompt
+* Auth retries until success or Cancel (console only; no Retry/Cancel GUI)
+* Cancel → `Write-LiteDeployPauseNotice` (`startnet`)
 
----
+### Console messages (mount)
 
-## 6. Function Reference
-
-### `Write-LiteDeployLog`
-Outputs color-coded text live to the console screen and appends official Microsoft CMTrace.exe XML formatted entries to `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log`.
-```powershell
-Write-LiteDeployLog -Message "IP Address Assigned: 192.168.1.50" -Level "SUCCESS" -ForegroundColor Green -Component "BootInitializer"
 ```
-
-### `Format-LiteDeployUncPath`
-Normalizes any slash combination (`/` or `\`) or trailing slashes to standard Windows UNC path syntax (`\\Server\Share$`).
-```powershell
-$uncPath = Format-LiteDeployUncPath -Path "//Server/DeploymentShare$/"
-# Returns "\\Server\DeploymentShare$"
-```
-
-### `Show-LiteDeployGuiError`
-Displays Windows Forms GUI error dialogs (`MessageBox`) with `try/catch` fallback to console warning.
-```powershell
-Show-LiteDeployGuiError -Message "Error message text" -Title "LiteDeploy Error" -IsRetryDialog:$false
-```
-
-### `Resolve-LiteDeployEnginePath`
-Resolves target engine pre-check script paths on `Z:\` or offline media using multi-line wildcard `Resolve-Path`.
-```powershell
-$enginePath = Resolve-LiteDeployEnginePath -RootPath "Z:"
-# Returns "Z:\Engine\Scripts\LiteDeploy.HardwarePreCheck.ps1"
-```
-
-### `Test-LiteDeployNetworkHardware`
-Scans for active network interface cards and prioritizes connected adapters.
-```powershell
-$nic = Test-LiteDeployNetworkHardware
-# Returns [PSCustomObject]@{ AdapterFound = $bool; AdapterName = $str; IsLinkConnected = $bool }
-```
-
-### `Test-LiteDeployIPAddress`
-Polls for assigned IPv4/IPv6 addresses with instant early exit on IP detection.
-```powershell
-$ipInfo = Test-LiteDeployIPAddress -TimeoutSeconds 30
-# Returns [PSCustomObject]@{ IPAddress, IPv4Address, IPv6Address, HasValidIP }
-```
-
-### `Test-LiteDeployDeploymentShare`
-Tests SMB TCP Port 445 server reachability with 5000ms timeout and `Test-Path` UNC fallback.
-```powershell
-$shareInfo = Test-LiteDeployDeploymentShare -SharePath "\\Server\DeploymentShare$" -TimeoutMs 5000
-# Returns [PSCustomObject]@{ Reachable = $bool; Server = "Server" }
-```
-
-### `Connect-LiteDeployDeploymentShare`
-Handles interactive credential prompting, authentication retry loop, pipeline leak suppression, and `Z:\` drive mapping using pure PowerShell.
-```powershell
-$mountRes = Connect-LiteDeployDeploymentShare -NetworkPath "\\Server\DeploymentShare$" -DriveLetter "Z:" -ShowGuiError
-# Returns [PSCustomObject]@{ Mounted, DriveLetter, NetworkPath, Credential }
-```
-
-### `Get-LiteDeployBootConfig`
-Primary discovery and validation engine function. Returns a `[PSCustomObject]` with strict-mode property protection.
-```powershell
-$bootConfig = Get-LiteDeployBootConfig -ConfigPath "" -MountShare -ShowGuiError
+ [CHECK]   Connecting to deployment share '\\Server\Share$'...
+ [SUCCESS] Connected to deployment share '\\Server\Share$' on Z:\.
+ [SUCCESS] Deployment share '\\Server\Share$' is already connected to Z:\.
+ [SUCCESS] Loaded deployment configuration from 'Z:\Config\BootConfig.json'.
+ [WARNING] Deployment configuration was not found on the share; continuing with current settings.
+ [INFO]    Launching DeploymentEngine...
 ```
 
 ---
 
-## 7. Integration & Standalone Execution
+## 6. BootObject (passed to DeploymentEngine)
 
-### Standalone Execution
-When executed directly (not dot-sourced), `LiteDeploy.BootInitializer.ps1`:
-1. Executes `Get-LiteDeployBootConfig`.
-2. Extracts `$bootObj` with `Set-StrictMode 2.0` property protection.
-3. Logs all checks, status, warnings, and errors to `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log` (CMTrace XML).
-4. Verifies presence of target engine pre-check script (`LiteDeploy.HardwarePreCheck.ps1`).
-   * **If Missing**: Logs `[ERROR] Engine script not found...` to `LiteDeploy.Execution.log`, displays GUI error dialog titled *"LiteDeploy - Script Missing"*, and pauses initialization cleanly.
-   * **If Present**: Discovers `LiteDeploy.HostShell.ps1`, minimizes host console shell, and executes `& $enginePath -BootObject $bootObj` inside an error-capturing `try/catch` block.
-5. Restores host shell window on completion or error.
+`Get-LiteDeployBootConfig` returns a `PSCustomObject` launched as:
+
+```powershell
+& $enginePath -BootObject $bootObj
+```
+
+Important properties include:
+
+| Property | Purpose |
+| :--- | :--- |
+| `Config` / `ConfigPath` / `ConfigFound` | Parsed BootConfig and path |
+| `IsWinPE` | MiniNT registry detection |
+| `DeploymentType` | `Network` or `Media` |
+| `LocalRootName` | Media folder root name |
+| `EngineScriptPath` | Path to DeploymentEngine |
+| `NetworkPath` / `ServerName` / `ServerReachable` | Share targeting |
+| `ShareMounted` / `DriveLetter` / `Credential` | Mount result |
+| `IPAddress` / `NetworkAdapterName` / … | Network diagnostics |
+| `AppName` / `AppVersion` / `Environment` | From config Metadata when present |
 
 ---
 
-## 8. Logging & Diagnostics Standard
+## 7. Function Reference
 
-* **Master Log File**: `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log`
-* **Format**: CMTrace XML (`type="1"` Info/Success, `type="2"` Warning/Retry, `type="3"` Error).
-* **Output**: `Write-LiteDeployLog` writes live colored text to the console and appends CMTrace XML lines to `LiteDeploy.Execution.log`.
-* **Single Startup Banner**: Title banners (`======...`, `LiteDeploy WinPE Initialization Engine v1.0`, `======...`) appear **exactly once at initial script startup**. Screen clears (`Clear-Host`) and duplicate title headers inside retry loops are completely eliminated.
-* **Standardized Bracket Tags**: All console and log entries use aligned bracketed prefixes:
-  * ` [INIT]    ` — WinPE environment setup & power plan activation (`type="1"`)
-  * ` [CHECK]   ` — Discovery and pre-validation check prompts (`type="1"`)
-  * ` [SUCCESS] ` — Successful discovery, connection, or hardware detection (`type="1"`)
-  * ` [INFO]    ` — Configuration mode and path parameter details (`type="1"`)
-  * ` [WARNING] ` — Recoverable issues such as disconnected cable or DHCP timeout (`type="2"`, Yellow)
-  * ` [RETRY]   ` — Re-scanning hardware, polling link/IP, or re-prompting credentials (`type="2"`, Yellow)
-  * ` [ERROR]   ` — Unrecoverable errors or authentication failures (`type="3"`, Red)
-* **100% History Retention**: Every event—including success states, fast-path checks, authentication failures, retries, and cancellation pauses—is recorded persistently in both log targets.
-* **Specification Document**: Full details, component tags, and code examples are documented in [LogWriter README](../000-LogWriter/README.md).
+| Function | Role |
+| :--- | :--- |
+| `Write-LiteDeployLog` | Console + CMTrace log |
+| `Write-LiteDeployPauseNotice` | Logged pause + `startnet` guidance |
+| `Show-LiteDeployGuiError` | MessageBox OK or Retry/Cancel |
+| `Invoke-LiteDeployGuiRetry` | Shared network retry loop helper |
+| `Format-LiteDeployUncPath` | Normalize UNC |
+| `Resolve-LiteDeployEnginePath` | Engine path by `DeploymentType` |
+| `Get-LiteDeployRuntimeConfig` | Load `Z:\Config\BootConfig.json` (network) |
+| `Test-LiteDeployNetworkHardware` | NIC + link |
+| `Test-LiteDeployIPAddress` | DHCP poll |
+| `Test-LiteDeployDeploymentShare` | SMB 445 |
+| `Connect-LiteDeployDeploymentShare` | Credentials + `Z:` |
+| `Get-LiteDeployBootConfig` | Full discovery + validation → BootObject |
+| `Get-LiteDeployComponentMetadata` | Component id/version (`-Metadata` fast exit) |
+
+```powershell
+Resolve-LiteDeployEnginePath -RootPath "Z:" -DeploymentType Network
+# Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1
+
+Resolve-LiteDeployEnginePath -RootPath "D:" -LocalRootName "DeploymentMedia" -DeploymentType Media
+# D:\DeploymentMedia\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1
+```
+
+---
+
+## 8. Standalone Launcher
+
+When run directly (not dot-sourced):
+
+1. Calls `Get-LiteDeployBootConfig` (standalone currently forces mount + GUI errors)
+2. If Media **or** share mounted → resolve/launch DeploymentEngine
+3. On success logs: `[INFO] Launching DeploymentEngine...`
+4. On engine missing:  
+   * Console: `[ERROR] DeploymentEngine was not found on the deployment source.`  
+   * GUI includes the full expected path  
+5. Failures / incomplete init → `Write-LiteDeployPauseNotice`
+
+WinPE also runs `wpeutil UpdateBootInfo` at startup (registry PE boot info reserved; not added to BootObject yet).
+
+---
+
+## 9. Logging & Diagnostics
+
+* **Log file**: `X:\~LiteDeploy\WorkLogs\LiteDeploy.Execution.log`
+* **Format**: CMTrace XML (`type` 1 = info/success, 2 = warning/retry/notice, 3 = error)
+* **Time**: local clock + real UTC offset minutes
+* **`file=`**: running script leaf name
+* **Banner version**: from `Get-LiteDeployComponentMetadata`
+
+### Logged
+
+`[INIT]`, `[CHECK]`, `[SUCCESS]`, `[INFO]`, `[WARNING]`, `[RETRY]`, `[ERROR]`, `[NOTICE]` / `startnet`, DHCP wait start (`[INFO] Waiting for DHCP (up to 30s)...`), auth cancel, config load/missing, launch, engine missing/fail.
+
+### Not logged (console only)
+
+* Per-second `[DHCP] Waiting... (Ns remaining)` countdown ticks  
+* Blank spacer lines  
+
+### Tags
+
+| Tag | Meaning |
+| :--- | :--- |
+| `[INIT]` | WinPE / power plan |
+| `[CHECK]` | Discovery / validation step |
+| `[SUCCESS]` | Step completed |
+| `[INFO]` | Mode, DHCP wait, launch |
+| `[WARNING]` | Recoverable issue |
+| `[RETRY]` | Retrying a step |
+| `[ERROR]` | Failure |
+| `[NOTICE]` | Init paused; run `startnet` |
+
+---
+
+## 10. Perfect Success (Network) — console sketch
+
+```
+==========================================================================
+            LiteDeploy WinPE Initialization Engine v1.0.0
+==========================================================================
+
+ [INIT]    WinPE Environment & High Performance Power Plan initialized.
+
+ [CHECK]   Searching for BootConfig.json...
+ [SUCCESS] BootConfig.json discovered at 'X:\~LiteDeploy\Config\BootConfig.json'.
+ [INFO]    Deployment Mode: Network (Share: \\Server\DeploymentShare$).
+
+ [CHECK]   Scanning for Network Hardware Adapters...
+ [SUCCESS] Adapter Found: 'Intel(R) Ethernet Connection'.
+
+ [CHECK]   Verifying Network Link Connection...
+ [SUCCESS] Network Link Active (Cable Connected).
+
+ [CHECK]   Polling IPv4 / IPv6 Address Assignment...
+ [INFO]    Waiting for DHCP (up to 30s)...
+ [SUCCESS] IP Address Assigned: 10.0.0.25
+
+ [CHECK]   Testing SMB Connectivity to Server 'Server' (Port 445)...
+ [SUCCESS] Server 'Server' is Reachable over SMB Port 445.
+
+ [CHECK]   Connecting to deployment share '\\Server\DeploymentShare$'...
+ [SUCCESS] Connected to deployment share '\\Server\DeploymentShare$' on Z:\.
+ [SUCCESS] Loaded deployment configuration from 'Z:\Config\BootConfig.json'.
+ [INFO]    Launching DeploymentEngine...
+```
+
+Media success skips network/auth and goes from mode info to `[INFO] Launching DeploymentEngine...`.

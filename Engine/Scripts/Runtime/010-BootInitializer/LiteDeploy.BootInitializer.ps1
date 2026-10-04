@@ -3,9 +3,9 @@
     LiteDeploy WinPE Initialization & BootConfig Discovery Engine.
 
 .DESCRIPTION
-    Discovers BootConfig.json using a 3-priority hierarchy, performs network pre-validations,
-    prompts for user credentials via native Get-Credential, maps deployment share Z:\ persistently,
-    and launches LiteDeploy.DeploymentEngine.ps1.
+    Discovers BootConfig.json from WinPE RAM (X:\~LiteDeploy\Config) or external USB/media,
+    performs network pre-validations, prompts for credentials via Get-Credential, maps the
+    deployment share to Z:\ persistently, and launches LiteDeploy.DeploymentEngine.ps1.
 
 .PARAMETER ExplicitConfigPath
     Optional explicit path to BootConfig.json file to bypass automatic discovery.
@@ -65,7 +65,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("LogWriter")
+        Dependencies         = @("None")
         Description          = "WinPE parent shell: discovers BootConfig.json, validates network, mounts Z:\, and launches DeploymentEngine."
     }
 }
@@ -101,7 +101,10 @@ function Write-LiteDeployLog {
         $cleanMsg = $Message.Trim()
         if (-not [string]::IsNullOrWhiteSpace($cleanMsg)) {
             $now = Get-Date
-            $timeStr = $now.ToString("HH:mm:ss.fff") + "+000"
+            # CMTrace time uses local clock + UTC offset in minutes (e.g. -240 for EDT)
+            $utcOffsetMinutes = [int][System.TimeZoneInfo]::Local.GetUtcOffset($now).TotalMinutes
+            $offsetSign = if ($utcOffsetMinutes -ge 0) { "+" } else { "-" }
+            $timeStr = $now.ToString("HH:mm:ss.fff") + $offsetSign + [math]::Abs($utcOffsetMinutes).ToString()
             $dateStr = $now.ToString("MM-dd-yyyy")
             $typeCode = switch ($Level.ToUpper()) {
                 "ERROR" { "3" }
@@ -109,8 +112,9 @@ function Write-LiteDeployLog {
                 "RETRY" { "2" }
                 default { "1" }
             }
+            $scriptFile = if ($PSCommandPath) { Split-Path -Leaf $PSCommandPath } else { "LiteDeploy.BootInitializer.ps1" }
             # Official Microsoft CMTrace.exe XML Log Structure
-            $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""1"" file=""LiteDeploy.BootInitializer.ps1"">"
+            $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""1"" file=""$scriptFile"">"
             Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
         }
     }
@@ -145,54 +149,122 @@ function Show-LiteDeployGuiError {
     }
 }
 
+function Write-LiteDeployPauseNotice {
+    Write-Host ""
+    Write-LiteDeployLog " [NOTICE]  Deployment initialization paused." -Level "WARNING" -ForegroundColor Yellow
+    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "WARNING" -ForegroundColor Yellow
+    Write-Host ""
+}
+
+function Invoke-LiteDeployGuiRetry {
+    <#
+    .SYNOPSIS
+        Shared failure → GUI Retry/Cancel → optional WinPE network re-init → retry log.
+    .OUTPUTS
+        $true  = caller should retry the check
+        $false = user cancelled / non-interactive stop
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WarningMessage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DialogMessage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DialogTitle,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RetryLogMessage,
+
+        [string]$WarningLevel = "WARNING",
+
+        [ConsoleColor]$WarningColor = [ConsoleColor]::Yellow,
+
+        [bool]$IsWinPE = $false,
+
+        [switch]$ShowGuiError
+    )
+
+    Write-LiteDeployLog $WarningMessage -Level $WarningLevel -ForegroundColor $WarningColor
+
+    $shouldRetry = $true
+    if ($IsWinPE -or $ShowGuiError) {
+        $shouldRetry = Show-LiteDeployGuiError -Message $DialogMessage -Title $DialogTitle -IsRetryDialog $true
+    }
+    else {
+        $shouldRetry = $false
+    }
+
+    if (-not $shouldRetry) {
+        return $false
+    }
+
+    if ($IsWinPE) {
+        try { wpeutil.exe InitializeNetwork 2>$null } catch {}
+    }
+    try { [System.Console]::Out.Flush() } catch {}
+    Write-LiteDeployLog $RetryLogMessage -Level "RETRY" -ForegroundColor DarkYellow
+    return $true
+}
+
 function Resolve-LiteDeployEnginePath {
-    param([string]$RootPath)
+    param(
+        [string]$RootPath,
+        [string]$LocalRootName = "~LiteDeploy",
+        [ValidateSet("Network", "Media")]
+        [string]$DeploymentType = "Media"
+    )
+    # Layout differs by source:
+    #   Network share (Z:):  Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1
+    #   USB / Media:         <Drive>\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1
     if ([string]::IsNullOrWhiteSpace($RootPath)) { return "" }
-    $resolved = Resolve-Path -Path @(
-        (Join-Path $PSScriptRoot "LiteDeploy.DeploymentEngine.ps1"),
-        (Join-Path $PSScriptRoot "..\020-DeploymentEngine\LiteDeploy.DeploymentEngine.ps1"),
-        "$RootPath\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1",
-        "$RootPath\*\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1"
-    ) -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($resolved) { return $resolved.Path }
-    return (Join-Path $RootPath "Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1")
+
+    if ($DeploymentType -eq "Network") {
+        return (Join-Path $RootPath "Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1")
+    }
+
+    if ([string]::IsNullOrWhiteSpace($LocalRootName)) { return "" }
+    return (Join-Path $RootPath "$LocalRootName\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1")
 }
 
 function Get-LiteDeployRuntimeConfig {
     param(
         [string]$RootPath,
-        [string]$LocalRootName = "~LiteDeploy"
+        [string]$LocalRootName = "~LiteDeploy",
+        [ValidateSet("Network", "Media")]
+        [string]$DeploymentType = "Network"
     )
-
+    # Layout differs by source:
+    #   Network share (Z:):  Z:\Config\BootConfig.json
+    #   USB / Media:         <Drive>\~LiteDeploy\Config\BootConfig.json
     if ([string]::IsNullOrWhiteSpace($RootPath)) { return $null }
 
-    $candidates = [System.Collections.Generic.List[string]]::new()
-    if (-not [string]::IsNullOrWhiteSpace($LocalRootName)) {
-        $candidates.Add((Join-Path $RootPath "$LocalRootName\Config\BootConfig.json"))
+    $path = if ($DeploymentType -eq "Network") {
+        Join-Path $RootPath "Config\BootConfig.json"
     }
-    $candidates.Add((Join-Path $RootPath "Config\BootConfig.json"))
-    $candidates.Add((Join-Path $RootPath "*\Config\BootConfig.json"))
-
-    foreach ($candidate in $candidates) {
-        $resolved = Resolve-Path -Path $candidate -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $resolved -or -not (Test-Path -LiteralPath $resolved.Path -PathType Leaf)) { continue }
-
-        try {
-            $rawContent = Get-Content -LiteralPath $resolved.Path -Raw -ErrorAction Stop
-            $cleanContent = $rawContent -replace '^\xEF\xBB\xBF', ''
-            $runtimeConfig = $cleanContent | ConvertFrom-Json -ErrorAction Stop
-
-            return [PSCustomObject]@{
-                Path   = $resolved.Path
-                Config = $runtimeConfig
-            }
-        }
-        catch {
-            throw "Runtime BootConfig.json is invalid at '$($resolved.Path)': $($_.Exception.Message)"
-        }
+    else {
+        if ([string]::IsNullOrWhiteSpace($LocalRootName)) { return $null }
+        Join-Path $RootPath "$LocalRootName\Config\BootConfig.json"
     }
 
-    return $null
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $rawContent = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+        $cleanContent = $rawContent -replace '^\xEF\xBB\xBF', ''
+        $runtimeConfig = $cleanContent | ConvertFrom-Json -ErrorAction Stop
+
+        return [PSCustomObject]@{
+            Path   = $path
+            Config = $runtimeConfig
+        }
+    }
+    catch {
+        throw "Runtime BootConfig.json is invalid at '$path': $($_.Exception.Message)"
+    }
 }
 
 if (-not (Test-Path Variable:global:LiteDeployCredential)) {
@@ -207,17 +279,20 @@ if ($isWinPE) {
 
     # Initialize WinPE components and network stack
     try { wpeinit.exe 2>$null } catch {}
+    # Populate PE boot metadata under HKLM:\SYSTEM\CurrentControlSet\Control (reserved for later use; not consumed yet)
+    try { wpeutil.exe UpdateBootInfo 2>$null } catch {}
     try { wpeutil.exe InitializeNetwork 2>$null } catch {}
 }
 
 # Set the title of the console window while LiteDeploy is loading.
+$componentVersion = (Get-LiteDeployComponentMetadata).Version
 $Host.UI.RawUI.WindowTitle = "LiteDeploy Loading..."
 Write-LiteDeployLog "LiteDeploy Loading..." -Level "INFO" -ForegroundColor DarkGray
-$Host.UI.RawUI.WindowTitle = "LiteDeploy v1.0"
+$Host.UI.RawUI.WindowTitle = "LiteDeploy v$componentVersion"
 Clear-Host
 
 Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
-Write-LiteDeployLog "                LiteDeploy WinPE Initialization Engine v1.0               " -Level "INFO" -ForegroundColor White
+Write-LiteDeployLog "            LiteDeploy WinPE Initialization Engine v$componentVersion            " -Level "INFO" -ForegroundColor White
 Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
 Write-LiteDeployLog "" -Level "INFO"
 if ($isWinPE) {
@@ -285,6 +360,8 @@ function Test-LiteDeployIPAddress {
     param([int]$TimeoutSeconds = 30)
     try {
         $ipAddress = ""; $ipv4Address = ""; $ipv6Address = ""
+        # One log entry for the wait; countdown ticks stay console-only
+        Write-LiteDeployLog " [INFO]    Waiting for DHCP (up to $($TimeoutSeconds)s)..." -Level "INFO" -ForegroundColor DarkCyan
         $timer = [System.Diagnostics.Stopwatch]::StartNew()
         $lastReport = -1
 
@@ -386,65 +463,42 @@ function Connect-LiteDeployDeploymentShare {
     $isWinPE = Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT" -ErrorAction SilentlyContinue
 
     # Clean existing mapping to prevent stale credential locks
+    try { [void](net.exe use "$cleanDrive" /delete /y 2>$null) } catch {}
     if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
-        try {
-            if (Get-Command Remove-SmbMapping -ErrorAction SilentlyContinue) {
-                Remove-SmbMapping -LocalPath $cleanDrive -Force -UpdateProfile -ErrorAction SilentlyContinue | Out-Null
-            }
-        }
-        catch {}
-        try {
-            [void](net.exe use "$($cleanDrive)" /delete /y 2>$null)
-        }
-        catch {}
-        try {
-            $wsh = New-Object -ComObject WScript.Network
-            $wsh.RemoveNetworkDrive($cleanDrive, $true, $true)
-        }
-        catch {}
         Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue | Out-Null
     }
 
     # Fast-Path: Check if drive Z:\ is already connected
     if (Test-Path -Path "$($cleanDrive)\" -ErrorAction SilentlyContinue) {
-        Write-LiteDeployLog "Deployment share is already connected to $($cleanDrive)\ ($NetworkPath)." -Level "SUCCESS" -ForegroundColor Green
+        Write-LiteDeployLog " [SUCCESS] Deployment share '$NetworkPath' is already connected to $($cleanDrive)\." -Level "SUCCESS" -ForegroundColor Green
         $existingCred = if (Test-Path Variable:global:LiteDeployCredential) { $global:LiteDeployCredential } else { $null }
         return [PSCustomObject]@{ Mounted = $true; DriveLetter = $cleanDrive; NetworkPath = $NetworkPath; Credential = $existingCred }
     }
-
-    try {
-        if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
-            Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue | Out-Null
-        }
-    }
-    catch {}
 
     $mounted = $false
     $userCred = $null
 
     while (-not $mounted) {
         try {
-            $userCred = Get-Credential -Message "Enter credentials to connect the deployment share.`n$($NetworkPath)" -ErrorAction Stop
+            # Keep CredUI short — full UNC is already shown on the console CHECK line above
+            $userCred = Get-Credential -Message "Please enter your username and password to connect to the deployment share." -ErrorAction Stop
         }
         catch {
             Write-LiteDeployLog "Deployment share authentication cancelled by user." -Level "WARNING" -ForegroundColor Yellow
-            Write-Host ""
-            Write-Host " [NOTICE]  Deployment initialization paused." -ForegroundColor Yellow
-            Write-Host "           To restart this process, run 'startnet' below." -ForegroundColor Yellow
-            Write-Host ""
+            Write-LiteDeployPauseNotice
             break
         }
         if ($null -eq $userCred) { break }
 
-        # Native PowerShell persistent global drive mapping
+        # Native PowerShell persistent global drive mapping (Out-Null keeps the success stream clean)
         try {
-            New-PSDrive -Name $driveName -PSProvider FileSystem -Root $NetworkPath -Credential $userCred -Persist -Scope Global -ErrorAction Stop | Out-Null
+            $null = New-PSDrive -Name $driveName -PSProvider FileSystem -Root $NetworkPath -Credential $userCred -Persist -Scope Global -ErrorAction Stop
             $mounted = $true
         }
         catch {
             try {
                 if (Get-Command New-SmbMapping -ErrorAction SilentlyContinue) {
-                    New-SmbMapping -LocalPath $cleanDrive -RemotePath $NetworkPath -Credential $userCred -ErrorAction Stop | Out-Null
+                    $null = New-SmbMapping -LocalPath $cleanDrive -RemotePath $NetworkPath -Credential $userCred -ErrorAction Stop
                     $mounted = $true
                 }
             }
@@ -455,7 +509,7 @@ function Connect-LiteDeployDeploymentShare {
             $mounted = $true
             $global:LiteDeployCredential = $userCred
             $global:LiteDeployShareMounted = $true
-            Write-LiteDeployLog " [SUCCESS] Deployment share connected successfully to $($cleanDrive)\ ($NetworkPath)." -Level "SUCCESS" -ForegroundColor Green
+            Write-LiteDeployLog " [SUCCESS] Connected to deployment share '$NetworkPath' on $($cleanDrive)\." -Level "SUCCESS" -ForegroundColor Green
             break
         }
 
@@ -494,8 +548,6 @@ function Get-LiteDeployBootConfig {
     if ($ConfigPath) { $ramConfigPaths += $ConfigPath }
     if ($isWinPE) {
         $ramConfigPaths += "$ramDrive\~LiteDeploy\Config\BootConfig.json"
-        $ramConfigPaths += "$ramDrive\*\Config\BootConfig.json"
-        $ramConfigPaths += "$ramDrive\Windows\System32\BootConfig.json"
     }
 
     $FoundConfigPath = $null
@@ -571,7 +623,7 @@ function Get-LiteDeployBootConfig {
     if (-not $configFound) {
         Write-LiteDeployLog " [WARNING] BootConfig.json file was not found." -Level "WARNING" -ForegroundColor Yellow
         if ($isWinPE -or $ShowGuiError) {
-            Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\), external media, or script path.`n`nPlease rebuild the boot image." -Title "LiteDeploy - Config Missing"
+            Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\~LiteDeploy\Config) or external media.`n`nPlease rebuild the boot image or attach deployment media." -Title "LiteDeploy - Config Missing"
         }
     }
 
@@ -585,7 +637,7 @@ function Get-LiteDeployBootConfig {
             if ([string]::IsNullOrWhiteSpace($mediaDriveLetter)) { $mediaDriveLetter = $ramDrive }
             $mountedDrive = $mediaDriveLetter
             Write-LiteDeployLog " [INFO]    Deployment Mode: Media (Offline Drive: $($mediaDriveLetter))." -Level "INFO" -ForegroundColor DarkCyan
-            $engineScriptPath = Resolve-LiteDeployEnginePath -RootPath $mediaDriveLetter
+            $engineScriptPath = Resolve-LiteDeployEnginePath -RootPath $mediaDriveLetter -LocalRootName $localRootName -DeploymentType Media
         }
     }
     elseif ($deploymentType -eq "Network") {
@@ -611,23 +663,16 @@ function Get-LiteDeployBootConfig {
             $isLinkConnected = $netHw.IsLinkConnected
 
             while (-not $netAdapterFound) {
-                Write-LiteDeployLog " [WARNING] No Network Adapter Detected in WinPE!" -Level "WARNING" -ForegroundColor Yellow
-                $shouldRetry = $true
-                if ($isWinPE -or $ShowGuiError) {
-                    $msg = "No Network Hardware Detected: WinPE could not detect any network adapter.`n`nPlease ensure network drivers are injected into the boot image, or connect an external adapter.`n`nWould you like to scan again?"
-                    $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Hardware Missing" -IsRetryDialog $true
-                }
-                else {
-                    $shouldRetry = $false
-                }
+                $msg = "No Network Hardware Detected: WinPE could not detect any network adapter.`n`nPlease ensure network drivers are injected into the boot image, or connect an external adapter.`n`nWould you like to scan again?"
+                $shouldRetry = Invoke-LiteDeployGuiRetry `
+                    -WarningMessage " [WARNING] No Network Adapter Detected in WinPE!" `
+                    -DialogMessage $msg `
+                    -DialogTitle "LiteDeploy - Network Hardware Missing" `
+                    -RetryLogMessage " [RETRY]   Re-scanning network hardware adapters..." `
+                    -IsWinPE:$isWinPE `
+                    -ShowGuiError:$ShowGuiError
                 if (-not $shouldRetry) { break }
 
-                if ($isWinPE) {
-                    try { wpeutil.exe InitializeNetwork 2>$null } catch {}
-                }
-                try { [System.Console]::Out.Flush() } catch {}
-                Write-LiteDeployLog " [RETRY]   Re-scanning network hardware adapters..." -Level "RETRY" -ForegroundColor DarkYellow
-                
                 $netHw = Test-LiteDeployNetworkHardware
                 $netAdapterFound = $netHw.AdapterFound
                 $netAdapterName = $netHw.AdapterName
@@ -641,22 +686,15 @@ function Get-LiteDeployBootConfig {
                 Write-Host ""
                 Write-LiteDeployLog " [CHECK]   Verifying Network Link Connection..." -Level "INFO" -ForegroundColor Cyan
                 while (-not $isLinkConnected) {
-                    Write-LiteDeployLog " [WARNING] Network Cable Disconnected on '$($netAdapterName)'!" -Level "WARNING" -ForegroundColor Yellow
-                    $shouldRetry = $true
-                    if ($isWinPE -or $ShowGuiError) {
-                        $msg = "Network Cable Disconnected: Adapter '$($netAdapterName)' is detected, but no network link/cable is connected.`n`nPlease connect an Ethernet cable to the network port.`n`nWould you like to check again?"
-                        $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Network Cable Disconnected" -IsRetryDialog $true
-                    }
-                    else {
-                        $shouldRetry = $false
-                    }
+                    $msg = "Network Cable Disconnected: Adapter '$($netAdapterName)' is detected, but no network link/cable is connected.`n`nPlease connect an Ethernet cable to the network port.`n`nWould you like to check again?"
+                    $shouldRetry = Invoke-LiteDeployGuiRetry `
+                        -WarningMessage " [WARNING] Network Cable Disconnected on '$($netAdapterName)'!" `
+                        -DialogMessage $msg `
+                        -DialogTitle "LiteDeploy - Network Cable Disconnected" `
+                        -RetryLogMessage " [RETRY]   Re-checking network cable connection on '$($netAdapterName)'..." `
+                        -IsWinPE:$isWinPE `
+                        -ShowGuiError:$ShowGuiError
                     if (-not $shouldRetry) { break }
-
-                    if ($isWinPE) {
-                        try { wpeutil.exe InitializeNetwork 2>$null } catch {}
-                    }
-                    try { [System.Console]::Out.Flush() } catch {}
-                    Write-LiteDeployLog " [RETRY]   Re-checking network cable connection on '$($netAdapterName)'..." -Level "RETRY" -ForegroundColor DarkYellow
 
                     $netHw = Test-LiteDeployNetworkHardware
                     $isLinkConnected = $netHw.IsLinkConnected
@@ -682,22 +720,15 @@ function Get-LiteDeployBootConfig {
                         Write-LiteDeployLog " [SUCCESS] IP Address Assigned: $($ipAddress)" -Level "SUCCESS" -ForegroundColor Green
                     }
                     else {
-                        Write-LiteDeployLog " [WARNING] Could not obtain IP Address (30s DHCP Timeout) on '$($netAdapterName)'!" -Level "WARNING" -ForegroundColor Yellow
-                        $shouldRetry = $true
-                        if ($isWinPE -or $ShowGuiError) {
-                            $msg = "No IP Address Assigned: Network adapter '$($netAdapterName)' is connected, but could not obtain an IPv4/IPv6 address after 30 seconds.`n`nPlease check your DHCP server or network connection.`n`nWould you like to try obtaining an IP address again?"
-                            $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - IP Address Assignment Failed" -IsRetryDialog $true
-                        }
-                        else {
-                            $shouldRetry = $false
-                        }
+                        $msg = "No IP Address Assigned: Network adapter '$($netAdapterName)' is connected, but could not obtain an IPv4/IPv6 address after 30 seconds.`n`nPlease check your DHCP server or network connection.`n`nWould you like to try obtaining an IP address again?"
+                        $shouldRetry = Invoke-LiteDeployGuiRetry `
+                            -WarningMessage " [WARNING] Could not obtain IP Address (30s DHCP Timeout) on '$($netAdapterName)'!" `
+                            -DialogMessage $msg `
+                            -DialogTitle "LiteDeploy - IP Address Assignment Failed" `
+                            -RetryLogMessage " [RETRY]   Retrying IP address assignment for '$($netAdapterName)'..." `
+                            -IsWinPE:$isWinPE `
+                            -ShowGuiError:$ShowGuiError
                         if (-not $shouldRetry) { break }
-
-                        if ($isWinPE) {
-                            try { wpeutil.exe InitializeNetwork 2>$null } catch {}
-                        }
-                        try { [System.Console]::Out.Flush() } catch {}
-                        Write-LiteDeployLog " [RETRY]   Retrying IP address assignment for '$($netAdapterName)'..." -Level "RETRY" -ForegroundColor DarkYellow
                     }
                 }
             }
@@ -723,22 +754,17 @@ function Get-LiteDeployBootConfig {
                     $serverName = $shareCheck.Server
 
                     if (-not $serverReachable) {
-                        Write-LiteDeployLog " [ERROR]   Server '$($serverName)' is Unreachable on SMB Port 445!" -Level "ERROR" -ForegroundColor Red
-                        $shouldRetry = $true
-                        if ($isWinPE -or $ShowGuiError) {
-                            $msg = "Deployment Server '$($serverName)' (from NetworkPath: $($networkPath)) could not be reached on SMB Port 445.`n`nPlease ensure the deployment server is online, SMB sharing is enabled, and firewall allows port 445.`n`nWould you like to try connecting again?"
-                            $shouldRetry = Show-LiteDeployGuiError -Message $msg -Title "LiteDeploy - Server Unreachable" -IsRetryDialog $true
-                        }
-                        else {
-                            $shouldRetry = $false
-                        }
+                        $msg = "Deployment Server '$($serverName)' (from NetworkPath: $($networkPath)) could not be reached on SMB Port 445.`n`nPlease ensure the deployment server is online, SMB sharing is enabled, and firewall allows port 445.`n`nWould you like to try connecting again?"
+                        $shouldRetry = Invoke-LiteDeployGuiRetry `
+                            -WarningMessage " [ERROR]   Server '$($serverName)' is Unreachable on SMB Port 445!" `
+                            -DialogMessage $msg `
+                            -DialogTitle "LiteDeploy - Server Unreachable" `
+                            -RetryLogMessage " [RETRY]   Retrying SMB connectivity test to server '$($serverHost)'..." `
+                            -WarningLevel "ERROR" `
+                            -WarningColor Red `
+                            -IsWinPE:$isWinPE `
+                            -ShowGuiError:$ShowGuiError
                         if (-not $shouldRetry) { break }
-
-                        if ($isWinPE) {
-                            try { wpeutil.exe InitializeNetwork 2>$null } catch {}
-                        }
-                        try { [System.Console]::Out.Flush() } catch {}
-                        Write-LiteDeployLog " [RETRY]   Retrying SMB connectivity test to server '$($serverHost)'..." -Level "RETRY" -ForegroundColor DarkYellow
                     }
                     else {
                         Write-LiteDeployLog " [SUCCESS] Server '$($serverName)' is Reachable over SMB Port 445." -Level "SUCCESS" -ForegroundColor Green
@@ -747,20 +773,18 @@ function Get-LiteDeployBootConfig {
 
                 if ($serverReachable -and ($MountShare -or $isWinPE)) {
                     Write-Host ""
-                    Write-LiteDeployLog " [CHECK]   Connecting Deployment Share to Z:\..." -Level "INFO" -ForegroundColor Cyan
-                    $mountRes = Connect-LiteDeployDeploymentShare -NetworkPath $networkPath -DriveLetter "Z:" -ShowGuiError:$ShowGuiError
-                    $mountObj = if ($mountRes -is [array]) { $mountRes | Where-Object { $_ -is [PSCustomObject] -and $_.PSObject.Properties['Mounted'] } | Select-Object -Last 1 } else { $mountRes }
-                    $shareMounted = [bool]($mountObj -and $mountObj.PSObject.Properties['Mounted'] -and $mountObj.Mounted)
-                    $mountedDrive = if ($mountObj -and $mountObj.PSObject.Properties['DriveLetter']) { $mountObj.DriveLetter } else { "Z:" }
-                    $userCred = if ($mountObj -and $mountObj.PSObject.Properties['Credential']) { $mountObj.Credential } else { $null }
+                    Write-LiteDeployLog " [CHECK]   Connecting to deployment share '$networkPath'..." -Level "INFO" -ForegroundColor Cyan
+                    $mountObj = Connect-LiteDeployDeploymentShare -NetworkPath $networkPath -DriveLetter "Z:" -ShowGuiError:$ShowGuiError
+                    $shareMounted = [bool]$mountObj.Mounted
+                    $mountedDrive = if ($mountObj.DriveLetter) { $mountObj.DriveLetter } else { "Z:" }
+                    $userCred = $mountObj.Credential
                     if ($shareMounted) {
-                        $engineScriptPath = Resolve-LiteDeployEnginePath -RootPath "Z:"
+                        $engineScriptPath = Resolve-LiteDeployEnginePath -RootPath "Z:" -DeploymentType Network
 
-                        # The WinPE BootConfig is only a bootstrap contract. Once the
-                        # deployment source is mounted, promote its full configuration
-                        # into BootObject so every downstream script consumes the same
-                        # in-memory object and credential-bearing process.
-                        $runtimeConfig = Get-LiteDeployRuntimeConfig -RootPath "Z:" -LocalRootName $localRootName
+                        # WinPE BootConfig may be minimal. Once the share is mounted,
+                        # load the full deployment configuration into BootObject so
+                        # later scripts use the same in-memory settings.
+                        $runtimeConfig = Get-LiteDeployRuntimeConfig -RootPath "Z:" -DeploymentType Network
                         if ($runtimeConfig) {
                             $FoundConfigPath = $runtimeConfig.Path
                             $cfg = $runtimeConfig.Config
@@ -776,10 +800,10 @@ function Get-LiteDeployBootConfig {
                                 $localRootName = $cfg.Deployment.LocalRootName
                             }
 
-                            Write-LiteDeployLog " [SUCCESS] Runtime configuration promoted from '$($FoundConfigPath)'." -Level "SUCCESS" -ForegroundColor Green
+                            Write-LiteDeployLog " [SUCCESS] Loaded deployment configuration from '$($FoundConfigPath)'." -Level "SUCCESS" -ForegroundColor Green
                         }
                         else {
-                            Write-LiteDeployLog " [WARNING] Full runtime BootConfig.json was not found on the mounted deployment source; downstream defaults will be used." -Level "WARNING" -ForegroundColor Yellow
+                            Write-LiteDeployLog " [WARNING] Deployment configuration was not found on the share; continuing with current settings." -Level "WARNING" -ForegroundColor Yellow
                         }
                     }
                 }
@@ -819,21 +843,22 @@ function Get-LiteDeployBootConfig {
 # ==============================================================================
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $res = Get-LiteDeployBootConfig -ConfigPath $ExplicitConfigPath -MountShare -ShowGuiError
-    $bootObj = if ($res -is [array]) { $res | Where-Object { $_ -is [PSCustomObject] } | Select-Object -Last 1 } else { $res }
+    $bootObj = Get-LiteDeployBootConfig -ConfigPath $ExplicitConfigPath -MountShare -ShowGuiError
 
-    $isMounted = [bool]($bootObj -and $bootObj.PSObject.Properties['ShareMounted'] -and $bootObj.ShareMounted)
-    $isMedia = [bool]($bootObj -and $bootObj.PSObject.Properties['DeploymentType'] -and $bootObj.DeploymentType -eq "Media")
+    $isMounted = [bool]$bootObj.ShareMounted
+    $isMedia = ($bootObj.DeploymentType -eq "Media")
 
     if ($isMounted -or $isMedia) {
-        $enginePath = if ($bootObj -and $bootObj.PSObject.Properties['EngineScriptPath']) { $bootObj.EngineScriptPath } else { "" }
+        $enginePath = $bootObj.EngineScriptPath
         if (-not $enginePath -or -not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-            $driveLetter = if ($bootObj.PSObject.Properties['DriveLetter'] -and $bootObj.DriveLetter) { $bootObj.DriveLetter } else { "Z:" }
-            $enginePath = Resolve-LiteDeployEnginePath -RootPath $driveLetter
+            $driveLetter = if ($bootObj.DriveLetter) { $bootObj.DriveLetter } else { "Z:" }
+            $localRoot = if ($bootObj.LocalRootName) { $bootObj.LocalRootName } else { "~LiteDeploy" }
+            $mode = if ($bootObj.DeploymentType -eq "Media") { "Media" } else { "Network" }
+            $enginePath = Resolve-LiteDeployEnginePath -RootPath $driveLetter -LocalRootName $localRoot -DeploymentType $mode
         }
 
         if ($enginePath -and (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-            Write-LiteDeployLog "Connection successful. Launching DeploymentEngine: $($enginePath)..." -Level "INFO" -ForegroundColor Cyan
+            Write-LiteDeployLog " [INFO]    Launching DeploymentEngine..." -Level "INFO" -ForegroundColor Cyan
             try {
                 $null = & $enginePath -BootObject $bootObj
             }
@@ -847,21 +872,14 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         else {
             $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1" }
-            Write-LiteDeployLog " [ERROR] DeploymentEngine script not found: 'LiteDeploy.DeploymentEngine.ps1' is missing at '$($targetPath)'." -Level "ERROR" -ForegroundColor Red
-            Write-Warning "DeploymentEngine script missing: Unable to locate LiteDeploy.DeploymentEngine.ps1 at '$($targetPath)'."
+            Write-LiteDeployLog " [ERROR]   DeploymentEngine was not found on the deployment source." -Level "ERROR" -ForegroundColor Red
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "DeploymentEngine Script Missing: LiteDeploy.DeploymentEngine.ps1 was not found on deployment share/media.`n`nTarget Path: $($targetPath)`n`nPlease ensure the engine script exists on the deployment share." -Title "LiteDeploy - Script Missing"
+                Show-LiteDeployGuiError -Message "Unable to locate DeploymentEngine.`n`nPath: $($targetPath)`n`nConfirm the file exists on the share or USB media." -Title "LiteDeploy - Script Missing"
             }
-            Write-Host ""
-            Write-Host " [NOTICE]  Deployment initialization paused." -ForegroundColor Yellow
-            Write-Host "           To restart this process, run 'startnet' below." -ForegroundColor Yellow
-            Write-Host ""
+            Write-LiteDeployPauseNotice
         }
     }
     else {
-        Write-Host ""
-        Write-Host " [NOTICE]  Deployment initialization paused." -ForegroundColor Yellow
-        Write-Host "           To restart this process, run 'startnet' below." -ForegroundColor Yellow
-        Write-Host ""
+        Write-LiteDeployPauseNotice
     }
 }

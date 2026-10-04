@@ -1,0 +1,77 @@
+{
+  "_comment": "Reference shapes for the BootObject PSCustomObject returned by Get-LiteDeployBootConfig and passed to LiteDeploy.DeploymentEngine.ps1 as -BootObject. Values are examples only.",
+  "Network": {
+    "ConfigFound": true,
+    "ConfigPath": "Z:\\Config\\BootConfig.json",
+    "Config": {
+      "Metadata": {
+        "Name": "LiteDeploy",
+        "Version": "1.0",
+        "Environment": "Production"
+      },
+      "Deployment": {
+        "Type": "Network",
+        "NetworkPath": "\\\\Server\\DeploymentShare$",
+        "LocalRootName": "~LiteDeploy"
+      }
+    },
+    "IsWinPE": true,
+    "DeploymentType": "Network",
+    "MediaDriveLetter": "",
+    "LocalRootName": "~LiteDeploy",
+    "EngineScriptPath": "Z:\\Engine\\Scripts\\Runtime\\LiteDeploy.DeploymentEngine.ps1",
+    "NetworkAdapterFound": true,
+    "NetworkAdapterName": "Intel(R) Ethernet Connection",
+    "IPAddress": "10.0.0.25",
+    "IPv4Address": "10.0.0.25",
+    "IPv6Address": "",
+    "HasValidIP": true,
+    "ServerReachable": true,
+    "ServerName": "Server",
+    "ShareMounted": true,
+    "DriveLetter": "Z:",
+    "Credential": {
+      "_comment": "Runtime type is System.Management.Automation.PSCredential (not plain JSON). UserName example only; SecurePassword is never serialized here.",
+      "UserName": "CONTOSO\\DeployTech"
+    },
+    "AppName": "LiteDeploy",
+    "AppVersion": "1.0",
+    "Environment": "Production",
+    "NetworkPath": "\\\\Server\\DeploymentShare$"
+  },
+  "Media": {
+    "ConfigFound": true,
+    "ConfigPath": "D:\\DeploymentMedia\\Config\\BootConfig.json",
+    "Config": {
+      "Metadata": {
+        "Name": "LiteDeploy",
+        "Version": "1.0",
+        "Environment": "Lab"
+      },
+      "Deployment": {
+        "Type": "Media",
+        "LocalRootName": "DeploymentMedia"
+      }
+    },
+    "IsWinPE": true,
+    "DeploymentType": "Media",
+    "MediaDriveLetter": "D:",
+    "LocalRootName": "DeploymentMedia",
+    "EngineScriptPath": "D:\\DeploymentMedia\\Engine\\Scripts\\Runtime\\LiteDeploy.DeploymentEngine.ps1",
+    "NetworkAdapterFound": false,
+    "NetworkAdapterName": "",
+    "IPAddress": "",
+    "IPv4Address": "",
+    "IPv6Address": "",
+    "HasValidIP": false,
+    "ServerReachable": false,
+    "ServerName": "",
+    "ShareMounted": false,
+    "DriveLetter": "D:",
+    "Credential": null,
+    "AppName": "LiteDeploy",
+    "AppVersion": "1.0",
+    "Environment": "Lab",
+    "NetworkPath": null
+  }
+}
