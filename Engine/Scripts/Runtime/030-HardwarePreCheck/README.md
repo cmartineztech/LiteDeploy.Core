@@ -1,55 +1,146 @@
-# LiteDeploy Hardware Pre-Check Architecture & Technical Documentation
+# LiteDeploy Hardware PreCheck
 
-This document provides complete technical specifications, architecture diagrams, parameter references, and deployment guidelines for the **LiteDeploy Hardware Pre-Check** component (`LiteDeploy.HardwarePreCheck.ps1`, component id `HardwarePreCheck`).
+**ComponentId**: `HardwarePreCheck`  
+**Version**: `1.0.0`  
+**Target Environment**: WinPE  
+**Dependencies**: `LogWriter` (optional for CMTrace), `Hardware`
+
+WPF readiness wizard. Loads `BootConfig.json` from a mandatory path (optional in-memory `-BootConfig` for first paint), gathers inventory via [`LiteDeploy.Hardware`](../000-Hardware/README.md), runs policy/network/hardware checks, and returns a structured result to DeploymentEngine.
+
+> For the Mermaid lifecycle diagram, see [PRECHECK_DIAGRAM.md](PRECHECK_DIAGRAM.md).
 
 ---
 
-## 🏗️ 1. Architecture & Pre-Check Lifecycle
+## Files
 
-The LiteDeploy Hardware Pre-Check component validates device readiness, configuration policy, network connectivity, and hardware requirements in WinPE prior to launching OS image deployment. 
+| Path | Role |
+| :--- | :--- |
+| [`LiteDeploy.HardwarePreCheck.ps1`](LiteDeploy.HardwarePreCheck.ps1) | **Production** logic — loads external markup, runs assessment, returns result |
+| [`LiteDeploy.HardwarePreCheck.UI.xaml`](LiteDeploy.HardwarePreCheck.UI.xaml) | **Production** WPF markup (`{{paletteVar}}` tokens replaced at load) |
+| [`SingleFile/LiteDeploy.HardwarePreCheck.ps1`](SingleFile/LiteDeploy.HardwarePreCheck.ps1) | Same logic and UI with markup **inlined** in one `.ps1` (reference only) |
+| [`PRECHECK_DIAGRAM.md`](PRECHECK_DIAGRAM.md) | Execution flowchart and UI copy table |
 
-It is written entirely in native PowerShell and WPF, running as a zero-dependency host with Software Rendering enforced for WinPE RAMDisk environments.
+**Production (Engine-wired):** separated `.ps1` + `.xaml` at the component root.  
+**SingleFile:** side-by-side reference under `SingleFile\`. Not Engine-wired. SyncComponents skips any `SingleFile\` folder so it does not collide with the production script name in flat Runtime.
 
-> [!NOTE]
-> For the complete visual execution flowchart and lifecycle diagram, see **[PRECHECK_DIAGRAM.md](PRECHECK_DIAGRAM.md)**.
+**Keep in sync:** any logic or UI change to the production split files must also be applied under `SingleFile\` (logic in the `.ps1`; markup mirrored into the inlined XAML).
 
+---
+
+## Contract
+
+### Input
+
+```powershell
+# Path only (always required)
+& .\LiteDeploy.HardwarePreCheck.ps1 -BootConfigPath "Z:\Config\BootConfig.json"
+
+# Path + optional in-memory object (Engine first paint; F5 / Run Again reloads from path)
+& .\LiteDeploy.HardwarePreCheck.ps1 `
+    -BootConfigPath "Z:\Config\BootConfig.json" `
+    -BootConfig $BootConfig
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ LiteDeploy.HardwarePreCheck.ps1 Lifecycle Pipeline                                                  │
-│                                                                                             │
-│  1. Check STA Apartment State  ──► (Relaunch with powershell.exe -STA if needed)             │
-│  2. Force WPF Software Rendering ([RenderOptions]::ProcessRenderMode = SoftwareOnly)         │
-│  3. Calculate 4:3 Window Viewbox Scaling & Apply Selected Theme (Light / Dark)              │
-│  4. Paint Window UI Frame & Progress Track Instantly via Add_ContentRendered                │
-│  5. Execute 8-Point Readiness Assessment & Render Real-Time Status Pill Badges               │
-│  6. Evaluate Readiness Status  ──► Enable Continue / Halt Execution                          │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+`-BootConfigPath` is required. DeploymentEngine passes the share/media BootConfig path (and may pass the already-loaded object).
+
+### Output
+
+```powershell
+[PSCustomObject]@{
+    Passed         = $true   # or $false if cancelled / failed
+    Inventory      = $inv    # Get-HardwareInventory + Assessment + Results
+}
 ```
 
----
+Continue only closes the window. **DeploymentEngine** calls WorkflowSelection next — Precheck does not launch other phases.
 
-## 📋 2. Assessment Results Sequence & Rules
+### Inventory handoff
 
-Pre-Check evaluates device readiness across 9 core assessment points in strict order:
+`Inventory` is built by `Get-HardwareInventory -Assessment … -Results …` so Engine can log identity and network detail without re-gathering. Important fields for logging:
 
-| Order | Assessment Check | Description & Evaluation Rules | Status Badges |
-| :---: | :--- | :--- | :--- |
-| **1** | **Deployment Mode** | Resolves deployment type (`Local (Media)` or `Network`) from `BootConfig.json`. | `OK` (Pass)<br>`FAIL` (Missing Config / Path)<br>`WARN` (Unknown Mode) |
-| **2** | **Deployment Server** | Tests TCP SMB port 445 connectivity to target deployment share server. | `OK` (Reachable)<br>`FAIL` (Unreachable on Network mode)<br>*Skipped on Media mode* |
-| **3** | **Network Adapter** | Scans for active physical network interfaces. | `OK` (Connected)<br>`WARN` (Missing on Media mode)<br>`FAIL` (Missing on Network mode) |
-| **4** | **IPv4 Address** | Awaits valid IPv4 address assignment (ignoring APIPA `169.254.*` & loopback). Appends IPv6 when available. | `OK` (Assigned)<br>`WARN` (Unassigned on Media mode)<br>`FAIL` (Unassigned on Network mode) |
-| **5** | **Internal Storage** | Scans non-USB internal storage drives against minimum size requirement (`MinDiskSizeGB`). | `OK` (Meets requirement)<br>`FAIL` (Disk smaller than minimum / Not found) |
-| **6** | **System RAM** | Validates installed physical RAM capacity against minimum requirements (`MinMemoryGB`). | `OK` (Meets requirement)<br>`WARN` (Below recommended RAM) |
-| **7** | **BIOS Mode** | Detects firmware environment (`UEFI` vs `Legacy BIOS`). | `OK` (UEFI)<br>`WARN` (Legacy BIOS) |
-| **8** | **Secure Boot** | Queries UEFI Secure Boot state and parses UEFI `db` signature database for Microsoft 2011 & 2023 CA readiness (Evaluated on UEFI systems; omitted on Legacy BIOS). | `OK` (Enabled (2011/2023 CA Ready))<br>`OK` (Enabled (2023 CA Ready))<br>`WARN` (Enabled (2011 CA Only - BIOS Update Recommended))<br>`WARN` (Disabled) |
-| **9** | **TPM Status** | Queries WMI `Win32_Tpm` and PnP device fallback for TPM version and state. Non-blocking assessment (`OK` or `WARN`). | `OK` (TPM 2.0 (Enabled))<br>`WARN` (TPM 2.0 (Disabled))<br>`WARN` (TPM 1.2 (Enabled))<br>`WARN` (Not Detected) |
+| Area | Properties |
+| :--- | :--- |
+| Identity | `Vendor`, `Model`, `SerialNumber`, `UUID`, `AssetTag`, `IsVM` |
+| Form / CPU | `Chassis`, `Architecture`, `MemoryGB`, `ProcessorName` |
+| Firmware | `FirmwareType`, `SecureBootDisplay`, TPM fields |
+| Network | `PrimaryNicName`, `PrimaryMacAddress`, `IPAddress`, `IPv4Cidr`, `IPv6Address`, `DnsServers`, `NICs` |
+| Storage | `HardDrives` / assessment `Disks` (per-disk Number, Model, Size) |
+| Precheck | `Results[]`, `Passed`, `SkippedByPolicy`, `DeploymentMode`, `NetworkPath` |
 
 ---
 
-## ⚙️ 3. Script Parameter Reference
+## Lifecycle
+
+1. STA check (relaunch with `-BootConfigPath` preserved if needed; optional `-BootConfig` is process-local only)
+2. Import `LiteDeploy.Hardware.ps1` only if not already loaded (must sit beside this script in flat Runtime / DeploymentShare layout)
+3. Resolve theme: explicit `-Theme` → `BootConfig.Ui.Theme` → `Light` (peek object or path; does not consume one-shot `-BootConfig`)
+4. Size window (~70% screen height, 800×600 design in Viewbox), load `LiteDeploy.HardwarePreCheck.UI.xaml`, apply theme tokens
+5. Apply brand header **before** `ShowDialog` (empty XAML placeholders filled from Metadata)
+6. On `ContentRendered`: run assessment; refresh device identity in header
+7. Always build inventory (including SkipPreCheck bypass)
+8. Return `{ Passed, Inventory }`
+
+---
+
+## BootConfig load rules
+
+| Call | Source |
+| :--- | :--- |
+| First paint | Optional `-BootConfig` object if passed; otherwise JSON at `-BootConfigPath` |
+| **F5** / **Run Again** | Always reload from `-BootConfigPath` (`-ReloadFromDisk`) |
+
+Path stays mandatory for STA relaunch, audit footer (`Configuration: …`), and refresh.
+
+---
+
+## Assessment sequence
+
+| Order | Check | Rules |
+| :---: | :--- | :--- |
+| 1 | Deployment Mode | From BootConfig `Deployment.Type` (`Network` / `Media`) |
+| 2 | Deployment Server | SMB TCP 445 to share host (Network mode only) |
+| 3 | Network Adapter | Primary NIC via Hardware (`Inventory.NICs` holds all) |
+| 4 | IPv4 Address | First usable IPv4 (IPv6 shown in details when present). Soft on Media. Full addressing (CIDR / DNS) lives on Inventory for Engine logs |
+| 5 | Internal Storage | One result row per non-USB disk; pass if any meets `MinDiskSizeGB` |
+| 6 | System RAM | WARN if below `MinMemoryGB` (does not fail Continue) |
+| 7 | BIOS Mode | UEFI OK; Legacy WARN |
+| 8 | Secure Boot | UEFI only; CA display from Hardware helpers |
+| 9 | TPM Status | UEFI only; WARN if missing/not ready (`RequireTPM` recorded, not enforced yet) |
+
+### Policy bypass
+
+If `Startup.SkipHardwarePreCheck` or `Startup.SkipPreCheck` is `$true`, mode/share checks still run (**5% → 15%**), hardware tests are skipped, progress jumps to **95%** (`Finalizing hardware details...`) while inventory is built, then **100%** with under-headline `Device PreCheck Skipped.` and banner `DEVICE PRECHECK SKIPPED BY POLICY`. Continue is enabled with `Passed = $true`.
+
+---
+
+## Progress milestones
+
+Fixed UI steps (not a live work estimate). The bar stays at **95%** through TPM and inventory finalization; **100%** is applied together with the outcome banner color.
+
+| % | Message (under headline) |
+| :---: | :--- |
+| 5 | Loading configuration... |
+| 15 | Testing deployment source connectivity... |
+| 35 | Scanning for active network hardware... |
+| 55 | Awaiting IPv4 address assignment... |
+| 75 | Validating internal storage and system memory... |
+| 90 | Analyzing firmware and Secure Boot... |
+| 95 | Evaluating TPM security status... → Finalizing hardware details... |
+| 100 (Passed / Failed) | `Device PreCheck Completed.` + outcome banner |
+| 100 (Skipped) | `Device PreCheck Skipped.` + banner `DEVICE PRECHECK SKIPPED BY POLICY` |
+
+Skip path: after share check, **95%** (`Finalizing hardware details...`) → **100%** skipped messages above.
+
+**Run Again** and **F5** restart `Invoke-HardwarePreCheck -ReloadFromDisk`: reload BootConfig from path, clear results, reset the bar to blue, set Continue to **Running...**, and restore banner `DEVICE PRECHECK IS RUNNING...`.
+
+---
+
+## Parameters
 
 ```powershell
 param(
+    [string]$BootConfigPath = "",
+    [psobject]$BootConfig = $null,
     [string]$DeploymentShare = "",
     [int]$MaxNetworkWaitSeconds = 30,
     [int]$NetworkPollMilliseconds = 500,
@@ -59,65 +150,108 @@ param(
     [bool]$HaltOnFailure = $true,
     [ValidateSet("Light", "Dark")][string]$Theme = "Light",
     [ValidateSet("On", "Off")][string]$TopMost = "On",
-    [switch]$ShowBackdrop,
-    [ValidateRange(0, 60)][int]$SuccessCloseSeconds = 3,
-    [psobject]$BootObject = $null
+    [Alias("Metadata")]
+    [switch]$GetComponentMetadata
 )
 ```
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `-DeploymentShare` | String | `""` | Optional UNC path override for deployment server SMB connectivity validation. |
-| `-MaxNetworkWaitSeconds` | Int | `30` | Maximum time to await valid IPv4 address assignment before timing out. |
-| `-NetworkPollMilliseconds` | Int | `500` | Polling interval for checking network adapter IP assignment. |
-| `-SmbConnectTimeoutMilliseconds` | Int | `2000` | Timeout threshold for testing SMB Port 445 TCP connection to deployment server. |
-| `-MinDiskSizeGB` | Int | `32` | Minimum required internal hard drive capacity in GB. |
-| `-MinMemoryGB` | Int | `4` | Minimum required system RAM in GB. |
-| `-HaltOnFailure` | Bool | `$true` | When `$true`, disables the **Continue** button (`IsEnabled = $false`) if any critical assessment fails. |
-| `-Theme` | String | `"Light"` | Visual palette theme (`Light` or `Dark`). |
-| `-TopMost` | String | `"On"` | Keeps window on top of desktop windows when set to `On`. Disabled dynamically when launching CMD. |
-| `-ShowBackdrop` | Switch | `False` | Displays a solid full-screen black backdrop behind the Pre-Check window. |
-| `-SuccessCloseSeconds` | Int | `3` | Seconds delay before closing upon auto-success (if configured). |
-| `-BootObject` | PSObject | `$null` | Discovered boot payload object returned from `Get-LiteDeployBootConfig` containing credentials, network paths, and config metadata. |
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `-BootConfigPath` | *(required)* | Full path to `BootConfig.json` |
+| `-BootConfig` | `$null` | Optional in-memory BootConfig for first paint; ignored on F5 / Run Again |
+| `-DeploymentShare` | `""` | Optional UNC override for SMB check; else `Deployment.NetworkPath` |
+| `-MaxNetworkWaitSeconds` | `30` | DHCP / IPv4 wait budget |
+| `-NetworkPollMilliseconds` | `500` | IP poll interval (UI stays pumped) |
+| `-SmbConnectTimeoutMilliseconds` | `2000` | TCP 445 connect timeout |
+| `-MinDiskSizeGB` | `32` | Minimum acceptable internal disk size |
+| `-MinMemoryGB` | `4` | Soft RAM floor (WARN only) |
+| `-HaltOnFailure` | `$true` | Disable Continue when any critical FAIL |
+| `-Theme` | `"Light"` | Overrides `BootConfig.Ui.Theme` when passed explicitly |
+| `-TopMost` | `"On"` | Keep window above others (cleared when opening CMD) |
+| `-GetComponentMetadata` / `-Metadata` | | Return component metadata and exit |
 
 ---
 
-## 📁 4. Configuration Resolution (`BootConfig.json`)
+## BootConfig usage
 
-Pre-Check resolves its configuration file relative to `$PSScriptRoot` or via passed `-BootObject`:
-
-1. Discovered `BootObject` payload passed from `BootInitializer`
-2. `..\..\Admin\LiteDeploy.SetConfig.ps1\BootConfig.json` (Local Core workspace development layout)
-3. `..\..\..\..\DeploymentShare\Config\BootConfig.json` (Deployment share workspace template)
-4. `Config\BootConfig.json` (Standard deployment share layout)
-5. `BootConfig.json` (Root fallback)
-
-### Policy Bypass (`SkipHardwarePreCheck`)
-If `Startup.SkipHardwarePreCheck` or `Startup.SkipPreCheck` is set to `true` in `BootConfig.json`, Pre-Check displays deployment mode and server reachability, logs `Pre-Check: Bypassed via configuration` (`INFO` badge), updates the status banner to `SYSTEM PRE-CHECK BYPASSED BY POLICY`, and immediately unlocks the **Continue** button.
-
----
-
-## 🔒 5. Fault Tolerance & Safety Controls
-
-1. **Window Close Confirmation Modal**:
-   If a technician attempts to close the Pre-Check window via the `X` title bar button, `Alt+F4`, or `Escape` key before continuing, a confirmation dialog appears:
-   > *Are you sure you want to cancel? If you close this window, the deployment will be cancelled.*
-   - Clicking **No** cancels the close request and keeps Pre-Check open.
-   - Clicking **Yes** closes the window and flags deployment failure (`$global:PreCheckPassed = $false`).
-
-2. **WinPE Software Rendering**:
-   Forces `[RenderOptions]::ProcessRenderMode = SoftwareOnly` to eliminate GPU driver crashes in bare-metal WinPE RAMDisk environments.
+| Path | Used for |
+| :--- | :--- |
+| `Metadata.Name` | Header brand (`TxtBrand`); default `LiteDeploy` if missing |
+| `Metadata.Environment` / `Version` | Subtitle `{Environment} Environment \| v{Version}` when Environment is set |
+| *(no Environment)* | Subtitle falls back to component `Name \| v{Version}` |
+| `Deployment.Type` / `NetworkPath` | Mode and SMB target |
+| `Startup.SkipHardwarePreCheck` / `SkipPreCheck` | Assessment bypass |
+| `ComputerSetup.RequireTPM` | Stored on inventory (`RequireTpm`); not a hard fail yet |
+| `Ui.Theme` | `Light` / `Dark` when `-Theme` not passed |
 
 ---
 
-## 💻 6. Execution Examples
+## UI notes
 
-### Standard WinPE Task Sequence Startup (Light Theme)
-```cmd
-cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File "%SystemDrive%\Engine\Scripts\Runtime\LiteDeploy.HardwarePreCheck.ps1" -Theme Light
+Naming pattern: **Hardware PreCheck** = product/screen name (title + headline); **Device PreCheck** / **DEVICE PRECHECK** = this machine’s check status (under-headline + banners).
+
+- Window title: `{ComponentMetadata.Name} v{ComponentMetadata.Version}` (e.g. `LiteDeploy Hardware PreCheck v1.0.0`)  
+- Page headline: `Hardware PreCheck` (Title Case; not ALL CAPS)  
+- Results section label: `PRECHECK RESULTS`  
+- Results grid columns: **STATUS** / **CHECK** / **DETAILS** (bound to `Status`, `Check`, `Details`)  
+- Header left (`TxtBrand` / `TxtSubtitle`): filled at runtime from BootConfig Metadata (XAML placeholders are empty + comment)  
+- Header right: raw manufacturer `/ Model: {model}` + `Serial: {number} / SKU: {sku}` (SKU omitted when empty)  
+  - While gathering: `Loading device information...`  
+  - After inventory with no identity: `Device information: unavailable`  
+- Results grid updates live; multi-disk shows one row per disk  
+- Theme colors are baked into XAML at load (resolve theme before paint); markup is `LiteDeploy.HardwarePreCheck.UI.xaml`  
+- Results grid is display-only (selection highlight styled away)  
+- Footer buttons: **Open CMD**, **Run Again**, **Continue**  
+  - While running: Continue shows **Running...** (disabled)  
+  - Continue uses `MinWidth="110"` so the footer does not shift when the label changes  
+- **F5** = **Run Again** (reload BootConfig from path + full assessment)  
+- Banners (ALL CAPS):  
+  - Running → `DEVICE PRECHECK IS RUNNING...`  
+  - Passed → `DEVICE READY FOR IMAGE DEPLOYMENT` (green bar)  
+  - Failed → `DEVICE PRECHECK FOUND ISSUES` (red bar)  
+  - Skipped → `DEVICE PRECHECK SKIPPED BY POLICY`  
+- Under headline at 100% (Title Case): `Device PreCheck Completed.` or `Device PreCheck Skipped.`  
+- Close / Esc confirmation: `Close PreCheck and cancel this deployment?` (Yes → `Passed = $false`)
+
+---
+
+## Fault tolerance
+
+1. **Close confirmation** — X / Alt+F4 / Escape asks `Close PreCheck and cancel this deployment?`; Yes sets `Passed = $false`.
+2. **Software rendering** — `RenderMode = SoftwareOnly` for WinPE.
+3. **Hardware import** — throws clearly if `LiteDeploy.Hardware.ps1` is missing after sync.
+
+---
+
+## Examples
+
+```powershell
+# Engine-style call (path only)
+& "Z:\Engine\Scripts\Runtime\LiteDeploy.HardwarePreCheck.ps1" `
+    -BootConfigPath "Z:\Config\BootConfig.json"
+
+# Engine Draft-style call (path + object)
+& ".\LiteDeploy.HardwarePreCheck.ps1" `
+    -BootConfigPath "Z:\Config\BootConfig.json" `
+    -BootConfig $BootConfig
+
+# Force dark theme (ignores BootConfig.Ui.Theme)
+& ".\LiteDeploy.HardwarePreCheck.ps1" `
+    -BootConfigPath "C:\path\BootConfig.json" `
+    -Theme Dark
+
+# Metadata only
+& ".\LiteDeploy.HardwarePreCheck.ps1" -Metadata
 ```
 
-### High-Contrast Dark Mode Execution
-```cmd
-cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File "%SystemDrive%\Engine\Scripts\Runtime\LiteDeploy.HardwarePreCheck.ps1" -Theme Dark -TopMost On
-```
+---
+
+## Sync layout
+
+After SyncComponents, flat Runtime must contain:
+
+- `LiteDeploy.HardwarePreCheck.ps1`
+- `LiteDeploy.HardwarePreCheck.UI.xaml`
+- `LiteDeploy.Hardware.ps1`
+
+`SingleFile\LiteDeploy.HardwarePreCheck.ps1` is **not** copied (folder excluded).

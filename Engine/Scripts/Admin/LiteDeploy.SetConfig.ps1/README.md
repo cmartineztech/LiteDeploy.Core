@@ -84,7 +84,7 @@ LiteDeploy supports three distinct deployment modes:
 | **`Drivers`** | `Object` | Top-level object for hardware driver detection and management. Omitted in `BootWim`. |
 | **`Drivers.AutoDetectDrivers`** | `Boolean` | Automatically detect Make/Model via WMI and inject matching driver pack (`true`/`false`). |
 | **`Drivers.AllowManualSelection`** | `Boolean` | Allow operator/technician to manually browse or select driver pack (`true`/`false`). |
-| **`Drivers.AutoOnlineDownloadOnMedia`** | `Boolean` | Automatically fetch missing driver packs from online web repository during USB media boot (`true`/`false`). |
+| **`Drivers.AutoOnlineDownloadOnMedia`** | `Boolean` | Offer online driver pack download during USB media boot when internet is reachable (`true`/`false`). Hidden when offline or not Media. |
 | **`Ui`** | `Object` | Optional UI appearance settings. Present in all modes. |
 | **`Ui.Theme`** | `String` | UI palette (`"Light"` or `"Dark"`). Default: `"Light"`. Used by the boot credential prompt and later UIs. |
 | **`_Comments`** | `String` | Optional comment or documentation string. |

@@ -1,8 +1,13 @@
-
-
 MAIN ROOT DIRECTORY:
 Config = How LiteDeploy behaves
 Content = What LiteDeploy deploys
 Engine = The reusable code that performs the work
 Workflows = The ordered deployment process
 WorkLogs = The record of what LiteDeploy did
+
+PATH EXAMPLES (docs / examples only):
+Z:\                = mapped network deployment share
+\\Server\Share$    = UNC share root
+E:\~LiteDeploy\    = offline media tree (letter varies)
+X:\                = WinPE system drive / RAM disk
+Do not document personal profile or desktop paths.

@@ -88,7 +88,8 @@ function Write-LiteDeployLog {
         [string]$Component = "BootInitializer",
         [switch]$NoConsole
     )
-    if ($Message -and -not $NoConsole) {
+    # Empty Message ("") still prints a blank console spacer; CMTrace skips whitespace-only below.
+    if (-not $NoConsole) {
         Write-Host $Message -ForegroundColor $ForegroundColor
     }
     try {
@@ -98,7 +99,8 @@ function Write-LiteDeployLog {
             $null = New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue
         }
         $logFile = Join-Path $logDir "LiteDeploy.Execution.log"
-        $cleanMsg = $Message.Trim()
+        $cleanMsg = $Message.Trim() -replace '[\r\n]+', ' '
+        $cleanMsg = $cleanMsg.Replace(']LOG]!>', ']LOG] !>')
         if (-not [string]::IsNullOrWhiteSpace($cleanMsg)) {
             $now = Get-Date
             # CMTrace time uses local clock + UTC offset in minutes (e.g. -240 for EDT)
@@ -113,9 +115,9 @@ function Write-LiteDeployLog {
                 default { "1" }
             }
             $scriptFile = if ($PSCommandPath) { Split-Path -Leaf $PSCommandPath } else { "LiteDeploy.BootInitializer.ps1" }
-            # Official Microsoft CMTrace.exe XML Log Structure
-            $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""1"" file=""$scriptFile"">"
-            Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
+            # Official Microsoft CMTrace.exe XML Log Structure (UTF-8, PID thread, safe message)
+            $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""$PID"" file=""$scriptFile"">"
+            Add-Content -Path $logFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
         }
     }
     catch {}
@@ -150,9 +152,13 @@ function Show-LiteDeployGuiError {
 }
 
 function Write-LiteDeployPauseNotice {
+    param(
+        [string]$Reason = "Deployment initialization paused."
+    )
+
     Write-Host ""
-    Write-LiteDeployLog " [NOTICE]  Deployment initialization paused." -Level "WARNING" -ForegroundColor Yellow
-    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "WARNING" -ForegroundColor Yellow
+    Write-LiteDeployLog " [NOTICE]  $Reason" -Level "NOTICE" -ForegroundColor Yellow
+    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "NOTICE" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -201,7 +207,7 @@ function Invoke-LiteDeployGuiRetry {
     }
 
     if ($IsWinPE) {
-        try { wpeutil.exe InitializeNetwork 2>$null } catch {}
+        try { $null = & wpeutil.exe InitializeNetwork 2>$null } catch {}
     }
     try { [System.Console]::Out.Flush() } catch {}
     Write-LiteDeployLog $RetryLogMessage -Level "RETRY" -ForegroundColor DarkYellow
@@ -280,19 +286,20 @@ if ($isWinPE) {
     # Initialize WinPE components and network stack
     try { wpeinit.exe 2>$null } catch {}
     # Populate PE boot metadata under HKLM:\SYSTEM\CurrentControlSet\Control (reserved for later use; not consumed yet)
-    try { wpeutil.exe UpdateBootInfo 2>$null } catch {}
-    try { wpeutil.exe InitializeNetwork 2>$null } catch {}
+    try { $null = & wpeutil.exe UpdateBootInfo 2>$null } catch {}
+    try { $null = & wpeutil.exe InitializeNetwork 2>$null } catch {}
 }
 
 # Set the title of the console window while LiteDeploy is loading.
 $componentVersion = (Get-LiteDeployComponentMetadata).Version
+$componentName = (Get-LiteDeployComponentMetadata).Name
 $Host.UI.RawUI.WindowTitle = "LiteDeploy Loading..."
 Write-LiteDeployLog "LiteDeploy Loading..." -Level "INFO" -ForegroundColor DarkGray
 $Host.UI.RawUI.WindowTitle = "LiteDeploy v$componentVersion"
 Clear-Host
 
 Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
-Write-LiteDeployLog "            LiteDeploy WinPE Initialization Engine v$componentVersion            " -Level "INFO" -ForegroundColor White
+Write-LiteDeployLog "            $componentName Component v$componentVersion            " -Level "INFO" -ForegroundColor White
 Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
 Write-LiteDeployLog "" -Level "INFO"
 if ($isWinPE) {
@@ -518,7 +525,7 @@ function Connect-LiteDeployDeploymentShare {
         if (-not $shouldRetry) { break }
 
         if ($isWinPE) {
-            try { wpeutil.exe InitializeNetwork 2>$null } catch {}
+            try { $null = & wpeutil.exe InitializeNetwork 2>$null } catch {}
         }
         try { [System.Console]::Out.Flush() } catch {}
         Write-LiteDeployLog " [RETRY]   Re-prompting for Credentials for $($NetworkPath)..." -Level "RETRY" -ForegroundColor DarkYellow
@@ -623,7 +630,7 @@ function Get-LiteDeployBootConfig {
     if (-not $configFound) {
         Write-LiteDeployLog " [WARNING] BootConfig.json file was not found." -Level "WARNING" -ForegroundColor Yellow
         if ($isWinPE -or $ShowGuiError) {
-            Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\~LiteDeploy\Config) or external media.`n`nPlease rebuild the boot image or attach deployment media." -Title "LiteDeploy - Config Missing"
+            $null = Show-LiteDeployGuiError -Message "BootConfig.json was not found in WinPE RAM ($ramDrive\~LiteDeploy\Config) or external media.`n`nPlease rebuild the boot image or attach deployment media." -Title "LiteDeploy - Config Missing"
         }
     }
 
@@ -645,7 +652,7 @@ function Get-LiteDeployBootConfig {
             $serverReachable = $false
             Write-LiteDeployLog " [WARNING] Misconfigured Network Deployment: NetworkPath is missing in BootConfig.json." -Level "WARNING" -ForegroundColor Yellow
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "NetworkPath is missing in BootConfig.json.`n`nPlease update BootConfig.json with a valid network share path." -Title "LiteDeploy - Misconfigured NetworkPath"
+                $null = Show-LiteDeployGuiError -Message "NetworkPath is missing in BootConfig.json.`n`nPlease update BootConfig.json with a valid network share path." -Title "LiteDeploy - Misconfigured NetworkPath"
             }
         }
         else {
@@ -866,15 +873,17 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Write-LiteDeployLog " [ERROR] Execution failed for '$($enginePath)': $_" -Level "ERROR" -ForegroundColor Red
                 Write-Warning "Engine script execution failed: $_"
                 if ($isWinPE -or $ShowGuiError) {
-                    Show-LiteDeployGuiError -Message "Engine Script Execution Failed: $($enginePath) encountered an unhandled error:`n`n$_" -Title "LiteDeploy - Execution Error"
+                    # Discard dialog return ($false for OK) so it does not print to the host.
+                    $null = Show-LiteDeployGuiError -Message "Engine Script Execution Failed: $($enginePath) encountered an unhandled error:`n`n$_" -Title "LiteDeploy - Execution Error"
                 }
+                Write-LiteDeployPauseNotice -Reason "Deployment engine failed with an unhandled error."
             }
         }
         else {
             $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Scripts\Runtime\LiteDeploy.DeploymentEngine.ps1" }
             Write-LiteDeployLog " [ERROR]   DeploymentEngine was not found on the deployment source." -Level "ERROR" -ForegroundColor Red
             if ($isWinPE -or $ShowGuiError) {
-                Show-LiteDeployGuiError -Message "Unable to locate DeploymentEngine.`n`nPath: $($targetPath)`n`nConfirm the file exists on the share or USB media." -Title "LiteDeploy - Script Missing"
+                $null = Show-LiteDeployGuiError -Message "Unable to locate DeploymentEngine.`n`nPath: $($targetPath)`n`nConfirm the file exists on the share or USB media." -Title "LiteDeploy - Script Missing"
             }
             Write-LiteDeployPauseNotice
         }

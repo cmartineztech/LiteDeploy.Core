@@ -1,1 +1,37 @@
-{}
+{
+  "schemaVersion": 1,
+  "workflowId": "intune-ready",
+  "name": "Intune Ready",
+  "description": "Entra joined and enrolled in Intune",
+  "enabled": true,
+  "revision": 1,
+  "osCatalogPath": "Content/OperatingSystems/catalog.json",
+  "unattendPath": "Content/Unattend/Autopilot.xml",
+  "operatingSystems": [
+    {
+      "osId": "win11-25h2-en-us-26200.8037-x64",
+      "editionIds": [
+        "win11-25h2-windows-11-pro-26200.8037-x64"
+      ]
+    },
+    {
+      "osId": "win11-26h2-en-us-26300.8772-x64",
+      "editionIds": [
+        "win11-26h2-windows-11-pro-26300.8772-x64",
+        "win11-26h2-windows-11-enterprise-26300.8772-x64"
+      ]
+    }
+  ],
+  "requiredCredentialIds": [],
+  "actions": [
+    {
+      "actionId": "autopilot-enroll",
+      "name": "Enroll in Intune with Autopilot",
+      "packageId": "autopilot-enroll",
+      "phase": "FullOS",
+      "executionContext": "System",
+      "requiredCredentialIds": [],
+      "continueOnError": false
+    }
+  ]
+}

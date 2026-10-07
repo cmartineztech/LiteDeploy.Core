@@ -7,7 +7,7 @@
 
 `LiteDeploy.LogWriter.ps1` is the shared logger for LiteDeploy runtime components. It writes a colored console line and appends one CMTrace XML entry. It does not write JSON.
 
-`DeploymentEngine` dot-sources this script. Later components call `Write-LiteDeployLog`. `BootInitializer` writes the same CMTrace file with its own function until the engine loads LogWriter.
+Runtime components import or dot-source this script and call `Write-LiteDeployLog`. Console output matches BootInitializer style (message printed as-is). CMTrace timestamps use the local clock and real UTC offset.
 
 ---
 
@@ -95,13 +95,21 @@ Write-LiteDeployLog -Message "Evaluating TPM 2.0 State..." -Level "CHECK" -Compo
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `-Message` | String | Mandatory | Text to log. |
-| `-Level` | String | `INFO` | `INFO`, `SUCCESS`, `INIT`, `CHECK`, `WARNING`, `RETRY`, `ERROR`. |
+| `-Message` | String | Optional | Text to log. `""` prints a blank console spacer; blank/whitespace-only messages are not written to the CMTrace file. |
+| `-Level` | String | `INFO` | `INFO`, `SUCCESS`, `INIT`, `CHECK`, `NOTICE`, `WARNING`, `RETRY`, `ERROR`. |
 | `-Component` | String | `LiteDeploy` | Component id written to the CMTrace `component` attribute. |
 | `-ForegroundColor` | ConsoleColor | `White` | Console color. The default `White` selects the color from `-Level`. |
 | `-LogFileName` | String | `LiteDeploy.Execution.log` | CMTrace file name. |
 | `-LogPath` | String | `%SystemDrive%\~LiteDeploy\WorkLogs` | Directory override. |
-| `-NoConsole` | Switch | Off | Write the file only. |
+| `-NoConsole` | Switch | Off | Write the CMTrace file only; skip `Write-Host`. Use for verbose dumps (inventory, diagnostics) that should stay in the log without flooding the console. |
+
+```powershell
+# Console + file (default)
+Write-LiteDeployLog -Message " [SUCCESS] HardwarePreCheck passed." -Level "SUCCESS" -Component "DeploymentEngine"
+
+# File only
+Write-LiteDeployLog -Message " [INFO]    UUID: ..." -Level "INFO" -Component "DeploymentEngine" -NoConsole
+```
 
 Console colors are not stored in the log file:
 
@@ -111,29 +119,30 @@ Console colors are not stored in the log file:
 | `SUCCESS` | Green | `1` | Normal text |
 | `INIT` | Dark gray | `1` | Normal text |
 | `CHECK` | Cyan | `1` | Normal text |
+| `NOTICE` | Yellow | `2` | Yellow |
 | `WARNING` | Yellow | `2` | Yellow |
 | `RETRY` | Dark yellow | `2` | Yellow |
 | `ERROR` | Red | `3` | Red |
 
-CMTrace has three severities. `SUCCESS`, `INIT`, and `CHECK` stay informational (`type="1"`). `RETRY` is recorded as a warning (`type="2"`).
+CMTrace has three severities. `SUCCESS`, `INIT`, and `CHECK` stay informational (`type="1"`). `NOTICE`, `WARNING`, and `RETRY` are recorded as warnings (`type="2"`). BootInitializer uses `NOTICE` for pause / `startnet` guidance after init or engine failures.
 
-A message that already starts with `[`, `=`, or `-` is printed as-is. Other messages are printed as ` [LEVEL  ] [Component] message`.
+Console output prints `-Message` as-is (BootInitializer style). Callers typically prefix their own tags (for example ` [INFO]    …`).
 
 ---
 
 ## 5. CMTrace line
 
 ```xml
-<![LOG[Evaluating TPM 2.0 State...]LOG]!><time="02:38:00.123+000" date="08-11-2026" component="HardwarePreCheck" context="" type="1" thread="1" file="LiteDeploy.HardwarePreCheck.ps1">
+<![LOG[Evaluating TPM 2.0 State...]LOG]!><time="02:38:00.123-240" date="08-11-2026" component="HardwarePreCheck" context="" type="1" thread="1234" file="LiteDeploy.HardwarePreCheck.ps1">
 ```
 
 | Attribute | Value |
 | :--- | :--- |
-| `time` | Local time `HH:mm:ss.fff` plus `+000`. |
+| `time` | Local time `HH:mm:ss.fff` plus real UTC offset minutes (for example `-240`). |
 | `date` | `MM-dd-yyyy`. |
 | `component` | The `-Component` argument. |
 | `type` | `1` informational, `2` warning, `3` error. |
-| `thread` | Always `1`. |
+| `thread` | Current process id (`$PID`). |
 | `file` | Calling script name when PowerShell reports one; otherwise `LiteDeploy.LogWriter.ps1`. |
 
 ---

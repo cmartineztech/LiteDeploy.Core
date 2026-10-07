@@ -21,9 +21,6 @@
 .PARAMETER Metadata
     Switch to output standardized LiteDeploy component metadata PSCustomObject.
 
-.PARAMETER BootObject
-    Optional bootstrap PSCustomObject provided by BootInitializer.
-
 .EXAMPLE
     .\LiteDeploy.DiskPreparation.ps1 -DiskNumber 0 -BootMode UEFI -OSTempDriveLetter W
 
@@ -49,10 +46,7 @@ param (
     [string]$OSTempDriveLetter = $null,
 
     [Parameter(Mandatory = $false)]
-    [switch]$Metadata,
-
-    [Parameter(Mandatory = $false)]
-    [psobject]$BootObject = $null
+    [switch]$Metadata
 )
 
 # Enforce strict execution discipline across WinPE runtime

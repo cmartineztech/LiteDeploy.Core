@@ -1,92 +1,127 @@
-# LiteDeploy Pre-Check Execution & Architecture Flowchart
+# LiteDeploy Hardware PreCheck — execution flowchart
 
-This document provides a dedicated visual flowchart detailing the complete execution lifecycle, environment initialization, configuration resolution, 9-point assessment pipeline, and UI state handling of **[LiteDeploy.HardwarePreCheck.ps1](LiteDeploy.HardwarePreCheck.ps1)**.
+Lifecycle of **production** PreCheck ([`LiteDeploy.HardwarePreCheck.ps1`](LiteDeploy.HardwarePreCheck.ps1) + [`LiteDeploy.HardwarePreCheck.UI.xaml`](LiteDeploy.HardwarePreCheck.UI.xaml)).
+
+Reference only: [`SingleFile/LiteDeploy.HardwarePreCheck.ps1`](SingleFile/LiteDeploy.HardwarePreCheck.ps1) — same flow with inlined markup (not Engine-wired).
 
 ---
 
-## 📊 Pre-Check Execution Flowchart
+## Flowchart
 
 ```mermaid
 flowchart TD
-    Start["Pre-Check Execution Launch"] --> CheckSTA{"Thread Apartment State == STA?"}
+    Start["Launch with -BootConfigPath<br/>optional -BootConfig"] --> CheckSTA{"Apartment == STA?"}
 
-    subgraph Initialization ["1. Environment & WPF Host Setup"]
-        CheckSTA -- "No" --> RelaunchSTA["Relaunch: powershell.exe -STA -ExecutionPolicy Bypass -File LiteDeploy.HardwarePreCheck.ps1"]
-        CheckSTA -- "Yes" --> ForceSoftwareRender["Set WPF RenderMode = SoftwareOnly (WinPE GPU Crash Safeguard)"]
-        
-        ForceSoftwareRender --> CalcScale["Calculate 4:3 Aspect Ratio Window Scaling based on Screen Height"]
-        CalcScale --> ApplyTheme["Apply Selected Color Palette (Light / Dark Theme)"]
-        ApplyTheme --> PaintUI["Render WPF UI Window Frame & Progress Tracks"]
+    subgraph Initialization ["1. Environment and WPF host"]
+        CheckSTA -- "No" --> RelaunchSTA["Relaunch powershell.exe -STA -File<br/>forward -BootConfigPath only"]
+        CheckSTA -- "Yes" --> ImportHw["Import-Module LiteDeploy.Hardware.ps1<br/>if Get-HardwareInventory missing"]
+        ImportHw --> ResolveTheme["Theme: -Theme or BootConfig.Ui.Theme or Light<br/>peek object/path; do not consume one-shot -BootConfig"]
+        ResolveTheme --> ForceSoftwareRender["RenderMode = SoftwareOnly"]
+        ForceSoftwareRender --> CalcScale["Window ~70% screen height; 800x600 Viewbox"]
+        CalcScale --> LoadXaml["Load LiteDeploy.HardwarePreCheck.UI.xaml<br/>replace {{palette}} tokens"]
+        LoadXaml --> BrandEarly["Fill TxtBrand / TxtSubtitle from Metadata<br/>empty XAML placeholders"]
+        BrandEarly --> PaintUI["ShowDialog; ContentRendered starts assessment"]
     end
 
-    subgraph ConfigResolution ["2. BootConfig.json & Policy Resolution"]
-        PaintUI --> FindConfig["Resolve BootConfig.json Location"]
-        FindConfig --> CheckBypass{"SkipHardwarePreCheck == true?"}
-        
-        CheckBypass -- "Yes" --> PolicyBypass["Set Banner: PRE-CHECK BYPASSED BY POLICY<br/>Set Status: INFO (Skipped by Policy)<br/>Unlock Continue Button"]
-        CheckBypass -- "No" --> AssessmentPipeline["Execute 9-Point System Readiness Assessment"]
+    subgraph ConfigResolution ["2. BootConfig and policy"]
+        PaintUI --> EffectiveConfig{"ReloadFromDisk<br/>or no -BootConfig?"}
+        EffectiveConfig -- "No first paint" --> UseObject["Use optional -BootConfig once"]
+        EffectiveConfig -- "Yes" --> LoadPath["Load JSON from BootConfigPath"]
+        UseObject --> ApplyMeta["Brand + subtitle from Metadata<br/>Name / Environment / Version"]
+        LoadPath --> ApplyMeta
+        ApplyMeta --> ShowDevice["Header right: Loading device information...<br/>then raw Make / Model: … + Serial: … / SKU: …"]
+        ShowDevice --> ModeShare["Deployment Mode + SMB 445 when Network"]
+        ModeShare --> CheckBypass{"SkipHardwarePreCheck / SkipPreCheck?"}
+        CheckBypass -- "Yes" --> PolicyBypass["95% Finalizing hardware details<br/>100%: Device PreCheck Skipped.<br/>Banner: DEVICE PRECHECK SKIPPED BY POLICY<br/>Unlock Continue; Passed=true"]
+        CheckBypass -- "No" --> AssessmentPipeline["9-point readiness assessment"]
     end
 
-    subgraph Assessment ["3. 9-Point Hardware Readiness Assessment Pipeline"]
-        AssessmentPipeline --> Check1["1. Deployment Mode (Network vs Media)"]
-        Check1 --> Check2["2. Deployment Server Reachability (SMB TCP 445)"]
-        Check2 --> Check3["3. Network Adapter Detection (Get-NetAdapter / .NET)"]
-        Check3 --> Check4["4. IPv4 / IPv6 Address Assignment Polling"]
-        Check4 --> Check5["5. Internal Storage Disk Capacity (MinDiskSizeGB)"]
-        Check5 --> Check6["6. Installed Physical RAM Capacity (MinMemoryGB)"]
-        Check6 --> Check7["7. BIOS / Firmware Mode Detection (UEFI vs Legacy)"]
-        Check7 --> Check8["8. Secure Boot CA Readiness Check (2011/2023 CA)"]
-        Check8 --> Check9["9. TPM Security Status Check (TPM 2.0 / 1.2)"]
+    subgraph Assessment ["3. Assessment pipeline"]
+        AssessmentPipeline --> Check1["1. Deployment Mode"]
+        Check1 --> Check2["2. Deployment Server SMB"]
+        Check2 --> Check3["3. Primary Network Adapter"]
+        Check3 --> Check4["4. IPv4 / IPv6"]
+        Check4 --> Check5["5. Internal Storage all disks"]
+        Check5 --> Check6["6. System RAM"]
+        Check6 --> Check7["7. BIOS Mode UEFI/Legacy"]
+        Check7 --> Check8["8. Secure Boot"]
+        Check8 --> Check9["9. TPM Status (stay at 95%)"]
     end
 
-    subgraph Evaluation ["4. Results Evaluation & UI State Binding"]
-        Check9 --> EvalResults{"Any Assessment Critical FAIL?"}
-        
-        EvalResults -- "No (All OK / WARN)" --> PassState["Set Banner: SYSTEM READY FOR DEPLOYMENT<br/>Enable Continue Button"]
-        EvalResults -- "Yes (FAIL & HaltOnFailure=true)" --> FailState["Set Banner: CRITICAL PRE-CHECK ISSUES DETECTED<br/>Disable Continue Button (Blocked)"]
+    subgraph Evaluation ["4. Results and return"]
+        Check9 --> BuildInv["95%: Finalizing hardware details<br/>Get-HardwareInventory -Assessment -Results"]
+        BuildInv --> EvalResults{"Critical FAIL and HaltOnFailure?"}
+        EvalResults -- "No" --> PassState["100%: Device PreCheck Completed.<br/>Banner: DEVICE READY FOR IMAGE DEPLOYMENT<br/>Enable Continue"]
+        EvalResults -- "Yes" --> FailState["100%: Device PreCheck Completed.<br/>Banner: DEVICE PRECHECK FOUND ISSUES<br/>Disable Continue"]
     end
 
-    subgraph UserInteraction ["5. User Actions & Close Protection"]
-        PassState --> WaitAction["Await Technician Action"]
+    subgraph UserInteraction ["5. User actions"]
+        PassState --> WaitAction["Await action"]
         FailState --> WaitAction
-        
-        WaitAction -- "Click Continue" --> AllowExit["Set AllowClose = true<br/>Set $global:PreCheckPassed = true<br/>Close Window"]
-        WaitAction -- "Click Re-Run" --> AssessmentPipeline
-        WaitAction -- "Click Run CMD" --> OpenCMD["Set Topmost = false<br/>Launch System32/cmd.exe"]
-        
-        WaitAction -- "Close Window / Alt+F4 / Esc" --> ConfirmClose{"Confirm Close Dialog"}
-        ConfirmClose -- "Click No" --> WaitAction
-        ConfirmClose -- "Click Yes" --> CancelExit["Set $global:PreCheckPassed = false<br/>Exit Deployment"]
-    end
+        PolicyBypass --> WaitAction
 
-    PolicyBypass --> WaitAction
+        WaitAction -- "Continue" --> ReturnOk["Close; return Passed + Inventory"]
+        WaitAction -- "Run Again or F5" --> Restart["Reload BootConfig from path<br/>Reset UI: Running... + DEVICE PRECHECK IS RUNNING...<br/>Invoke-HardwarePreCheck -ReloadFromDisk"]
+        Restart --> EffectiveConfig
+        WaitAction -- "Open CMD" --> OpenCMD["Topmost=false; start cmd.exe"]
+        WaitAction -- "Close / Esc" --> ConfirmClose{"Close PreCheck and cancel this deployment?"}
+        ConfirmClose -- "No" --> WaitAction
+        ConfirmClose -- "Yes" --> ReturnFail["Passed=false + Inventory"]
+    end
 ```
 
 ---
 
-## 📑 Workflow Section Descriptions
+## Section notes
 
-### 1. Environment & WPF Host Setup
-* **STA Relaunch Guard**: Detects if the current PowerShell host thread is running in Single-Threaded Apartment (STA) mode. If not, it transparently relaunches itself using `powershell.exe -STA`.
-* **Software Rendering**: Enforces `[RenderOptions]::ProcessRenderMode = SoftwareOnly` to eliminate GPU driver crashes in WinPE RAMDisk environments.
-* **Dynamic Scaling & Themes**: Dynamically computes 4:3 viewbox scaling based on primary monitor height ($75\%$ height scaling) and applies theme brushes (`Light` or `Dark`).
-* **BootObject Storage**: Accepts an optional `[psobject]$BootObject` parameter passed from `BootInitializer` (which encapsulates credentials, network paths, drive letters, and config metadata) and holds it intact in `$BootObject` and `$global:LiteDeployBootObject`.
+### 1. Environment and WPF host
+- STA relaunch forwards `-BootConfigPath` (named params are not in `$args`). Optional `-BootConfig` does not cross process.
+- Hardware module is required; discovery is not duplicated inside Precheck.
+- Theme is resolved before XAML colors are baked in.
+- Production loads sibling `LiteDeploy.HardwarePreCheck.UI.xaml` and replaces `{{var}}` palette tokens; SingleFile embeds the same markup inline.
+- Brand/subtitle XAML placeholders are empty; filled before show and again during assessment.
 
-### 2. Configuration Resolution & Policy Bypass
-* Resolves `BootConfig.json` across strict priority paths.
-* If `Startup.SkipHardwarePreCheck` is set to `true`, hardware checks are bypassed, an `INFO` badge is logged, and the deployment is immediately unlocked.
+### 2. BootConfig and policy
+- Mandatory `-BootConfigPath`; optional `-BootConfig` for first paint only.
+- **F5** / **Run Again** always reload from path.
+- Skip flags still produce inventory for Engine / later stages.
 
-### 3. The 9-Point Assessment Pipeline
-1. **Deployment Mode**: Identifies whether the run is `Network` or `Media` (Offline).
-2. **Deployment Server**: Tests SMB TCP Port 445 connectivity to the deployment server.
-3. **Network Adapter**: Scans for active physical Ethernet adapters.
-4. **IP Address**: Polls for a valid non-APIPA IPv4/IPv6 address.
-5. **Hard Drive**: Scans internal fixed drives against `-MinDiskSizeGB`.
-6. **System RAM**: Compares installed RAM against `-MinMemoryGB` with VM WMI OS fallback.
-7. **BIOS Mode**: Queries `UEFI` vs `Legacy BIOS` state.
-8. **Secure Boot**: Queries UEFI Secure Boot CA database (`Get-SecureBootUEFI db`) for 2011/2023 CAs.
-9. **TPM Status**: Evaluates TPM 2.0 / 1.2 version and state (`OK` or non-blocking `WARN`).
+### 3. Assessment
+- Disks: one grid row per internal disk; pass if any meets minimum.
+- NICs: UI shows primary; full list on `Inventory.NICs`.
+- Inventory also carries `IsVM`, `IPv4Cidr`, `IPv6Address`, and `DnsServers` for Engine logging.
+- TPM / low RAM are soft (WARN) unless policy hard-fail is added later.
+- Progress stays at **95%** while inventory is assembled; **100%** and banner color change together.
 
-### 4. Results Evaluation & Close Protection
-* **HaltOnFailure Enforcement**: Disables the **Continue** button (`Blocked`) if any required check fails when `-HaltOnFailure $true` is set.
-* **Confirmation Modal**: Intercepts `Alt+F4`, `Escape`, or window `X` clicks to prevent accidental deployment cancellation.
+### 4. Return contract
+- Object: `{ Passed, Inventory }`
+- DeploymentEngine logs computer information from `Inventory`, then owns WorkflowSelection.
+
+### 5. UI copy (authoritative)
+
+Naming: **Hardware PreCheck** = product/screen; **Device PreCheck** / **DEVICE PRECHECK** = per-device status.
+
+| Element | Text |
+| :--- | :--- |
+| Window title | `{ComponentMetadata.Name} v{ComponentMetadata.Version}` |
+| Page headline | `Hardware PreCheck` |
+| Results section | `PRECHECK RESULTS` |
+| Grid columns | **STATUS** / **CHECK** / **DETAILS** |
+| Brand (`TxtBrand`) | `Metadata.Name` or `LiteDeploy` |
+| Subtitle | `{Environment} Environment \| v{Version}` or component `Name \| v{Version}` |
+| Device identity (loading) | `Loading device information...` |
+| Device identity (done) | `{Vendor} {Model}` |
+| Serial / SKU | `Serial: {number} / SKU: {sku}` |
+| Device identity (empty) | `Device information: unavailable` |
+| Buttons | **Open CMD**, **Run Again**, **Continue** |
+| Continue while running | **Running...** (`MinWidth="110"`) |
+| Running banner | `DEVICE PRECHECK IS RUNNING...` |
+| Passed banner | `DEVICE READY FOR IMAGE DEPLOYMENT` |
+| Failed banner | `DEVICE PRECHECK FOUND ISSUES` |
+| Skipped banner | `DEVICE PRECHECK SKIPPED BY POLICY` |
+| Under headline @ 100% (Passed/Failed) | `Device PreCheck Completed.` |
+| Under headline @ 100% (Skipped) | `Device PreCheck Skipped.` |
+| Under headline @ 95% (inventory) | `Finalizing hardware details...` |
+| Under headline @ 5% | `Loading configuration...` |
+| Close confirm | `Close PreCheck and cancel this deployment?` |
+| Refresh | **F5** = **Run Again** (path reload) |

@@ -13,8 +13,8 @@ DeploymentShare\
 │   ├── BootMedia\
 │   │   ├── ISO\                  # Bootable WinPE ISO media
 │   │   └── WIM\                  # PXE / WDS Boot.wim images
-│   ├── Drivers\                  # Model-specific driver packages
-│   │   └── catalog.json          # Driver package catalog
+│   ├── Drivers\                  # Model-specific driver packages (OEM / Custom trees)
+│   │   └── LocalCatalog.json     # Catalog for WorkflowSelection / DriverStaging (Custom then OEM; ContentLocation / FileName / SHA256 / dates)
 │   ├── OperatingSystems\         # Ingested Windows OS media and custom WIMs
 │   │   └── catalog.json          # OS edition & payload catalog (ImportOSMedia)
 │   ├── Packages\                 # Application and software packages (MSI/EXE/MSIX)
@@ -24,7 +24,7 @@ DeploymentShare\
 ├── Engine\                       # Execution tools and scripts
 │   ├── Scripts\
 │   │   ├── Admin\                # Administrative tools (SetConfig, ImportOSMedia, etc.)
-│   │   └── Runtime\              # WinPE runtime engines (BootInitializer, HardwarePreCheck, etc.)
+│   │   └── Runtime\              # Published WinPE scripts (flat LiteDeploy.<Component>.ps1 files)
 │   └── Tools\                    # External helper binaries (7-Zip, CMTrace, etc.)
 ├── WorkFlows\                    # Deployment sequence definitions
 │   ├── Standard Workflow.json
@@ -33,6 +33,10 @@ DeploymentShare\
     ├── Admin\                    # Management and ingestion logs
     └── Deployments\              # Client machine deployment logs (isolated ACLs)
 ```
+
+On a network boot this tree is the share root, mapped as `Z:\`. On media boot the same tree lives under `E:\~LiteDeploy\` (letter follows the media volume). Runtime scripts are flat files in `Engine\Scripts\Runtime\`, not the numbered repository folders.
+
+Documentation path examples use only these generic roots (`Z:\`, `\\Server\DeploymentShare$`, `E:\~LiteDeploy\`, WinPE `X:\`) — never personal profile or desktop paths.
 
 ---
 

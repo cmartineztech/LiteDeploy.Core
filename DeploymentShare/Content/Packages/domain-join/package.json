@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packageId": "domain-join",
+  "name": "Join the domain",
+  "packageType": "Script",
+  "enabled": true,
+  "source": "Content/Packages/domain-join/payload"
+}

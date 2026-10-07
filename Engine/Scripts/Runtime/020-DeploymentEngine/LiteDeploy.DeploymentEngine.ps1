@@ -61,7 +61,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("LogWriter", "HardwarePreCheck", "WorkflowSelection", "DiskPreparation", "OSInstallation", "Progress")
+        Dependencies         = @("LogWriter", "Hardware", "HardwarePreCheck", "WorkflowSelection", "DiskPreparation", "OSInstallation", "Progress")
         Description          = "Runtime pipeline orchestrator: sequences HardwarePreCheck, WorkflowSelection, and deployment execution."
     }
 }
@@ -217,7 +217,7 @@ if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) {
 function Get-LiteDeployUid {
     <#
     .SYNOPSIS
-        Generates a short, collision-resistant deployment UID (e.g., 260930-A3F1).
+        Generates a short, collision-resistant deployment UID (e.g., 260806-A3F1).
     #>
     $bytes = [Byte[]]::new(2)
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -436,6 +436,13 @@ function Save-LiteDeployDeploymentState {
 # 4. ORCHESTRATION PIPELINE
 # ==============================================================================
 
+function Write-LiteDeployEnginePauseNotice {
+    Write-Host ""
+    Write-LiteDeployLog " [NOTICE]  Deployment halted." -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
+    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "WARNING" -ForegroundColor Yellow -Component "DeploymentEngine"
+    Write-Host ""
+}
+
 function Start-LiteDeployPipeline {
     # Generate unique, human-readable session deployment UID
     $deployUid = Get-LiteDeployUid
@@ -493,12 +500,25 @@ function Start-LiteDeployPipeline {
 
             Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "CHECK" -ForegroundColor Cyan -Component "DeploymentEngine"
             try {
-                # Execute HardwarePreCheck directly in the current STA PowerShell process
-                $preCheckOutput = & $preCheckScript
-        
-                # HardwarePreCheck returns boolean ($true/$false) or exits when closed
+                $bootConfigPath = $null
+                if ($BootObject -and $BootObject.PSObject.Properties['ConfigPath'] -and $BootObject.ConfigPath) {
+                    $bootConfigPath = [string]$BootObject.ConfigPath
+                }
+                if ([string]::IsNullOrWhiteSpace($bootConfigPath) -or -not (Test-Path -LiteralPath $bootConfigPath -PathType Leaf)) {
+                    throw "BootObject.ConfigPath is missing or invalid; HardwarePreCheck requires -BootConfigPath."
+                }
+
+                # Execute HardwarePreCheck in the current STA process; returns { Passed, Inventory }.
+                $preCheckOutput = & $preCheckScript -BootConfigPath $bootConfigPath
+
                 if ($preCheckOutput -is [bool]) {
                     $preCheckPassed = $preCheckOutput
+                }
+                elseif ($preCheckOutput -and $preCheckOutput.PSObject.Properties['Passed']) {
+                    $preCheckPassed = [bool]$preCheckOutput.Passed
+                    if ($preCheckOutput.PSObject.Properties['Inventory'] -and $preCheckOutput.Inventory) {
+                        $script:HardwareInventory = $preCheckOutput.Inventory
+                    }
                 }
                 elseif (Test-Path Variable:global:PreCheckPassed) {
                     $preCheckPassed = [bool]$global:PreCheckPassed
@@ -551,8 +571,54 @@ function Start-LiteDeployPipeline {
         Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "INIT" -ForegroundColor Cyan -Component "DeploymentEngine"
         $workflowOutput = $null
         try {
+            $bootConfigPath = $null
+            if ($BootObject -and $BootObject.PSObject.Properties['ConfigPath'] -and $BootObject.ConfigPath) {
+                $bootConfigPath = [string]$BootObject.ConfigPath
+            }
+            if ([string]::IsNullOrWhiteSpace($bootConfigPath) -or -not (Test-Path -LiteralPath $bootConfigPath -PathType Leaf)) {
+                throw "BootObject.ConfigPath is missing or invalid; WorkflowSelection requires -BootConfigPath."
+            }
+
+            # Share/media root for catalog + drivers (same layout rules as Draft Engine).
+            $deploymentSharePath = $null
+            if ($BootObject.PSObject.Properties['DeploymentType'] -and $BootObject.DeploymentType -eq "Network") {
+                if ($BootObject.PSObject.Properties['DriveLetter'] -and $BootObject.DriveLetter) {
+                    $deploymentSharePath = $BootObject.DriveLetter.TrimEnd('\')
+                }
+            }
+            elseif ($BootObject.PSObject.Properties['DeploymentType'] -and $BootObject.DeploymentType -eq "Media") {
+                $drive = if ($BootObject.PSObject.Properties['DriveLetter'] -and $BootObject.DriveLetter) {
+                    $BootObject.DriveLetter.TrimEnd('\')
+                } else { $null }
+                $localRoot = if ($BootObject.PSObject.Properties['LocalRootName'] -and $BootObject.LocalRootName) {
+                    [string]$BootObject.LocalRootName
+                } else { "~LiteDeploy" }
+                if ($drive) { $deploymentSharePath = Join-Path $drive $localRoot }
+            }
+            if ([string]::IsNullOrWhiteSpace($deploymentSharePath)) {
+                # Fallback: parent of Config folder (…\Config\BootConfig.json → share/media root).
+                $deploymentSharePath = Split-Path -Parent (Split-Path -Parent $bootConfigPath)
+            }
+
+            $bootConfigObj = $null
+            if ($BootObject.PSObject.Properties['Config'] -and $BootObject.Config) {
+                $bootConfigObj = $BootObject.Config
+            }
+            else {
+                try {
+                    $bootConfigObj = Get-Content -LiteralPath $bootConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                }
+                catch {
+                    $bootConfigObj = $null
+                }
+            }
+
             # Execute WorkflowSelection directly in the current STA PowerShell process
-            $workflowOutput = & $workflowScript
+            $workflowOutput = & $workflowScript `
+                -BootConfigPath $bootConfigPath `
+                -BootConfig $bootConfigObj `
+                -DeploymentSharePath $deploymentSharePath `
+                -DeploymentUid $deployUid
         }
         catch {
             Write-LiteDeployLog "Phase 2: Unhandled exception during WorkflowSelection execution: $_" -Level "ERROR" -ForegroundColor Red -Component "DeploymentEngine"
@@ -563,10 +629,13 @@ function Start-LiteDeployPipeline {
             return $deployment
         }
 
-        # Evaluate WorkflowSelection result
+        # Evaluate WorkflowSelection result (promoted contract uses Passed; legacy used DeploymentRequested).
         $deploymentRequested = $false
         if ($workflowOutput -is [bool]) {
             $deploymentRequested = $workflowOutput
+        }
+        elseif ($workflowOutput -and $workflowOutput.PSObject.Properties['Passed']) {
+            $deploymentRequested = [bool]$workflowOutput.Passed
         }
         elseif ($workflowOutput -and $workflowOutput.PSObject.Properties['DeploymentRequested']) {
             $deploymentRequested = [bool]$workflowOutput.DeploymentRequested
@@ -591,7 +660,29 @@ function Start-LiteDeployPipeline {
         Save-LiteDeployDeploymentState -DeploymentState $deployment
         Sync-LiteDeployLogsToShare -RemoteLogDir $deployment.Execution.RemoteLogDir
 
-        Write-LiteDeployLog "Phase 2: Workflow configuration confirmed. Ready for deployment execution." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        $wfName = if ($workflowOutput.PSObject.Properties["WorkflowName"] -and $workflowOutput.WorkflowName) {
+            [string]$workflowOutput.WorkflowName
+        } else { "-" }
+        $computerName = if ($workflowOutput.PSObject.Properties["ComputerName"] -and $workflowOutput.ComputerName) {
+            [string]$workflowOutput.ComputerName
+        } else { "-" }
+        $diskIndex = if ($workflowOutput.PSObject.Properties["TargetDiskIndex"] -and $null -ne $workflowOutput.TargetDiskIndex) {
+            [string]$workflowOutput.TargetDiskIndex
+        } else { "-" }
+        $diskModel = if ($workflowOutput.PSObject.Properties["TargetDiskModel"] -and $workflowOutput.TargetDiskModel) {
+            [string]$workflowOutput.TargetDiskModel
+        } else { "" }
+        $diskLabel = if ($diskModel) { "Disk $diskIndex ($diskModel)" } else { "Disk $diskIndex" }
+        $drivers = if ($workflowOutput.PSObject.Properties["DriverFolderPath"] -and $workflowOutput.DriverFolderPath) {
+            [string]$workflowOutput.DriverFolderPath
+        } else {
+            "Standard OS In-Box Drivers (Windows Default)"
+        }
+
+        Write-LiteDeployLog " [SUCCESS] WorkflowSelection confirmed." -Level "SUCCESS" -ForegroundColor Green -Component "DeploymentEngine"
+        Write-LiteDeployLog (" [INFO]    Workflow: {0}" -f $wfName) -Level "INFO" -Component "DeploymentEngine"
+        Write-LiteDeployLog (" [INFO]    Computer: {0} | {1}" -f $computerName, $diskLabel) -Level "INFO" -Component "DeploymentEngine"
+        Write-LiteDeployLog (" [INFO]    Drivers: {0}" -f $drivers) -Level "INFO" -Component "DeploymentEngine"
 
         # --------------------------------------------------------------------------
         # PHASE 3: DISK PREPARATION (Wipe, Layout, Format, Recovery Flags)
@@ -794,6 +885,11 @@ function Start-LiteDeployPipeline {
             # Restore console window when exiting orchestration
             if (Get-Command Set-HostShellWindow -ErrorAction SilentlyContinue) {
                 try { Set-HostShellWindow -Action Restore } catch {}
+            }
+
+            # Soft halt (Failed / Cancelled): same restart guidance as BootInitializer
+            if ($deployment -and $deployment.Status -in @("Failed", "Cancelled")) {
+                Write-LiteDeployEnginePauseNotice
             }
         }
     }

@@ -19,10 +19,14 @@ Runtime Scope (WinPE Execution & Target Deployment):
   BootInitializer      Device startup entry point (startnet parent process, network, Z:\ mount)
   DeploymentEngine     Sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation
   HardwarePreCheck     9-point hardware, firmware, network, and source readiness UI
-  WorkflowSelection    Computer identity, workflow, target disk, and driver picker UI
+  WorkflowSelection    Computer identity, workflow, target disk, LocalCatalog drivers, and driver picker UI
   DiskPreparation      Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, and WinRE flags
-  OSInstallation       Windows Setup (setup.exe /NoReboot) and unattended answer file
-  Progress            Read-only deployment progress UI (WinPE & FullOS)
+  DriverStaging        LocalCatalog detection helpers; stage/inject reserved
+  AnswerFileGenerator  Reserved. Build X:\unattended.xml
+  OSInstallation       Windows Setup (setup.exe /NoReboot) and the answer file
+  CredentialTransfer   Reserved. Move credentials from WinPE onto the installed OS
+  DeploymentCleanup    Reserved. Clean the deployment session after credential transfer
+  Progress             Read-only deployment progress UI (WinPE & FullOS)
   Credentials             [DeployVault] + [WinPECT]: Encrypted secrets across the WinPE → FullOS reboot
 ```
 
@@ -48,10 +52,14 @@ Runtime Scope (WinPE Execution & Target Deployment):
 | **Progress** | [Engine/Scripts/Runtime/000-Progress](Engine/Scripts/Runtime/000-Progress) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). Component id `Progress`. | Exists |
 | **BootInitializer** | [Engine/Scripts/Runtime/010-BootInitializer](Engine/Scripts/Runtime/010-BootInitializer) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches DeploymentEngine. Component id `BootInitializer`. | Exists |
 | **DeploymentEngine** | [Engine/Scripts/Runtime/020-DeploymentEngine](Engine/Scripts/Runtime/020-DeploymentEngine) | Orchestrates HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation in WinPE. Component id `DeploymentEngine`. | Exists |
-| **HardwarePreCheck** | [Engine/Scripts/Runtime/030-HardwarePreCheck](Engine/Scripts/Runtime/030-HardwarePreCheck) | 9-point system readiness and hardware assessment WPF UI with software rendering. Component id `HardwarePreCheck`. | Exists |
-| **WorkflowSelection** | [Engine/Scripts/Runtime/040-WorkflowSelection](Engine/Scripts/Runtime/040-WorkflowSelection) | WPF wizard for computer naming, workflow selection, disk targeting, and driver pack resolution. Component id `WorkflowSelection`. | Exists |
+| **HardwarePreCheck** | [Engine/Scripts/Runtime/030-HardwarePreCheck](Engine/Scripts/Runtime/030-HardwarePreCheck) | 9-point system readiness WPF UI (separated `.ps1` + `.xaml`; `SingleFile\` reference variant). Component id `HardwarePreCheck`. | Exists |
+| **WorkflowSelection** | [Engine/Scripts/Runtime/040-WorkflowSelection](Engine/Scripts/Runtime/040-WorkflowSelection) | PreCheck-chrome WPF wizard (identity, firmware, catalog workflows, Hardware disk grid, DriverStaging LocalCatalog + media online when reachable). Component id `WorkflowSelection`. | Exists |
 | **DiskPreparation** | [Engine/Scripts/Runtime/050-DiskPreparation](Engine/Scripts/Runtime/050-DiskPreparation) | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE attribute assignment. Component id `DiskPreparation`. | Exists |
+| **DriverStaging** | [Engine/Scripts/Runtime/060-DriverStaging](Engine/Scripts/Runtime/060-DriverStaging) | LocalCatalog driver detection + online reachability (imported by WorkflowSelection). Extract/inject still reserved. Component id `DriverStaging`. | Exists (detection) |
+| **AnswerFileGenerator** | [Engine/Scripts/Runtime/070-AnswerFileGenerator](Engine/Scripts/Runtime/070-AnswerFileGenerator) | Reserved folder for generating `X:\unattended.xml`. | Placeholder |
 | **OSInstallation** | [Engine/Scripts/Runtime/080-OSInstallation](Engine/Scripts/Runtime/080-OSInstallation) | Orchestrates Windows Setup (`setup.exe /NoReboot`) with automated unattended answer file generation. Component id `OSInstallation`. | Exists |
+| **CredentialTransfer** | [Engine/Scripts/Runtime/090-CredentialTransfer](Engine/Scripts/Runtime/090-CredentialTransfer) | Reserved folder for moving credentials from WinPE onto the installed OS. | Placeholder |
+| **DeploymentCleanup** | [Engine/Scripts/Runtime/100-DeploymentCleanup](Engine/Scripts/Runtime/100-DeploymentCleanup) | Reserved folder for cleaning the deployment session after credential transfer. | Placeholder |
 
 On a client device, the live runtime chain is:
 
@@ -82,14 +90,15 @@ LiteDeploy Core/
 │       │   ├── LiteDeploy.Credentials.ps1/
 │       │   ├── LiteDeploy.ImportOSMedia.ps1/
 │       │   ├── LiteDeploy.SetConfig.ps1/
-│       │   └── LiteDeploy.SetDeploymentShareAcl.ps1/
+│       │   ├── LiteDeploy.SetDeploymentShareAcl.ps1/
+│       │   └── LiteDeploy.SyncComponents.ps1/
 │       └── Runtime/              # WinPE & client deployment runtime components
 │           ├── 000-LogWriter/
 │           ├── 000-HostShell/
 │           ├── 000-Progress/
 │           ├── 010-BootInitializer/
 │           ├── 020-DeploymentEngine/
-│           ├── 030-HardwarePreCheck/
+│           ├── 030-HardwarePreCheck/     # .ps1 + .UI.xaml (prod); SingleFile\ (reference)
 │           ├── 040-WorkflowSelection/
 │           ├── 050-DiskPreparation/
 │           ├── 060-DriverStaging/

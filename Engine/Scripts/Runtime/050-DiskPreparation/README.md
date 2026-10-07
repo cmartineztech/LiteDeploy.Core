@@ -47,7 +47,6 @@ Get-LiteDeployComponentMetadata
 | `-BootMode` | `[string]` | `"UEFI"` | Target firmware boot mode. Validated values: `"UEFI"` or `"LEGACY"`. |
 | `-OSTempDriveLetter` | `[string]` | `$null` | Temporary staging drive letter in WinPE (e.g., `"W"` or `"W:"`). If omitted, the OS volume remains unmounted. |
 | `-Metadata` | `[switch]` | `$false` | Fast-exit switch returning standardized component metadata PSCustomObject. |
-| `-BootObject` | `[psobject]` | `$null` | Optional bootstrap context passed from `BootInitializer`. |
 
 ---
 

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packageId": "create-local-account",
+  "name": "Create local account",
+  "packageType": "Script",
+  "enabled": true,
+  "source": "Content/Packages/create-local-account/payload"
+}

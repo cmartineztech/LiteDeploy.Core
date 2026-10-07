@@ -168,6 +168,7 @@ function Get-RepoComponentFiles {
 
     $adminFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
     $runtimeFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    $runtimeAssets = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
     $winpeFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 
     # Discover Admin Scripts
@@ -178,11 +179,12 @@ function Get-RepoComponentFiles {
         } | ForEach-Object { $adminFiles.Add($_) }
     }
 
-    # Discover Runtime Scripts
+    # Discover Runtime Scripts + UI assets (.xaml)
     $runtimeDir = Join-Path $componentsRoot "Runtime"
     if (Test-Path -LiteralPath $runtimeDir) {
         Get-ChildItem -Path $runtimeDir -Recurse -File -Filter "*.ps1" | Where-Object {
-            $_.Name -notlike "*.Tests.ps1" -and $_.Name -notlike "Test-*"
+            $_.Name -notlike "*.Tests.ps1" -and $_.Name -notlike "Test-*" -and
+            $_.FullName -notmatch '(?i)[\\/]SingleFile[\\/]'
         } | ForEach-Object { 
             $runtimeFiles.Add($_)
 
@@ -196,11 +198,18 @@ function Get-RepoComponentFiles {
                 $winpeFiles.Add($_)
             }
         }
+
+        Get-ChildItem -Path $runtimeDir -Recurse -File -Filter "*.xaml" | Where-Object {
+            $_.FullName -notmatch '(?i)[\\/]SingleFile[\\/]'
+        } | ForEach-Object {
+            $runtimeAssets.Add($_)
+        }
     }
 
     return [PSCustomObject]@{
         AdminScripts   = $adminFiles
         RuntimeScripts = $runtimeFiles
+        RuntimeAssets  = $runtimeAssets
         WinPEScripts   = $winpeFiles
     }
 }
@@ -234,6 +243,7 @@ function Sync-DeploymentShareTarget {
         elseif ($CleanTarget) {
             Write-SyncLog "Cleaning target directory '$dir'..." -Level "WARNING" -ForegroundColor Yellow
             Get-ChildItem -Path $dir -File -Filter "*.ps1" | Remove-Item -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -Path $dir -File -Filter "*.xaml" | Remove-Item -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -249,6 +259,14 @@ function Sync-DeploymentShareTarget {
 
     # Copy Runtime Components
     foreach ($file in $Components.RuntimeScripts) {
+        $destFile = Join-Path $runtimeDest $file.Name
+        Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+        Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Scripts\Runtime\" -Level "SUCCESS" -ForegroundColor Green
+        $copyCount++
+    }
+
+    # Copy Runtime UI assets (.xaml) beside scripts in flat Runtime
+    foreach ($file in $Components.RuntimeAssets) {
         $destFile = Join-Path $runtimeDest $file.Name
         Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
         Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Scripts\Runtime\" -Level "SUCCESS" -ForegroundColor Green
@@ -281,6 +299,7 @@ function Sync-WinPEStagingTarget {
     elseif ($CleanTarget) {
         Write-SyncLog "Cleaning WinPE script directory '$targetScriptsDir'..." -Level "WARNING" -ForegroundColor Yellow
         Get-ChildItem -Path $targetScriptsDir -File -Filter "*.ps1" | Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $targetScriptsDir -File -Filter "*.xaml" | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     $copyCount = 0
@@ -295,6 +314,15 @@ function Sync-WinPEStagingTarget {
 
     # Also copy all runtime components so standalone/offline execution works seamlessly
     foreach ($file in $Components.RuntimeScripts) {
+        $destFile = Join-Path $targetScriptsDir $file.Name
+        if (-not (Test-Path -LiteralPath $destFile)) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [WINPE]   Injected $($file.Name) -> $InjectionSubfolder\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+    }
+
+    foreach ($file in $Components.RuntimeAssets) {
         $destFile = Join-Path $targetScriptsDir $file.Name
         if (-not (Test-Path -LiteralPath $destFile)) {
             Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
@@ -366,7 +394,7 @@ function Start-LiteDeploySync {
     Write-SyncLog "Repository Root detected at '$repoRoot'." -Level "INIT" -ForegroundColor Cyan
 
     $components = Get-RepoComponentFiles -RepoRoot $repoRoot
-    Write-SyncLog "Discovered: $($components.AdminScripts.Count) Admin scripts, $($components.RuntimeScripts.Count) Runtime scripts." -Level "INFO" -ForegroundColor DarkCyan
+    Write-SyncLog "Discovered: $($components.AdminScripts.Count) Admin scripts, $($components.RuntimeScripts.Count) Runtime scripts, $($components.RuntimeAssets.Count) Runtime assets." -Level "INFO" -ForegroundColor DarkCyan
 
     # Execute Deployment Share Sync
     if (-not [string]::IsNullOrWhiteSpace($DeploymentShare)) {

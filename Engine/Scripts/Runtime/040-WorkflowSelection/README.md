@@ -1,232 +1,166 @@
-# LiteDeploy WinPE Workflow Selection UI — Technical Documentation
+# LiteDeploy WinPE Workflow Selection UI
 
-This folder contains the native PowerShell and WPF interface used to collect deployment choices after the LiteDeploy system pre-check completes.
+Technician selection wizard after Hardware PreCheck.
 
-The primary interface is **[LiteDeploy.WorkflowSelection.ps1](LiteDeploy.WorkflowSelection.ps1)**. The companion **[LiteDeploy.WorkflowSelectionDriverPicker.ps1](LiteDeploy.WorkflowSelectionDriverPicker.ps1)** script provides the WinPE-compatible driver-folder browser.
-
-> [!NOTE]
-> For the visual execution and validation flow, see **[SELECTWORKFLOW_DIAGRAM.md](SELECTWORKFLOW_DIAGRAM.md)**.
+> Visual flow: **[SELECTWORKFLOW_DIAGRAM.md](SELECTWORKFLOW_DIAGRAM.md)**.
 
 ---
 
-## 1. Architecture and lifecycle
+## Files
 
-The workflow selection stage gathers four categories of deployment data:
+| Path | Role |
+| :--- | :--- |
+| [`LiteDeploy.WorkflowSelection.ps1`](LiteDeploy.WorkflowSelection.ps1) | **Production** logic — loads external markup, policies, validation, result |
+| [`LiteDeploy.WorkflowSelection.UI.xaml`](LiteDeploy.WorkflowSelection.UI.xaml) | **Production** main wizard markup (`{{paletteVar}}` tokens replaced at load) |
+| [`LiteDeploy.WorkflowSelectionDriverPicker.ps1`](LiteDeploy.WorkflowSelectionDriverPicker.ps1) | **Production** `Show-DriverPathDialog` logic |
+| [`LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml`](LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml) | **Production** picker markup (same token pattern) |
+| [`SingleFile/LiteDeploy.WorkflowSelection.ps1`](SingleFile/LiteDeploy.WorkflowSelection.ps1) | Inlined main UI + logic (reference only) |
+| [`SingleFile/LiteDeploy.WorkflowSelectionDriverPicker.ps1`](SingleFile/LiteDeploy.WorkflowSelectionDriverPicker.ps1) | Inlined picker UI + logic (reference only) |
+| [`SELECTWORKFLOW_DIAGRAM.md`](SELECTWORKFLOW_DIAGRAM.md) | Mermaid execution / driver / validation diagrams |
 
-1. Computer identity
-2. Operating-system workflow
-3. Target physical disk
-4. Driver source
+**Production (Engine-wired):** separated `.ps1` + `.xaml` at the component root (same pattern as Hardware PreCheck).  
+**SingleFile:** side-by-side reference under `SingleFile\`. Not Engine-wired. SyncComponents skips any `SingleFile\` folder so inlined scripts do not overwrite production names in flat Runtime. SingleFile still **imports** flat/sibling `LogWriter`, `Hardware`, and `DriverStaging` (detection/disk helpers are not inlined).
 
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ LiteDeploy.WorkflowSelection.ps1                                            │
-│                                                                          │
-│  STA validation and WinPE software rendering                             │
-│              │                                                           │
-│              ▼                                                           │
-│  Resolve and parse BootConfig.json                                       │
-│              │                                                           │
-│              ▼                                                           │
-│  Apply ComputerSetup, Deployment, and Drivers policies                   │
-│              │                                                           │
-│              ▼                                                           │
-│  Detect hardware, driver pack, and internal disks                        │
-│              │                                                           │
-│              ▼                                                           │
-│  Collect technician selections                                           │
-│              │                                                           │
-│              ▼                                                           │
-│  Validate required values → confirm deployment → close UI                │
-└──────────────────────────────────────────────────────────────────────────┘
+**Keep in sync:** any logic or UI change to the production split files must also be applied under `SingleFile\` (logic edits in the `.ps1`; markup edits mirrored into the inlined XAML). Treat SingleFile as a second deliverable, not a stale snapshot.
+
+**Runtime dependencies (flat after SyncComponents):** `LiteDeploy.LogWriter.ps1`, `LiteDeploy.Hardware.ps1` (incl. `Get-HardwarePhysicalDisks`), `LiteDeploy.DriverStaging.ps1`, plus WorkflowSelection `.ps1`/`.xaml` and DriverPicker `.ps1`/`.xaml`. Unhandled throws bubble to BootInitializer, which logs `[NOTICE]` and prompts `startnet`.
+
+Both production scripts and both `.xaml` files must stay together under `Engine\Scripts` after SyncComponents.
+
+---
+
+## Contract
+
+| Parameter | Required | Notes |
+| :--- | :--- | :--- |
+| `-BootConfigPath` | Yes | Path to `BootConfig.json` (STA relaunch / F5 / audit). |
+| `-BootConfig` | No | In-memory object for first paint only; F5 always reloads from path. |
+| `-DeploymentSharePath` | Yes | Share/media root (`Root` / `DeploymentRoot` aliases). Catalog + drivers. |
+| `-DeploymentUid` | No | Session ID (`yyMMdd-XXXX` from Engine `Get-LiteDeployUid`). Footer display. |
+| `-Theme` | No | `Light` / `Dark`; else `Ui.Theme` / Light. |
+
+**Return** (confirm → also writes `%SystemDrive%\WorkflowSelection.json`, typically `X:\WorkflowSelection.json`)
+
+| Outcome | Result |
+| :--- | :--- |
+| Confirm | `Passed=$true`, `Status=Confirmed`, selection fields below |
+| Cancel / Esc / X | `Passed=$false`, `Status=Cancelled`, no JSON |
+| Fail | `Passed=$false`, `Status` set (e.g. `XamlError`, `SaveFailed`) |
+
+Current confirm fields:
+
+| Property | Notes |
+| :--- | :--- |
+| `DeploymentUid` | Session ID from Engine |
+| `BootConfigPath` / `DeploymentSharePath` | Paths used by the wizard |
+| `ComputerName` / `ComputerDescription` | Identity prompts |
+| `WorkflowName` / `WorkflowTag` | Catalog selection (`WorkflowTag` carries image index / paths) |
+| `TargetDiskIndex` / `TargetDiskModel` | Wipe target |
+| `DriverFolderPath` / `AutoDetectDrivers` | Resolved driver source path (folder or OEM `.exe`) |
+
+**Planned enrichments** (for Engine / DriverStaging continue): last effective `BootConfig` object (`$script:bootConfig` after F5), structured `Drivers` metadata (`Source`, `SourceKind`, `MatchBy`, `FileName`, `SHA256`, `PackModel`, `IsOem`). Prefer returning the in-memory BootConfig snapshot so Phase 3+ matches what the technician confirmed.
+
+Standalone (use share/media roots — do not document personal machine paths):
+
+```powershell
+& .\LiteDeploy.WorkflowSelection.ps1 `
+    -BootConfigPath "Z:\Config\BootConfig.json" `
+    -DeploymentSharePath "Z:" `
+    -DeploymentUid "260806-A3F1"
 ```
 
-The interface uses WPF with software rendering to reduce display-driver dependencies in WinPE. Windows Forms is used for validation alerts when available, with a WPF message-box fallback for minimal WinPE images.
-
 ---
 
-## 2. Files
+## BootConfig properties consumed
 
-| File | Purpose |
-| :--- | :--- |
-| `LiteDeploy.WorkflowSelection.ps1` | Main workflow, computer, disk, and driver-selection UI. |
-| `LiteDeploy.WorkflowSelectionDriverPicker.ps1` | Reusable WPF folder-selection dialog used by **Select Folder**. |
-| `SELECTWORKFLOW_DIAGRAM.md` | Mermaid execution and decision-flow diagrams. |
-
-The main script dot-sources the picker using `$PSScriptRoot`, so the two active scripts must remain in the same directory.
-
----
-
-## 3. Configuration resolution
-
-The UI resolves `BootConfig.json` in the same priority order as `LiteDeploy.HardwarePreCheck.ps1`:
-
-1. Discovered `BootObject` payload passed from `BootInitializer` / `HardwarePreCheck`
-2. `..\..\Admin\LiteDeploy.SetConfig.ps1\BootConfig.json` (Local Core workspace development layout)
-3. `..\..\..\..\DeploymentShare\Config\BootConfig.json` (Deployment share workspace template)
-4. `Config\BootConfig.json` (Standard deployment share layout)
-5. `BootConfig.json` (Root fallback)
-
-All paths are relative to `$PSScriptRoot`; the current PowerShell working directory is not used. The first existing file wins.
-
-JSON parsing is strict. A missing or invalid configuration displays an alert and terminates the workflow UI rather than continuing with an unknown deployment policy.
-
-### Consumed configuration properties
-
-| JSON property | Default | UI behavior |
+| JSON property | Default | Behavior |
 | :--- | :--- | :--- |
-| `Deployment.Type` | `Media` | Controls media/network behavior and online driver availability. |
-| `ComputerSetup.PromptForComputerName` | `true` | Shows or hides the computer-name input. |
-| `ComputerSetup.ComputerNamePrefix` | Empty | Prepopulates the computer-name input. |
-| `ComputerSetup.MaxComputerNameLength` | `15` | Sets input length and validation limit. |
-| `ComputerSetup.PromptForComputerDescription` | `true` | Shows or hides the description input. |
-| `ComputerSetup.DriveSelection` | `true` | Show target-disk selection (`true`) or auto-select first internal disk (`false`). |
-| `ComputerSetup.ImageEngine` | `"Setup.exe"` | Imaging engine: `"Setup.exe"` (Windows Setup) or `"Dism.exe"` (DISM apply). |
-| `Drivers.AutoDetectDrivers` | `true` | Enables manufacturer/model driver-pack detection. |
-| `Drivers.AllowManualSelection` | `true` | Enables the driver dropdown and **Select Folder** button. |
-| `Drivers.AutoOnlineDownloadOnMedia` | `true` | Makes online driver download available in Media mode. |
-| `Ui.Theme` | `"Light"` | UI palette theme (`"Light"` or `"Dark"`). |
+| `Metadata.Name` / `Environment` / `Version` | — | Brand header + subtitle (component fallback). |
+| `Deployment.Type` | `Media` | Media vs Network; online driver option. |
+| `ComputerSetup.PromptForComputerName` | `true` | Show/hide name field. |
+| `ComputerSetup.ComputerNamePrefix` | Empty | Prefill when name box empty. |
+| `ComputerSetup.MaxComputerNameLength` | `15` | Cap (never above 15). |
+| `ComputerSetup.PromptForComputerDescription` | `true` | Show/hide description field. |
+| `ComputerSetup.DriveSelection` | `true` | Show disk picker, or hide + auto-pick first internal disk. |
+| `ComputerSetup.ImageEngine` | `"Setup.exe"` | Consumed later by Engine / OS install. |
+| `Drivers.AutoDetectDrivers` | `true` | Via imported [`LiteDeploy.DriverStaging`](../060-DriverStaging): match `Content\Drivers\LocalCatalog.json` only (paths from catalog fields). Custom (Make+Model+SKU) → Custom (Make+SKU) → Custom (Make+Model) → OEM Make then SKU then Model. Model-only matches skip packs that declare `SystemSKU`. Dell/Lenovo: `ContentLocation` if extracted + `.inf`/`.sys`/`.cat` within 10 levels; else archive beside Content (`FileName` + SHA256 when present). Custom: model root depth 5. HP/others: extracted Content folder. Missing catalog / no match → in-box (wizard continues). Detection logs: INFO when catalog loads; SUCCESS only on match. |
+| `Drivers.AllowManualSelection` | `true` | Combo + Browse. |
+| `Drivers.AutoOnlineDownloadOnMedia` | `true` | Offer online download when Media **and** internet is reachable; checkbox and “Download latest driver pack” dropdown item are hidden otherwise. Re-checked on F5. |
+| `Ui.Theme` | `"Light"` | Light / Dark palette. |
 
 ---
 
-## 4. User-interface sections
+## UI sections
+
+### Header (PreCheck chrome)
+
+- Brand / subtitle from Metadata
+- Device identity: raw manufacturer `/ Model: …`, then `Serial: … / SKU: …` (SKU omitted when empty)
+- Window title: `{ComponentMetadata.Name} v{Version}`
 
 ### Computer Identification
 
-The section is driven by `ComputerSetup` policy. Computer names are validated for:
+- **Left:** computer name / description (right-aligned labels). Policy can hide either or both.
+- **Right:** firmware snapshot (always visible): BIOS mode, Secure Boot, TPM, BIOS version/date (Legacy → `N/A` for Secure Boot / TPM).
 
-- Required input when prompting is enabled
-- Configured maximum length
-- Spaces and invalid Windows computer-name characters
+When **both** name and description prompts are off, firmware expands full width.
 
-### Deployment Workflow
+### Deployment workflow
 
-The current UI exposes these workflow tags:
+From `Content\OperatingSystems\catalog.json` on `-DeploymentSharePath`.
 
-| Displayed workflow | Tag |
+### Target hard drive
+
+Rows from `Get-HardwarePhysicalDisks` (Capacity / Used / Free; 0 GB disks are shown). **Continue** blocks via `Test-HardwareDiskSelectionHasCapacity` when the selected disk is under 1 GB. UI wiring (auto-select, Refresh Disks) stays here.
+
+| `DriveSelection` | UI |
 | :--- | :--- |
-| Windows 11 Enterprise | `W11-ENT-STD` |
-| Windows 11 Professional | `W11-PRO-STD` |
-| Windows 11 Enterprise Autopilot | `W11-ENT-AP` |
-| Windows 11 Professional Autopilot | `W11-PRO-AP` |
+| `true` | Disk grid + **Refresh Disks** |
+| `false` | Hidden; first internal disk auto-selected |
 
-Parent categories automatically redirect selection to their first child so only deployable workflow entries are accepted.
+### Drivers
 
-### Target Hard Drive
+Detected LocalCatalog pack (`Get-SystemDriverDetection` from DriverStaging) → online (Media + internet via `Test-OfferOnlineDriverDownload`) → in-box. Online is omitted from the combo when offline. Detected packs: Custom shows the full relative path (`Detected pack: Content\Drivers\Custom\FolderName`); OEM truncates long paths (`Detected pack: Content\Drivers\LENOVO\...filename.exe`, max ~64 chars with `...`). **Info** (beside the combo) opens pack details (model, match, file name, SHA256, release/downloaded dates, source, full path) for OEM Content or Archive only - not Custom/in-box/browse. **Browse…** opens DriverPicker (`Show-DriverPathDialog` + `LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml`); Select confirms a folder with at least one `.inf`/`.sys`/`.cat` within 8 levels.
 
-Disk discovery follows this order:
+### Footer
 
-1. `Get-Disk` and `Get-Partition`, when the Storage module is available
-2. `Win32_DiskDrive` through WMI as a WinPE fallback
-
-USB and removable disks are excluded. Results are always converted to an `object[]` before DataGrid binding, preventing the single-disk `ItemsSource` failure that can occur on physical hardware.
-
-Space is calculated conservatively:
-
-- Readable volumes contribute their actual filesystem free space.
-- Unallocated disk capacity counts as available.
-- Locked, RAW, hidden, damaged, or otherwise unreadable partitions count fully as used.
-- If neither Storage cmdlets nor WMI can measure a disk, all capacity is treated as used rather than overstating free space.
-
-The display is calculated so `Capacity = Estimated Usage + Available Space` after rounding. Unreadable partitions are counted fully as used, so **Estimated Usage** indicates potential data presence rather than guaranteed user-file usage.
-
-Zero-capacity devices and sample/fabricated disks are not shown. If no internal disk is detected, deployment is blocked and the technician is instructed to load the required storage driver and refresh.
-
-### Drivers and Hardware Injections
-
-Automatic driver detection uses:
-
-```text
-Content\Drivers\<Normalized Manufacturer>\<WMI Model>
-```
-
-Manufacturer values are normalized for Dell, HP, and Lenovo. Driver choice precedence is:
-
-1. Detected local driver pack
-2. Online download in eligible Media deployments
-3. Standard Windows in-box drivers
-
-The **Select Folder** action opens the companion WPF picker. A custom selection is stored as the actual filesystem path rather than the `Custom:` display label.
+`Configuration: …` and `Deployment ID: {DeploymentUid}`.
 
 ---
 
-## 5. Validation and interaction behavior
+## Refresh behavior
 
-Clicking **Start Deployment** validates all required inputs and shows:
-
-- Red inline messages in fixed-height reserved rows
-- One consolidated Windows Forms warning dialog
-- A WPF warning fallback when Windows Forms is unavailable
-
-Reserved rows use `Visibility="Hidden"` rather than `Collapsed`, so validation messages do not move surrounding controls. Inline errors clear when the technician corrects the computer name, selects a workflow, or selects a disk.
-
-The selected disk remains blue with white text after the DataGrid loses keyboard focus.
-
-If validation succeeds, a confirmation dialog summarizes the computer name, workflow, disk, and driver choice before closing the window.
-
----
-
-## 6. Result variables
-
-After a successful confirmation, the main script stores the following script-scoped values for the next deployment stage:
-
-| Variable | Contents |
+| Action | Effect |
 | :--- | :--- |
-| `$script:ComputerName` | Validated computer name. |
-| `$script:ComputerDescription` | Optional technician-entered description. |
-| `$script:SelectedWorkflowTag` | Stable workflow identifier. |
-| `$script:SelectedOSName` | Selected workflow display name. |
-| `$script:SelectedDiskIndex` | Display disk index, such as `Disk 0`. |
-| `$script:SelectedDiskModel` | Detected disk model. |
-| `$script:AutoDetectDrivers` | Effective automatic-detection policy. |
-| `$script:SelectedDriverFolderPath` | Custom/detected path or built-in/online driver choice. |
-
-These values currently live in the script scope. A caller that launches the script in a separate `powershell.exe` process must use an agreed handoff mechanism if it needs to consume them after the process exits.
+| **Refresh Disks** | Rediscover disks only. |
+| **F5** | Reload BootConfig from path; refresh brand, ComputerSetup UI flags, DriveSelection, catalog, disks, drivers, firmware. |
 
 ---
 
-## 7. Driver picker reference
+## Driver picker
 
-`Show-DriverPathDialog` accepts:
+Themed Viewbox dialog; **DeploymentShare (Z:)** last, rooted at `Content\Drivers`; live Select disable for drive roots / Windows / share Drivers root; BFS depth 8 for `.inf`/`.sys`/`.cat`.
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `-Theme` | `Light` or `Dark` | `Light` | Applies the picker color palette. |
-| `-WindowTitle` | String | `Select Driver Folder` | Dialog title. |
-| `-InitialPath` | String | Empty | Selects the matching root drive when possible. |
-| `-Owner` | WPF Window | None | Centers the picker over the main UI. |
-
-The picker enumerates ready fixed, removable, and network drives and lazily loads subdirectories when a node is expanded. Access-denied or unavailable directories are left empty instead of terminating the UI.
-
----
-
-## 8. WinPE requirements and scaling
-
-Recommended WinPE optional components:
-
-- WinPE-WMI
-- WinPE-NetFX
-- WinPE-PowerShell
-- WinPE-StorageWMI
-
-The primary window currently uses a fixed `1024 × 820` WPF size with `ResizeMode="NoResize"`. Unlike the HardwarePreCheck UI, it does not yet calculate its size from the physical screen or wrap its design surface in an outer `Viewbox`. It can therefore be clipped at low resolution or high DPI.
-
-The folder picker uses a fixed `440 × 480` window.
-
----
-
-## 9. Execution examples
-
-### Standard WinPE launch
-
-```cmd
-powershell.exe -STA -ExecutionPolicy Bypass -File "%SystemDrive%\Engine\Scripts\LiteDeploy.WorkflowSelection.ps1"
-```
-
-### PowerShell launch
+Caller:
 
 ```powershell
-& "$PSScriptRoot\LiteDeploy.WorkflowSelection.ps1"
+. (Join-Path $PSScriptRoot "LiteDeploy.WorkflowSelectionDriverPicker.ps1")
+Show-DriverPathDialog -Theme $Theme -DeploymentSharePath $script:DeploymentSharePath -Owner $window
 ```
 
-Keep `LiteDeploy.WorkflowSelectionDriverPicker.ps1` beside the main script in the deployed `Engine\Scripts` directory.
+---
+
+## WinPE
+
+Optional components: WinPE-WMI, WinPE-NetFX, WinPE-PowerShell, WinPE-StorageWMI.  
+Adaptive sizing + `Viewbox`. Software rendering forced.
+
+---
+
+## Maintenance notes
+
+Appropriately complex: Engine contract, F5 vs Refresh Disks, ComputerSetup/`DriveSelection`, firmware card, catalog tree, DriverPicker for WinPE.
+
+Follow-ups: dedupe F5 vs init policy helpers; enrich confirm return with last `BootConfig` + structured `Drivers` pack metadata. Disk free-space discovery lives in Hardware (`Get-HardwarePhysicalDisks`).
+
+**Path examples in docs** use only generic roots (`Z:\`, `\\Server\Share$`, media `E:\~LiteDeploy\`, WinPE `X:\`). Do not document personal profile or workstation paths.

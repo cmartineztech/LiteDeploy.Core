@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packageId": "autopilot-enroll",
+  "name": "Enroll in Intune with Autopilot",
+  "packageType": "Application",
+  "enabled": true,
+  "source": "Content/Packages/autopilot-enroll/payload"
+}

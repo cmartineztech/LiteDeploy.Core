@@ -29,10 +29,12 @@ Related project documents:
 
 | Component | Phase | Responsibility |
 | --- | --- | --- |
-| `LiteDeploy.BootInitializer.ps1` | WinPE | Persistent parent shell; loads configuration, initializes networking, maps the deployment source, obtains the share credential, and sequences the UI and engine. |
-| `LiteDeploy.HardwarePreCheck.ps1` | WinPE | Validates configuration, networking, storage, memory, firmware, Secure Boot, and TPM readiness. Returns a structured result to the parent. |
-| `LiteDeploy.WorkflowSelection.ps1` | WinPE | Collects computer identity, workflow, target disk, and driver selection. Returns a structured selection object. |
-| `LiteDeploy.WorkflowSelectionDriverPicker.ps1` | WinPE | Reusable WinPE-compatible WPF directory picker used by workflow selection. |
+| `LiteDeploy.BootInitializer.ps1` | WinPE | Persistent parent shell; loads configuration, initializes networking, maps the deployment source, obtains the share credential, and launches DeploymentEngine. Unhandled engine errors → GUI (return discarded) + `Write-LiteDeployPauseNotice` (`[NOTICE]` / `startnet`). |
+| `LiteDeploy.Hardware.ps1` | WinPE | Importable inventory helpers; includes `Get-HardwarePhysicalDisks` / `Test-HardwareDiskSelectionHasCapacity` for WorkflowSelection wipe-target grid. |
+| `LiteDeploy.HardwarePreCheck.ps1` | WinPE | BootConfigPath-driven readiness UI. Markup in sibling `LiteDeploy.HardwarePreCheck.UI.xaml`. Uses `LiteDeploy.Hardware` for inventory. Returns `{ Passed, BootConfigPath, Inventory }` to DeploymentEngine. |
+| `LiteDeploy.WorkflowSelection.ps1` | WinPE | PreCheck-chrome wizard: identity, firmware, catalog workflows, disk (`DriveSelection`), drivers (OEM Info dialog, truncated OEM combo paths, LocalCatalog + optional media online). Contract: `-BootConfigPath`, optional `-BootConfig` / `-DeploymentUid`, `-DeploymentSharePath`. Returns selection object + `%SystemDrive%\WorkflowSelection.json`. Planned: return last `BootConfig` + structured `Drivers` metadata. |
+| `LiteDeploy.WorkflowSelectionDriverPicker.ps1` | WinPE | Themed WinPE WPF driver-folder browser: DeploymentShare (Z:) labeling, live Select blocking for roots/system paths, `.inf`/`.sys`/`.cat` BFS depth 8 on confirm. |
+| `LiteDeploy.DriverStaging.ps1` | WinPE | Importable LocalCatalog detection (pack metadata, Content vs Archive for Dell/Lenovo), online reachability. Logs catalog load + match only. Extract/inject/download reserved. |
 | `LiteDeploy.DeploymentEngine.ps1` | Both | Runtime pipeline orchestrator. In WinPE it sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and Setup; in FullOS it resumes workflow actions from persisted state. |
 | `LiteDeploy.DiskPreparation.ps1` | WinPE | Wipes target storage, applies certified UEFI/GPT or Legacy/MBR layout, mounts temporary OS staging volume (W:), and stamps WinRE recovery attributes (0x8000000000000001). |
 | `LiteDeploy.Progress.ps1` | Both | Read-only WPF progress client. It renders `DeploymentState.json`; it does not own deployment operations. |
@@ -43,21 +45,57 @@ Related project documents:
 
 ### Planned production layout
 
-The development repository organizes modules under `Engine/Scripts/` (`Admin/` and `Runtime/`). In production, runtime scripts are published as flat siblings under the deployment share's `Engine\Scripts\Runtime` folder:
+The development repository keeps each runtime component in a numbered folder under `Engine/Scripts/Runtime/`. `SyncComponents` publishes the `.ps1` files as flat siblings.
 
 ```text
-<DeploymentRoot>\Engine\Scripts\Runtime\
-  LiteDeploy.BootInitializer.ps1
-  LiteDeploy.HardwarePreCheck.ps1
-  LiteDeploy.WorkflowSelection.ps1
-  LiteDeploy.WorkflowSelectionDriverPicker.ps1
-  LiteDeploy.DeploymentEngine.ps1
-  LiteDeploy.DiskPreparation.ps1
-  LiteDeploy.OSInstallation.ps1
-  LiteDeploy.Progress.ps1
+Engine/Scripts/Runtime/                 repository
+  000-LogWriter/
+  000-HostShell/
+  000-Progress/
+  010-BootInitializer/
+  020-DeploymentEngine/
+  030-HardwarePreCheck/
+    LiteDeploy.HardwarePreCheck.ps1
+    LiteDeploy.HardwarePreCheck.UI.xaml
+    SingleFile/                         reference only (not synced)
+  040-WorkflowSelection/
+  050-DiskPreparation/
+  060-DriverStaging/                    detection helpers (extract/inject reserved)
+  070-AnswerFileGenerator/              reserved
+  080-OSInstallation/
+  090-CredentialTransfer/               reserved
+  100-DeploymentCleanup/                reserved
+
+Network boot
+  Z:\Engine\Scripts\Runtime\LiteDeploy.<Component>.ps1
+
+Media boot
+  E:\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.<Component>.ps1
 ```
 
-The deployment engine resolves sibling scripts from `$PSScriptRoot`. It does not depend on local repository development paths.
+Published runtime scripts:
+
+```text
+LiteDeploy.LogWriter.ps1
+LiteDeploy.HostShell.ps1
+LiteDeploy.LogWriter.ps1
+LiteDeploy.Hardware.ps1
+LiteDeploy.HostShell.ps1
+LiteDeploy.Progress.ps1
+LiteDeploy.BootInitializer.ps1
+LiteDeploy.DeploymentEngine.ps1
+LiteDeploy.HardwarePreCheck.ps1
+LiteDeploy.HardwarePreCheck.UI.xaml
+LiteDeploy.WorkflowSelection.ps1
+LiteDeploy.WorkflowSelection.UI.xaml
+LiteDeploy.WorkflowSelectionDriverPicker.ps1
+LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml
+LiteDeploy.DiskPreparation.ps1
+LiteDeploy.DriverStaging.ps1
+LiteDeploy.OSInstallation.ps1
+```
+
+The deployment engine resolves sibling scripts from `$PSScriptRoot`. WorkflowSelection also imports sibling `LiteDeploy.Hardware.ps1` and `LiteDeploy.DriverStaging.ps1`. It does not depend on local repository development paths.
 
 ## 3. End-to-end execution sequence
 
@@ -65,12 +103,12 @@ The deployment engine resolves sibling scripts from `$PSScriptRoot`. It does not
 
 1. `startnet.cmd` launches `LiteDeploy.BootInitializer.ps1` in Windows PowerShell 5.1 STA mode.
 2. BootInitializer discovers `BootConfig.json`, initializes networking, connects the deployment source, and creates `BootObject`.
-3. BootInitializer invokes HardwarePreCheck with `& $preCheckPath -BootObject $bootObject`.
-4. HardwarePreCheck closes and returns a structured result.
-5. If HardwarePreCheck did not pass or Continue was not selected, BootInitializer stops without changing a disk.
-6. BootInitializer invokes workflow selection in the same process and passes `BootObject`.
-7. Workflow selection returns a structured selection object.
-8. If the technician cancels, BootInitializer stops without changing a disk.
+3. DeploymentEngine invokes HardwarePreCheck with `& $preCheckPath -BootConfigPath $BootObject.ConfigPath`.
+4. HardwarePreCheck closes and returns `{ Passed, BootConfigPath, Inventory }`.
+5. If HardwarePreCheck did not pass or Continue was not selected, DeploymentEngine stops without changing a disk.
+6. DeploymentEngine invokes WorkflowSelection (`-BootConfigPath`, optional `-BootConfig`, `-DeploymentSharePath`, `-DeploymentUid`). WorkflowSelection imports Hardware + DriverStaging.
+7. Workflow selection returns a structured selection object (disk rows from `Get-HardwarePhysicalDisks`; drivers from DriverStaging).
+8. If the technician cancels or WorkflowSelection fails, DeploymentEngine stops without changing a disk. Unhandled throws surface to BootInitializer → `[NOTICE]` / `startnet`.
 
 ### Phase B: validation, disk preparation, credentials, and Setup preparation
 
@@ -216,13 +254,27 @@ Reference: [RunSynchronous in the specialize pass](https://learn.microsoft.com/e
 
 ```json
 {
-  "ContinueRequested": true,
-  "PreCheckPassed": true,
-  "Status": "Passed"
+  "Passed": true,
+  "BootConfigPath": "Z:\\Config\\BootConfig.json",
+  "Inventory": {
+    "Vendor": "Dell",
+    "Model": "Latitude 5440",
+    "SerialNumber": "...",
+    "UUID": "...",
+    "PrimaryNicName": "Intel Ethernet...",
+    "PrimaryMacAddress": "AA:BB:...",
+    "IPAddress": "172.17.127.54",
+    "IPv4Cidr": "172.17.127.54/24",
+    "IPv6Address": null,
+    "DnsServers": ["10.0.0.1", "10.0.0.2"],
+    "HardDrives": [{ "Number": 0, "Model": "NVMe", "SizeGB": 512 }],
+    "Results": [],
+    "SkippedByPolicy": false
+  }
 }
 ```
 
-The existing HardwarePreCheck currently returns only a Boolean when dot-sourced. It must be changed to return this object without launching the next UI itself.
+HardwarePreCheck returns this object to DeploymentEngine and does not launch WorkflowSelection. The Engine Draft logs MDT-style computer information from `Inventory` (Make/Model/Serial/UUID, NIC/MAC, IPv4 CIDR, IPv6, DNS, per-disk lines).
 
 ### Workflow-selection result
 

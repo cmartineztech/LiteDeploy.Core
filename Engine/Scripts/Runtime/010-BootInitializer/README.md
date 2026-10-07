@@ -151,8 +151,8 @@ Important properties include:
 | Function | Role |
 | :--- | :--- |
 | `Write-LiteDeployLog` | Console + CMTrace log |
-| `Write-LiteDeployPauseNotice` | Logged pause + `startnet` guidance |
-| `Show-LiteDeployGuiError` | MessageBox OK or Retry/Cancel |
+| `Write-LiteDeployPauseNotice` | Logged `[NOTICE]` pause + `startnet` guidance (optional `-Reason`; used after engine crash too) |
+| `Show-LiteDeployGuiError` | MessageBox OK or Retry/Cancel. Returns `$true` only for Retry; OK-only callers must use `$null =` so `$false` is not printed to the host. |
 | `Invoke-LiteDeployGuiRetry` | Shared network retry loop helper |
 | `Format-LiteDeployUncPath` | Normalize UNC |
 | `Resolve-LiteDeployEnginePath` | Engine path by `DeploymentType` |
@@ -179,14 +179,21 @@ Resolve-LiteDeployEnginePath -RootPath "D:" -LocalRootName "DeploymentMedia" -De
 When run directly (not dot-sourced):
 
 1. Calls `Get-LiteDeployBootConfig` (standalone currently forces mount + GUI errors)
-2. If Media **or** share mounted → resolve/launch DeploymentEngine
+2. If Media **or** share mounted → resolve/launch DeploymentEngine (`$null = & $enginePath …`)
 3. On success logs: `[INFO] Launching DeploymentEngine...`
-4. On engine missing:  
+4. On engine **unhandled error** (any throw from DeploymentEngine / WorkflowSelection / etc.):
+   * Console: `[ERROR] Execution failed for '…'`
+   * GUI error (return discarded with `$null =`)
+   * `Write-LiteDeployPauseNotice -Reason "Deployment engine failed with an unhandled error."` → `[NOTICE]` + run `startnet`
+5. On engine missing:  
    * Console: `[ERROR] DeploymentEngine was not found on the deployment source.`  
    * GUI includes the full expected path  
-5. Failures / incomplete init → `Write-LiteDeployPauseNotice`
+   * `Write-LiteDeployPauseNotice`
+6. Other incomplete init paths → `Write-LiteDeployPauseNotice`
 
 WinPE also runs `wpeutil UpdateBootInfo` at startup (registry PE boot info reserved; not added to BootObject yet).
+
+Requires current `LiteDeploy.LogWriter.ps1` (supports `-Level NOTICE`).
 
 ---
 
@@ -218,7 +225,7 @@ WinPE also runs `wpeutil UpdateBootInfo` at startup (registry PE boot info reser
 | `[WARNING]` | Recoverable issue |
 | `[RETRY]` | Retrying a step |
 | `[ERROR]` | Failure |
-| `[NOTICE]` | Init paused; run `startnet` |
+| `[NOTICE]` | Init or engine paused; run `startnet` (`Write-LiteDeployPauseNotice`, LogWriter level `NOTICE`) |
 
 ---
 

@@ -1,1 +1,53 @@
-{}
+{
+  "schemaVersion": 1,
+  "workflowId": "standard-workstation",
+  "name": "Standard Workstation",
+  "description": "Domain-joined workstation",
+  "enabled": true,
+  "revision": 1,
+  "osCatalogPath": "Content/OperatingSystems/catalog.json",
+  "unattendPath": "Content/Unattend/StandardWorkstation.xml",
+  "operatingSystems": [
+    {
+      "osId": "win11-25h2-en-us-26200.8037-x64",
+      "editionIds": [
+        "win11-25h2-windows-11-pro-26200.8037-x64"
+      ]
+    },
+    {
+      "osId": "win11-26h2-en-us-26300.8772-x64",
+      "editionIds": [
+        "win11-26h2-windows-11-pro-26300.8772-x64",
+        "win11-26h2-windows-11-enterprise-26300.8772-x64"
+      ]
+    }
+  ],
+  "requiredCredentialIds": [
+    "LocalAdmin",
+    "DomainJoin"
+  ],
+  "actions": [
+    {
+      "actionId": "create-local-account",
+      "name": "Create local account",
+      "packageId": "create-local-account",
+      "phase": "FullOS",
+      "executionContext": "System",
+      "requiredCredentialIds": [
+        "LocalAdmin"
+      ],
+      "continueOnError": false
+    },
+    {
+      "actionId": "domain-join",
+      "name": "Join the domain",
+      "packageId": "domain-join",
+      "phase": "FullOS",
+      "executionContext": "System",
+      "requiredCredentialIds": [
+        "DomainJoin"
+      ],
+      "continueOnError": false
+    }
+  ]
+}

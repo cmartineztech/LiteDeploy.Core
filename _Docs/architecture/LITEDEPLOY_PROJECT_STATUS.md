@@ -58,7 +58,9 @@ Implemented:
 - Deployment-share mapping
 - Technician credential prompt
 - `BootObject` construction
-- Same-process invocation of HardwarePreCheck
+- Same-process invocation of DeploymentEngine (which runs HardwarePreCheck + WorkflowSelection)
+- On engine **unhandled error**: GUI error (return discarded), then `Write-LiteDeployPauseNotice` (`[NOTICE]` + `startnet`) via LogWriter `-Level NOTICE`
+- OK-only `Show-LiteDeployGuiError` callers use `$null =` so dialog `$false` is not printed to the host
 
 Required changes:
 
@@ -68,20 +70,28 @@ Required changes:
 
 ### HardwarePreCheck UI
 
-Location: `Engine/Scripts/Runtime/030-HardwarePreCheck/LiteDeploy.HardwarePreCheck.ps1`
+Locations:
+
+- Production: `Engine/Scripts/Runtime/030-HardwarePreCheck/LiteDeploy.HardwarePreCheck.ps1` + `LiteDeploy.HardwarePreCheck.UI.xaml`
+- Reference: `Engine/Scripts/Runtime/030-HardwarePreCheck/SingleFile/LiteDeploy.HardwarePreCheck.ps1` (inlined XAML; not Engine-wired / not synced)
 
 Implemented:
 
-- WinPE-compatible WPF UI
-- Adaptive Viewbox scaling
+- WinPE-compatible WPF UI with adaptive Viewbox scaling
+- Separated production markup (`.xaml` + `{{palette}}` tokens at load)
+- Mandatory `-BootConfigPath` (no BootObject)
+- Inventory via `LiteDeploy.Hardware` (`000-Hardware`)
+- Theme from `-Theme` or `BootConfig.Ui.Theme`
 - Hardware and configuration assessment
-- BootObject input
 - Continue, rerun, diagnostics, and cancellation handling
+- Returns `{ Passed, BootConfigPath, Inventory }` to DeploymentEngine (does not launch WorkflowSelection)
+- Inventory includes NIC, IPv4 CIDR, IPv6, DNS, and per-disk data for Engine Draft computer-information logging
 
-Required changes:
+Optional follow-ups:
 
-- Return `{ ContinueRequested, PreCheckPassed, Status }`.
-- Close and return control to BootInitializer without launching the next component.
+- Enforce `ComputerSetup.RequireTPM` as a hard fail when configured
+- Fix Assessment null-merge on SkipPreCheck inventory fields
+- Promote DeploymentEngine Draft (inventory logging + BootConfigPath Precheck call) over production Engine
 
 ### Workflow Selection UI
 
@@ -89,28 +99,60 @@ Locations:
 
 - `Engine/Scripts/Runtime/040-WorkflowSelection/LiteDeploy.WorkflowSelection.ps1`
 - `Engine/Scripts/Runtime/040-WorkflowSelection/LiteDeploy.WorkflowSelectionDriverPicker.ps1`
+- Docs: `README.md`, `SELECTWORKFLOW_DIAGRAM.md`
 
 Implemented:
 
-- Computer name and description input
-- Workflow selection interface
-- Internal disk discovery with PowerShell 5.1 single-object binding protection
-- Capacity, Estimated Usage, and Available Space calculation
-- Persistent blue disk selection after focus changes
-- Driver auto-detection and custom WinPE folder picker
-- Fixed-position red validation messages and Windows Forms warnings
-- Strict BootConfig discovery
+- PreCheck-style chrome split: `LiteDeploy.WorkflowSelection.ps1` + `LiteDeploy.WorkflowSelection.UI.xaml` (SingleFile reference retained)
+- DriverPicker split: `LiteDeploy.WorkflowSelectionDriverPicker.ps1` + `LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml`
+- `-BootConfigPath` + optional `-BootConfig` (first paint) + `-DeploymentSharePath` + optional `-DeploymentUid`
+- Computer name / description prompts (`ComputerSetup`); right-aligned labels; firmware snapshot card (UEFI / Legacy N/A)
+- `DriveSelection` show picker or auto-select first internal disk
+- OS workflows from `Content\OperatingSystems\catalog.json`
+- Disk grid via `Get-HardwarePhysicalDisks` (Capacity/Used/Free; 0 GB disks listed); **Continue** gated by `Test-HardwareDiskSelectionHasCapacity` (≥ 1 GB); **Refresh Disks** vs **F5**
+- Driver auto-detect via imported `LiteDeploy.DriverStaging` (`LocalCatalog.json`, Custom then OEM; soft-fail to in-box) + WinPE DriverPicker (Z: / Content\Drivers rules, `.inf`/`.sys`/`.cat` BFS depth 8)
+- Combo labels: Custom full relative path; OEM truncated with `...`; **Info** dialog for OEM detected packs (model, match, file name, SHA256, release/downloaded dates, source, path)
+- Online “Download latest driver pack” only when `Deployment.Type` is Media, `AutoOnlineDownloadOnMedia` is true, and internet is reachable (checkbox + dropdown; helpers in DriverStaging)
+- Returns `{ Passed, DeploymentUid, computer, workflow, disk, DriverFolderPath, … }` + `%SystemDrive%\WorkflowSelection.json` on confirm; cancel returns `Passed=$false`
+- Flat Runtime must publish Hardware + DriverStaging beside WorkflowSelection (SyncComponents)
 
-Required changes:
+Follow-ups (cleanup, not blockers):
 
-- Accept `BootObject` directly.
-- Load OS editions from ImportOSMedia `catalog.json`.
-- Load workflows and optional deployment profiles from JSON.
-- Preserve current UI behavior while making its content catalog-driven.
+- Deduplicate F5 vs init policy/driver rebuild helpers
+- Enrich confirm return with last effective `BootConfig` + structured `Drivers` pack metadata for Engine / extract
 
-Completed:
+### Hardware (shared inventory)
 
-- Returns a structured deployment selection containing stable IDs, computer name, workflow, driver path, and numeric target disk number.
+Location: `Engine/Scripts/Runtime/000-Hardware/LiteDeploy.Hardware.ps1`
+
+Implemented (recent):
+
+- Identity / firmware / NIC / DNS / `Get-HardwareHardDrives` for PreCheck + Engine logs
+- `Get-HardwarePhysicalDisks` + `Test-HardwareDiskSelectionHasCapacity` for WorkflowSelection wipe-target grid (0 GB rows visible; Continue requires ≥ 1 GB)
+
+### Driver Staging
+
+Location: `Engine/Scripts/Runtime/060-DriverStaging/LiteDeploy.DriverStaging.ps1`
+
+Implemented:
+
+- Importable LocalCatalog detection API (`Get-SystemDriverDetection -ShareRoot`, resolve helpers, match helpers)
+- Dell/Lenovo Content (BFS depth 10) vs archive `FileName`+SHA256; Custom depth 5; HP Content; pack metadata on hits (`IsOem`, `SourceKind`, dates, etc.)
+- Media online reachability (`Test-LiteDeployInternetConnection`, `Test-OfferOnlineDriverDownload`)
+- Logs: INFO when catalog loads; SUCCESS only on match; silent when no match
+- Consumed by WorkflowSelection (production + SingleFile)
+
+Reserved / not yet implemented:
+
+- Vendor `.exe` extract in WinPE
+- Copy/inject onto OS volume
+- Perform online driver pack download
+
+### LogWriter
+
+Location: `Engine/Scripts/Runtime/000-LogWriter/LiteDeploy.LogWriter.ps1`
+
+- Levels include `NOTICE` (yellow console, CMTrace type 2) for BootInitializer pause / `startnet` guidance
 
 ### Disk Preparation Engine
 
@@ -151,7 +193,7 @@ Implemented:
 - Single-Threaded Apartment (STA) verification
 - Structured logging with LogWriter and console restoration
 - Phase 1: HardwarePreCheck invocation and readiness gating
-- Phase 2: WorkflowSelection invocation and structured selection capture
+- Phase 2: WorkflowSelection invocation; selection summary logged from result object (workflow / computer|disk / drivers)
 - Phase 3: Target disk preparation via `LiteDeploy.DiskPreparation.ps1`
 - Persistent state tracking (`DeploymentState.json`) and share synchronization
 - Failure handling and diagnostic preservation
