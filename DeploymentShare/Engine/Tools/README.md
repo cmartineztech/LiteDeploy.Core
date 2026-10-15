@@ -59,4 +59,4 @@ Call `Clear-LiteDeployFullOSRunKey` when the deployment finishes successfully so
 
 Media deployments skip share reconnect and share mirroring.
 
-More detail: [_Docs/integrations/Credentials](../../_Docs/integrations/Credentials/README.md) and [deployment diagrams](../../_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).
+More detail: [_Docs/integrations/Credentials](../../../_Docs/integrations/Credentials/README.md) and [deployment diagrams](../../../_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).

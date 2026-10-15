@@ -54,7 +54,7 @@ trees “just in case.”
 
 Known deviations (to remove over time): Image standalone fallback that walks to a sibling
 `DeploymentShare`; Drivers standalone default to `Z:\` when `-ShareRoot` is omitted;
-WorkflowSelection optional local join to `Engine\Scripts\Runtime\LiteDeploy.Workflow.ps1`
+WorkflowSelection optional local join to `050-Workflow\LiteDeploy.Workflow.ps1`
 when RuntimeFiles.Workflow is absent. Live Engine pipeline must not rely on those fallbacks.
 
 ---
