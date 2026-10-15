@@ -1,133 +1,292 @@
 # LiteDeploy Core
 
-Development repository for LiteDeploy. Components are organized by operational scope into administrative tooling (`Admin`) and WinPE / target OS deployment engines (`Runtime`).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="_Media/LiteDeploy-Core-Dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="_Media/LiteDeploy-Core-Light.png">
+  <img alt="LiteDeploy Core Development" src="_Media/LiteDeploy-Core-Light.png" width="700">
+</picture>
 
-The production product repo is **LiteDeploy**. A component moves there only after it is approved.
+> **This repository is for development only — not production.**  
+> Full workspace for designing, testing, and lab-validating LiteDeploy. Expect breaking changes and unfinished pieces (package orchestration, real FullOS Progress). Lab / disposable-VM use only.
 
-## Working Order & Pipeline Flow
+**Windows bare-metal imaging engine (under development)** — WinPE → install → interactive FullOS resume — plain PowerShell 5.1 components. `Admin.Build` flattens scripts into a **lab** DeploymentShare for imaging tests. A future shipping product tree is separate; **this Core repo is not that**.
 
-```text
-Admin Scope (Preparation & Share Provisioning):
-  SetConfig               Admin generates BootConfig.json for BootWim, Share, or Media
-  SetDeploymentShareAcl   Admin creates and hardens the deployment share layout and log ACLs
-  ImportOSMedia           Admin imports Windows OS media/ISOs and publishes catalog.json
-  WinPEBuilder            Builds ISO or Boot.wim for WDS/PXE (separate repository)
+| | |
+| :--- | :--- |
+| **Status** | **Development only — not production** |
+| **Host** | Windows PowerShell 5.1 (`powershell.exe`), STA for Engine / UI |
+| **Boot modes** | Network (SMB → `Z:`) and Media (USB → `<drive>:\~LiteDeploy`) |
+| **Imaging** | `setup.exe` or `dism.exe` |
+| **FullOS resume** | `HKLM\...\Run\LiteDeployFullOS` (not Task Scheduler / SetupComplete) |
+| **Smoke suite** | [`_Tests\`](_Tests/README.md) — **155 / 155** |
+| **Docs map** | [`_Docs/README.md`](_Docs/README.md) |
 
-Runtime Scope (WinPE Execution & Target Deployment):
-  LogWriter            Central CMTrace XML logging used by all components
-  HostShell            WinPE console window geometry, presets, and theme management
-  BootInitializer      Device startup entry point (startnet parent process, network, Z:\ mount)
-  DeploymentEngine     Sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation
-  HardwarePreCheck     9-point hardware, firmware, network, and source readiness UI
-  WorkflowSelection    Computer identity, workflow, target disk, LocalCatalog drivers, and driver picker UI
-  DiskPreparation      Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, and WinRE flags
-  DriverStaging        LocalCatalog detection helpers; stage/inject reserved
-  AnswerFileGenerator  Reserved. Build X:\unattended.xml
-  OSInstallation       Windows Setup (setup.exe /NoReboot) and the answer file
-  CredentialTransfer   Reserved. Move credentials from WinPE onto the installed OS
-  DeploymentCleanup    Reserved. Clean the deployment session after credential transfer
-  Progress             Read-only deployment progress UI (WinPE & FullOS)
-  Credentials             [DeployVault] + [WinPECT]: Encrypted secrets across the WinPE → FullOS reboot
+---
+
+## What this project is
+
+LiteDeploy Core is a **componentized imaging stack**, not a Task Sequence host and not an MDT fork. Each Runtime/Admin script owns one job (Boot, Disk, Image, FullOS, …). Engine orchestrates WinPE; FullOS continues after first interactive logon when the workflow has post-install **actions**.
+
+It solves the hard handoff problems wiring usually gets wrong:
+
+- **Credentials** never appear on `net use` command lines — native `New-SmbMapping` / `New-PSDrive` + in-memory [WinPECT](https://github.com/cmartinezone/WinPECT) seal/unseal
+- **Paths** come from Environment (Development vs Production) — consumers do not invent sibling `DeploymentShare` trees
+- **Unattend** is template + placeholders (`Standard` / `DomainJoin` / `IntuneReady`), with Specialize `RunSynchronous` orders owned by Image
+- **State/logs** survive reboot via DeploymentState + triple mirror (RAM / share / OS volume)
+
+**Not in scope yet (planned):** automatic package orchestration after FullOS, DeployVault as a share vault tool, cloud/Azure blob pull. See [`_Docs/planning/`](_Docs/planning/).
+
+---
+
+## End-to-end flow
+
+```mermaid
+flowchart TB
+  subgraph AdminPrep["Admin prep (full Windows)"]
+    Config["Admin.Config → BootConfig.json"]
+    Content["Admin.Content / Images / Drivers / Workflows"]
+    Build["Admin.Build → flat share Engine + Tools"]
+    Config --> Build
+    Content --> Build
+  end
+
+  subgraph WinPE["WinPE — SYSTEM"]
+    Boot["Boot: network + native share map Z:"]
+    Engine["Engine pipeline"]
+    Pre["UI.HardwarePrecheck"]
+    Sel["UI.WorkflowSelection"]
+    Prog["UI.Progress process"]
+    Disk["Disk -ConfirmDestroy"]
+    Image["Image -ExecuteSetup"]
+    Hand["Handoff → W:\\~LiteDeploy<br/>Runtime · Tools · state · WinPECT hive"]
+    Boot --> Engine
+    Engine --> Pre --> Sel
+    Engine --> Prog
+    Sel --> Disk --> Image --> Hand
+  end
+
+  subgraph FirstBoot["Windows first boot"]
+    Gate{"workflow actions > 0?"}
+    OOBE["OOBE only<br/>(e.g. Intune Ready)"]
+    Spec["specialize RunSynchronous<br/>1 description · 2 HKLM Run<br/>3–4 UAC bypass if Domain Join"]
+    Logon["Interactive logon<br/>Audit Admin or AutoLogon"]
+    Gate -->|no| OOBE
+    Gate -->|yes| Spec --> Logon
+  end
+
+  subgraph FullOS["FullOS — Session 1"]
+    Run["HKLM Run → LiteDeploy.FullOS.ps1"]
+    ReArm["Re-arm Run · kill sysprep.exe"]
+    Secrets["WinPECT unseal · Z: · log mirror"]
+    Probe["Interactive Probe window<br/>(Progress/packages next)"]
+    Run --> ReArm --> Secrets --> Probe
+  end
+
+  Build -.->|publish| Boot
+  Hand --> Gate
+  Logon --> Run
 ```
 
-## Component Inventory
+Detailed sequence, privilege model, and reboot survival: [Architecture diagrams](_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).
 
-### Administrative Tooling (`Admin`)
+---
 
-| Component | Path | Description | Status |
-| :--- | :--- | :--- | :--- |
-| **SetConfig** | [Engine/Scripts/Admin/LiteDeploy.SetConfig.ps1](Engine/Scripts/Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` for `BootWim`, `DeploymentShare`, and `Media` deployment modes. | Exists |
-| **SetDeploymentShareAcl** | [Engine/Scripts/Admin/LiteDeploy.SetDeploymentShareAcl.ps1](Engine/Scripts/Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions folder hierarchy, SMB shares, and CREATOR-OWNER log isolation ACLs. | Exists |
-| **SyncComponents** | [Engine/Scripts/Admin/LiteDeploy.SyncComponents.ps1](Engine/Scripts/Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository modules to Deployment Shares, WinPE Builder staging, and Media roots. | Exists |
-| **ImportOSMedia** | [Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1](Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1) | Ingests Windows setup media/ISOs, extracts edition metadata via DISM/7-Zip, and publishes `catalog.json`. | Exists |
-| **Credentials** | [Engine/Scripts/Admin/LiteDeploy.Credentials.ps1](Engine/Scripts/Admin/LiteDeploy.Credentials.ps1) | Integration architecture for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). | Documented |
-| **WinPEBuilder** | [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Builds bootable WinPE ISO media or `Boot.wim` for WDS/PXE. | Separate repo |
+## Mental model
 
-### Runtime Engine (`Runtime`)
+| Layer | Owns | Does not own |
+| :--- | :--- | :--- |
+| **Boot** | WinPE entry, share connect, BootObject, launch Engine | Disk wipe, imaging |
+| **Engine** | WinPE pipeline order, required component names, handoff | Domain catalog parsing (Workflow), UI chrome |
+| **Environment** | Dev vs Prod path map, content resolution | Guessing missing files / creating layout trees |
+| **Workflow + UI.Selection** | Catalog / selection contract | Imaging |
+| **Disk / Drivers / Image** | Destructive OS work behind explicit switches | FullOS package loop |
+| **FullOS** | Post-boot Session 1 resume, secrets, Z:, Run re-arm | WinPE UI |
+| **Admin.*** | Share authoring & publish | Runtime pipeline |
+| **`_Tests` / `_Templates`** | Smoke suite & authoring contract | Not published to the share |
 
-| Component | Path | Description | Status |
-| :--- | :--- | :--- | :--- |
-| **LogWriter** | [Engine/Scripts/Runtime/000-LogWriter](Engine/Scripts/Runtime/000-LogWriter) | Standardized CMTrace XML logging module. Component id `LogWriter`. | Exists |
-| **HostShell** | [Engine/Scripts/Runtime/000-HostShell](Engine/Scripts/Runtime/000-HostShell) | WinPE console window geometry, positioning, themes, and shell presets. Component id `HostShell`. | Exists |
-| **Progress** | [Engine/Scripts/Runtime/000-Progress](Engine/Scripts/Runtime/000-Progress) | Zero-dependency WPF progress dashboard reading `DeploymentState.json` (WinPE & FullOS). Component id `Progress`. | Exists |
-| **BootInitializer** | [Engine/Scripts/Runtime/010-BootInitializer](Engine/Scripts/Runtime/010-BootInitializer) | Discovers `BootConfig.json`, validates network, maps `Z:\`, constructs `BootObject`, and launches DeploymentEngine. Component id `BootInitializer`. | Exists |
-| **DeploymentEngine** | [Engine/Scripts/Runtime/020-DeploymentEngine](Engine/Scripts/Runtime/020-DeploymentEngine) | Orchestrates HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation in WinPE. Component id `DeploymentEngine`. | Exists |
-| **HardwarePreCheck** | [Engine/Scripts/Runtime/030-HardwarePreCheck](Engine/Scripts/Runtime/030-HardwarePreCheck) | 9-point system readiness WPF UI (separated `.ps1` + `.xaml`; `SingleFile\` reference variant). Component id `HardwarePreCheck`. | Exists |
-| **WorkflowSelection** | [Engine/Scripts/Runtime/040-WorkflowSelection](Engine/Scripts/Runtime/040-WorkflowSelection) | PreCheck-chrome WPF wizard (identity, firmware, catalog workflows, Hardware disk grid, DriverStaging LocalCatalog + media online when reachable). Component id `WorkflowSelection`. | Exists |
-| **DiskPreparation** | [Engine/Scripts/Runtime/050-DiskPreparation](Engine/Scripts/Runtime/050-DiskPreparation) | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE attribute assignment. Component id `DiskPreparation`. | Exists |
-| **DriverStaging** | [Engine/Scripts/Runtime/060-DriverStaging](Engine/Scripts/Runtime/060-DriverStaging) | LocalCatalog driver detection + online reachability (imported by WorkflowSelection). Extract/inject still reserved. Component id `DriverStaging`. | Exists (detection) |
-| **AnswerFileGenerator** | [Engine/Scripts/Runtime/070-AnswerFileGenerator](Engine/Scripts/Runtime/070-AnswerFileGenerator) | Reserved folder for generating `X:\unattended.xml`. | Placeholder |
-| **OSInstallation** | [Engine/Scripts/Runtime/080-OSInstallation](Engine/Scripts/Runtime/080-OSInstallation) | Orchestrates Windows Setup (`setup.exe /NoReboot`) with automated unattended answer file generation. Component id `OSInstallation`. | Exists |
-| **CredentialTransfer** | [Engine/Scripts/Runtime/090-CredentialTransfer](Engine/Scripts/Runtime/090-CredentialTransfer) | Reserved folder for moving credentials from WinPE onto the installed OS. | Placeholder |
-| **DeploymentCleanup** | [Engine/Scripts/Runtime/100-DeploymentCleanup](Engine/Scripts/Runtime/100-DeploymentCleanup) | Reserved folder for cleaning the deployment session after credential transfer. | Placeholder |
+1. PowerShell **5.1** + `Set-StrictMode -Version 2.0` + WinPE constraints  
+2. One responsibility per component  
+3. Disk/Image read-only unless `-ConfirmDestroy` / `-ExecuteSetup`  
+4. Secrets in memory / WinPECT only  
+5. Edit **numbered** sources only (flat mirrors gitignored)
 
-On a client device, the live runtime chain is:
+---
 
-```text
-startnet.cmd
-  → LiteDeploy.BootInitializer.ps1 (Parent Shell)
-    → LiteDeploy.DeploymentEngine.ps1 (Pipeline Orchestrator)
-      ├── LiteDeploy.HardwarePreCheck.ps1 (Readiness Assessment)
-      ├── LiteDeploy.WorkflowSelection.ps1 (Technician Selections)
-      ├── LiteDeploy.DiskPreparation.ps1 (Target Disk Preparation)
-      ├── LiteDeploy.OSInstallation.ps1 (Setup.exe Engine & Unattend Generation)
-      └── LiteDeploy.Progress.ps1 (Parallel Progress Reader)
+## Quick start
+
+```powershell
+# Smoke (optional published Runtime)
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
+  -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1' `
+  -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Scripts\Runtime'
+
+.\_Templates\Get-LiteDeployComponentInventory.ps1 | Format-Table -AutoSize
+
+.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+  -DeploymentShare 'C:\DeploymentShare'
 ```
 
-## Repository Structure
+Lab checklist: [Project status](_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md).
+
+---
+
+## Folder structure
+
+### This repo
 
 ```text
 LiteDeploy Core/
-├── DeploymentShare/              # Root deployment share template & folder skeleton
-│   ├── Config/                   # Boot configuration & runtime policy files
-│   ├── Content/                  # Deployment payloads (BootMedia, Drivers, OperatingSystems, Packages, Temp, Unattend)
-│   ├── Engine/                   # Scripts (Admin/Runtime) and execution tools
-│   ├── WorkFlows/                # JSON workflow definitions (Standard, Intune Ready, etc.)
-│   └── WorkLogs/                 # Execution log destinations (Admin, Deployments)
-├── Engine/
-│   └── Scripts/                  # Core PowerShell engine modules and management tools
-│       ├── Admin/                # Administrative & share setup scripts
-│       │   ├── LiteDeploy.Credentials.ps1/
-│       │   ├── LiteDeploy.ImportOSMedia.ps1/
-│       │   ├── LiteDeploy.SetConfig.ps1/
-│       │   ├── LiteDeploy.SetDeploymentShareAcl.ps1/
-│       │   └── LiteDeploy.SyncComponents.ps1/
-│       └── Runtime/              # WinPE & client deployment runtime components
-│           ├── 000-LogWriter/
-│           ├── 000-HostShell/
-│           ├── 000-Progress/
-│           ├── 010-BootInitializer/
-│           ├── 020-DeploymentEngine/
-│           ├── 030-HardwarePreCheck/     # .ps1 + .UI.xaml (prod); SingleFile\ (reference)
-│           ├── 040-WorkflowSelection/
-│           ├── 050-DiskPreparation/
-│           ├── 060-DriverStaging/
-│           ├── 070-AnswerFileGenerator/
-│           ├── 080-OSInstallation/
-│           ├── 090-CredentialTransfer/
-│           └── 100-DeploymentCleanup/
-├── Templates/                    # Master component blueprints & inventory scanner
-│   ├── LiteDeploy.Component.Template.ps1
-│   ├── Get-LiteDeployComponentInventory.ps1
-│   └── README.md
-├── _Docs/                        # Product architecture specifications and plans
-│   └── architecture/             # Deployment plan, sequence diagrams, catalog specs, project status
-└── _Experiments/                 # Historical prototypes, test harnesses, and laboratory scripts
+├── _Media/                  # brand art (master + GitHub light/dark README)
+├── Engine/Scripts/          # numbered Admin + Runtime (+ 110-UI) — edit here
+├── Engine/Tools/            # WinPECT, etc. → published to share Tools\
+├── DeploymentShare/         # lab skeleton (flat Engine after Build)
+├── _Templates/              # component blueprint + inventory
+├── _Tests/                  # architecture smoke suite
+├── _Docs/
+└── _Experiments/            # local prototypes / reference (gitignored)
 ```
 
-## Related Repositories
+### WinPE bootstrap (ramdisk)
 
-These stay in their own GitHub repos. LiteDeploy Core consumes them; it does not duplicate their source trees:
+Minimal set inside `boot.wim` — not the full content tree:
 
-| Repository | Role in LiteDeploy |
+```text
+X:\~LiteDeploy\
+├── Boot\LiteDeploy.Boot.ps1
+├── Runtime\                 # Environment, Logs, Hardware
+└── Config\BootConfig.json
+```
+
+### Deployment source (Network or Media — same tree)
+
+Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only the **root** changes by mode:
+
+| Mode | Root | BootConfig |
+| :--- | :--- | :--- |
+| **Network** | UNC share mapped to `Z:\` | `Type=Network` + `NetworkPath` |
+| **Media** | `<USB>:\~LiteDeploy` (or `LocalRootName`) | `Type=Media` |
+
+```text
+<root>\                                 # e.g. \\Server\Share$ → Z:\   or   E:\~LiteDeploy
+├── Config\
+│   └── BootConfig.json
+├── Content\
+│   ├── BootMedia\
+│   │   ├── ISO\
+│   │   └── WIM\
+│   ├── Drivers\                        # LocalCatalog.json, ComputerModels.csv, packs
+│   ├── OperatingSystems\               # catalog.json + media
+│   ├── Packages\
+│   │   ├── Apps\
+│   │   └── System\                     # e.g. autopilot-enroll, domain-join, …
+│   ├── Temp\
+│   └── Unattend\                       # Standard.xml, DomainJoin.xml, IntuneReady.xml
+├── Engine\
+│   ├── Scripts\
+│   │   ├── Runtime\                    # flat LiteDeploy.*.ps1 + UI\
+│   │   │                               # Engine, DeploymentEngine alias, FullOS, …
+│   │   └── Admin\                      # flat Admin.*.ps1 + UI\
+│   └── Tools\
+│       └── WinPECT\
+├── WorkFlows\                          # *.json
+└── WorkLogs\
+    ├── Admin\
+    └── Deployments\                    # <UID>\ mirrors at runtime
+```
+
+Engine: `<root>\Engine\Scripts\Runtime\LiteDeploy.Engine.ps1`.  
+More: [WinPE bootstrap](_Docs/guides/WINPE_BOOTSTRAP.md), [DeploymentShare README](DeploymentShare/README.md).
+
+---
+
+## Live execution chain
+
+### 1. WinPE (SYSTEM)
+
+```text
+startnet → Boot → Engine -BootObject
+  → HardwarePrecheck → WorkflowSelection → Progress
+  → Disk -ConfirmDestroy → Image -ExecuteSetup
+  → stage Runtime/Tools/state on W:\~LiteDeploy + WinPECT seal → reboot
+```
+
+### 2. FullOS (Session 1, when `actions.Count > 0`)
+
+```text
+specialize: Order 1 description · Order 2 HKLM Run · Orders 3–4 UAC (Domain Join only)
+logon (Audit Admin | AutoLogon) → FullOS.ps1
+  → kill sysprep.exe · re-arm Run · WinPECT · Z: · probe · Packages (planned)
+  → clear Run · restore EnableLUA if bypassed
+```
+
+Native PowerShell share connect only. No SetupComplete / `auditUser` / Task Scheduler for this path.
+
+---
+
+## Component inventory (v2)
+
+### Runtime
+
+| Component | Dev folder | Published file | Role |
+| :--- | :--- | :--- | :--- |
+| Boot | `000-Boot` | `LiteDeploy.Boot.ps1` | startnet parent; share connect; launch Engine |
+| Logs | `010-Logs` | `LiteDeploy.Logs.ps1` | CMTrace + console; mirrors |
+| Environment | `020-Environment` | `LiteDeploy.Environment.ps1` | Named paths, mode, theme helpers |
+| Hardware | `030-Hardware` | `LiteDeploy.Hardware.ps1` | Inventory / readiness |
+| State | `040-State` | `LiteDeploy.State.ps1` | DeploymentState.json + RAM map |
+| Workflow | `050-Workflow` | `LiteDeploy.Workflow.ps1` | Catalog / selection domain |
+| Disk | `060-Disk` | `LiteDeploy.Disk.ps1` | Wipe / partition / format |
+| Drivers | `070-Drivers` | `LiteDeploy.Drivers.ps1` | Catalog/hardware match (extract/stage stubs — not full apply yet) |
+| Image | `080-Image` | `LiteDeploy.Image.ps1` | DISM/Setup, unattend, bcdboot, drivers |
+| Packages | `090-Packages` | `LiteDeploy.Packages.ps1` | Package helpers (FullOS sequencing planned) |
+| Engine | `100-Engine` | `LiteDeploy.Engine.ps1` | WinPE orchestrator |
+| FullOS | `100-Engine` | `LiteDeploy.FullOS.ps1` | Post-boot Session 1 resume |
+| UI.* | `110-UI\...` | `Runtime\UI\LiteDeploy.UI.*` | Precheck, Selection, Progress, Theme, HostShell |
+
+### Admin
+
+| Component | Dev folder | Published file |
+| :--- | :--- | :--- |
+| Admin.Build | `000-Build` | `LiteDeploy.Admin.Build.ps1` |
+| Admin.Content | `010-Content` | `LiteDeploy.Admin.Content.ps1` |
+| Admin.Images | `020-Images` | `LiteDeploy.Admin.Images.ps1` |
+| Admin.Drivers | `030-Drivers` | `LiteDeploy.Admin.Drivers.ps1` |
+| Admin.Packages | `040-Packages` | `LiteDeploy.Admin.Packages.ps1` |
+| Admin.Workflows | `050-Workflows` | `LiteDeploy.Admin.Workflows.ps1` |
+| Admin.Config | `060-Config` | `LiteDeploy.Admin.Config.ps1` |
+| Admin.Validation | `070-Validation` | `LiteDeploy.Admin.Validation.ps1` |
+| Admin.Utilities | `080-Utilities` | `LiteDeploy.Admin.Utilities.ps1` |
+| Admin UI | `090-UI` | `Admin\UI\LiteDeploy.Admin.UI.*` |
+
+Contracts: [Component guide](_Docs/COMPONENT_GUIDE.md).
+
+---
+
+## Related repositories
+
+| Repository | Role |
 | :--- | :--- |
-| [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | Creates WinPE boot media as ISO or `Boot.wim` for WDS/PXE. |
-| [DeployVault](https://github.com/cmartinezone/DeployVault) | Encrypted credential vault on the deployment share. |
-| [WinPECT](https://github.com/cmartinezone/WinPECT) | Hardware-bound credential transfer from WinPE to FullOS. |
+| [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) | WinPE ISO / Boot.wim |
+| [WinPECT](https://github.com/cmartinezone/WinPECT) | WinPE → FullOS credential transfer |
+| [DeployVault](https://github.com/cmartinezone/DeployVault) | Future optional credential vault (not incorporated) |
 
-## Architecture Documentation
+---
 
-- [Deployment Plan](_Docs/architecture/LITEDEPLOY_DEPLOYMENT_PLAN.md)
-- [Architecture Diagrams](_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
-- [Catalog and Workflow Specification](_Docs/architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md)
-- [Project Status & Handoff](_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md)
+## Documentation
+
+| Doc | Use when |
+| :--- | :--- |
+| [_Docs map](_Docs/README.md) | Finding anything |
+| [Project status](_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md) | What works vs gaps |
+| [Architecture diagrams](_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) | E2E sequence & privilege |
+| [Engine reading guide](_Docs/guides/ENGINE_READING_GUIDE.md) | Variables, imports, `-ValidateOnly` |
+| [WinPE bootstrap](_Docs/guides/WINPE_BOOTSTRAP.md) | startnet / bootstrap payload |
+| [Maintenance](_Docs/guides/MAINTENANCE.md) | Smoke tests, publish, release checks |
+| [Credentials / WinPECT](_Docs/integrations/Credentials/README.md) | Secret handoff |
+| [LOCAL_TODO](_Docs/LOCAL_TODO.md) | Active roadmap |
+| [Package orchestrator plan](_Docs/planning/PACKAGE_ORCHESTRATOR_PLAN.md) | Planned FullOS packages |
+| [Engine Scripts README](Engine/Scripts/README.md) | Dev folder map |
+| [Deployment Share README](DeploymentShare/README.md) | Published share layout |
+| [Smoke tests](_Tests/README.md) / [Templates](_Templates/README.md) | Repo tooling |
+
+Keep changes small: one responsibility, explicit inputs, useful errors.

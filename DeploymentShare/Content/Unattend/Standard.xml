@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--WorkflowInfo-->
+<!-- Note: Do NOT remove XML comments; LiteDeploy uses them as dynamic template placeholders. -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- 1. WINDOWS PE PASS (Disk targeting, Setup UI & EULA) -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <!--DiskID-->
+            <!--PartitionID-->
+          </InstallTo>
+          <WillShowUI>OnError</WillShowUI>
+        </OSImage>
+      </ImageInstall>
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <ProductKey>
+          <!--Key-->
+          <WillShowUI>Never</WillShowUI>
+        </ProductKey>
+      </UserData>
+    </component>
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SetupUILanguage>
+        <!--SetupUILanguage-->
+      </SetupUILanguage>
+      <!--InputLocale-->
+      <!--SystemLocale-->
+      <!--UILanguage-->
+      <!--UserLocale-->
+    </component>
+  </settings>
+
+  <!-- 2. SPECIALIZE PASS (Computer Name, TimeZone, Workgroup, Registration) -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!--ComputerName-->
+      <!--TimeZone-->
+      <!--RegisteredOwner-->
+      <!--RegisteredOrganization-->
+    </component>
+    <component name="Microsoft-Windows-UnattendedJoin" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <Identification>
+        <!--JoinWorkGroup-->
+      </Identification>
+    </component>
+    <!-- Order 1: ComputerDescription. Order 2: LiteDeployFullOSRun (only if workflow actions.Count > 0). -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunSynchronous>
+        <!--ComputerDescription-->
+        <!--LiteDeployFullOSRun-->
+      </RunSynchronous>
+    </component>
+    <!--ProvisioningPackage-->
+  </settings>
+
+  <!-- 3. OOBESYSTEM PASS (Regional settings, Suppress OOBE & Local Accounts) -->
+  <settings pass="oobeSystem">
+    <!--ProvisioningPackage-->
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!--InputLocale-->
+      <!--SystemLocale-->
+      <!--UILanguage-->
+      <!--UserLocale-->
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideLocalAccountScreen>false</HideLocalAccountScreen>
+        <ProtectYourPC>1</ProtectYourPC>
+      </OOBE>
+    </component>
+    <!--AuditMode-->
+  </settings>
+</unattend>

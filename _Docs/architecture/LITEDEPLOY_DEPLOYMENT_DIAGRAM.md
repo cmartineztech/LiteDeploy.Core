@@ -1,197 +1,230 @@
-# LiteDeploy Deployment Architecture Diagrams
+# LiteDeploy Architecture and Execution Diagrams
 
-Status: **Planned architecture; not yet fully implemented.**
+Updated 2026-10-13. LiteDeploy Core v2 Architecture:
+- **WinPE Engine** ([`LiteDeploy.Engine.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.Engine.ps1) / [`LiteDeploy.DeploymentEngine.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.DeploymentEngine.ps1))
+- **FullOS Engine** ([`LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.FullOS.ps1))
+- **Actions gating** — `WorkflowTag.Actions`; FullOS Run (+ Audit reseal / Domain Join UAC bypass) only when `actions.Count > 0` (e.g. Intune Ready with 0 actions → OOBE only, no Run)
+- **First FullOS entry** — unattend **specialize** stages `HKLM\...\Run\LiteDeployFullOS` when actions > 0 (short `powershell.exe -File` / `REG_EXPAND_SZ`; no `auditUser`); keep **HKLM Run** as primary resume (not Startup / Task Scheduler)
+- **Logon models** — Standard = Audit Admin (elevated); Domain Join = AutoLogon local admin + temporary `EnableLUA=0` / `UacBypassed` when no `<!--AuditMode-->` and actions > 0; FullOS cleanup restores `EnableLUA=1`
+- **Direct Interactive Desktop Execution** (Session 1):
+  - In-memory WinPECT secret unsealing (`Read-WPCTCredentialTransfer` targeting `LiteDeploy\CredentialTransfer`)
+  - Native PowerShell `New-SmbMapping` + `New-PSDrive`; `EnableLinkedConnections = 1` so `Z:` is Explorer-visible
+  - Log mirroring (`WorkLogs\Deployments\<UID>`)
+  - Kill `sysprep.exe` process; leave stock Setup `CmdLine` (sysprep) intact
+  - Interactive Probe in a second independent PowerShell window (`Start-LiteDeployFullOSInteractiveProbe`); real Progress / packages still open
+- **Reboot Survival** (same HKLM Run value; FullOS may re-arm; LiteDeploy_* scheduled tasks gated off / cleaned)
+- **MDT reference** — stock MDT uses Startup `LiteTouch.lnk` / `RunOnce` / `FirstLogonCommands`→`LTIBootstrap`, not Task Scheduler; LiteDeploy stays on HKLM Run
+- **Future Headless Exploration Roadmap** (Decoupled SYSTEM worker + IPC progress bar, detailed in [`IDEAS_FOR_IMPLEMENTATION.md`](../planning/IDEAS_FOR_IMPLEMENTATION.md) §3)
 
-See [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md) for the technical specification and acceptance criteria.
+---
 
-## 1. End-to-end sequence
+## 0. End-to-End Imaging Process (overview image)
+
+*(Removed — prior `litedeploy-e2e-imaging-process.jpg` was incomplete / outdated. Re-add only after a regenerated overview that matches the live HKLM Run + actions-gating baseline.)*
+
+---
+
+## 1. End-to-End Execution Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Startnet as startnet.cmd
-    participant Boot as BootInitializer<br/>WinPE parent
-    participant Pre as HardwarePreCheck UI
-    participant Select as Workflow UI
-    participant EnginePE as Deployment Engine<br/>WinPE
-    participant DiskPreparation as DiskPreparation Engine<br/>WinPE
-    participant Vault as DeployVault / WPCT
-    participant ProgressPE as Progress UI<br/>WinPE process
-    participant Setup as Windows Setup
-    participant Offline as Offline Windows
-    participant SC as SetupComplete /<br/>specialize fallback
-    participant Task as EngineResume<br/>SYSTEM task
-    participant ProgressOS as ProgressUI<br/>interactive task
+    participant PE as WinPE (LiteDeploy.Engine)
+    participant OSVol as Target OS Volume (C:\)
+    participant WSetup as Windows Setup (First Boot)
+    participant Admin as Session 1 (LiteDeploy.FullOS)
+    participant Share as DeploymentShare (Z:\)
 
-    Startnet->>Boot: Launch PowerShell 5.1 STA shell
-    Boot->>Boot: Load config, network, share credential
-    Boot->>Pre: Invoke with BootObject
-    Pre-->>Boot: Structured HardwarePreCheck result
-    alt Failed or cancelled
-        Boot->>Boot: Stop without changing disk
-    else Passed and Continue
-        Boot->>Select: Invoke with BootObject
-        Select-->>Boot: Structured deployment selection
+    Note over PE,OSVol: 1. WINPE IMAGING AND STAGING
+    PE->>OSVol: Apply OS Image (WIM / Setup.exe)
+    PE->>OSVol: Stage Drivers (C:\~LiteDeploy\Content\Drivers)
+    PE->>OSVol: Stage unattend.xml (specialize Run + Audit/AutoLogon as workflow requires)
+    PE->>OSVol: Copy Runtime and Tools (C:\~LiteDeploy\...)
+    PE->>OSVol: WinPECT seals credentials (SOFTWARE hive LiteDeploy\CredentialTransfer)
+    PE->>OSVol: Save DeploymentState.json
+    PE->>WSetup: Reboot into Windows
+
+    alt Workflow actions Count = 0 (e.g. Intune Ready)
+        Note over WSetup: Specialize skips FullOS Run; continue to OOBE only
+    else actions Count > 0
+        Note over WSetup,Admin: 2. SPECIALIZE ARMS RUN; FIRST INTERACTIVE FULLOS
+        WSetup->>WSetup: Order 1 description; Order 2 reg add HKLM Run (short powershell Path)
+        opt Domain Join (no AuditMode marker)
+            WSetup->>WSetup: Order 3 EnableLUA=0; Order 4 UacBypassed marker
+        end
+        WSetup->>Admin: Interactive logon (Audit Admin or Domain Join AutoLogon)
+        WSetup->>Admin: HKLM Run launches LiteDeploy.FullOS.ps1
+
+        Note over Admin,Share: 3. INTERACTIVE FULLOS (SESSION 1)
+        Admin->>Admin: Kill sysprep.exe process
+        Admin->>OSVol: Re-arm HKLM Run LiteDeployFullOS
+        Admin->>OSVol: Read DeploymentState.json (Status FullOS, Phase 5)
+        Admin->>OSVol: WinPECT unseals secrets in RAM
+        Admin->>Share: New-SmbMapping Z: (EnableLinkedConnections)
+        Admin->>Share: Mirror WorkLogs to Z:\WorkLogs\<DeploymentUid>\
+        Admin->>Admin: Start Interactive Probe (second window)
+        Note over Admin,Share: Packages orchestration planned (not fully wired)
+
+        opt Mid-deploy reboot (re-arm path)
+            Admin->>WSetup: Restart-Computer
+            Note over WSetup,Admin: 4. REBOOT SURVIVAL VIA HKLM RUN
+            WSetup->>Admin: Autologon / interactive logon
+            WSetup->>Admin: HKLM Run launches LiteDeploy.FullOS.ps1
+            Admin->>OSVol: Increment ResumeCount and continue
+        end
+
+        Note over Admin,OSVol: 5. FINALIZATION
+        Admin->>OSVol: Clear HKLM Run; restore EnableLUA if UacBypassed
+        Admin->>OSVol: Save DeploymentState.json (Status Completed)
+        Admin->>Share: Final log mirror
     end
-    alt Selection cancelled
-        Boot->>Boot: Stop without changing disk
-    else Deployment requested
-        Boot->>EnginePE: Start orchestration with BootObject + selection
-        EnginePE->>EnginePE: Revalidate disk, image, drivers, workflow
-        EnginePE->>DiskPreparation: Invoke with disk index, boot mode, staging W:
-        DiskPreparation->>DiskPreparation: Wipe, partition ESP/OS/Recovery, stamp 0x8000000000000001 WinRE flags
-        DiskPreparation-->>EnginePE: Structured disk summary (OS & recovery partition indexes)
-        EnginePE->>Vault: Resolve only required credential IDs
-        Vault-->>EnginePE: In-memory PSCredential map
-        EnginePE->>EnginePE: Generate non-secret Unattend.xml and state
-        EnginePE->>ProgressPE: Start separate progress reader
-        EnginePE->>Setup: Start /NoReboot and wait
-        Setup-->>EnginePE: Exit code; first reboot suppressed
-        EnginePE->>Offline: Locate Windows volume and stage runtime/state
-        EnginePE->>Vault: Create hardware-bound Secrets.bin + offline registry bootstrap
-        EnginePE->>Offline: Stage SetupComplete and specialize fallback
-        EnginePE->>Offline: Verify every handoff artifact
-        EnginePE->>EnginePE: State = RebootRequested
-        EnginePE->>Setup: wpeutil reboot
-    end
-    Setup->>SC: First FullOS boot invokes bootstrap
-    SC->>SC: Register tasks idempotently
-    SC->>Task: Start EngineResume immediately
-    Task->>Vault: Import WPCT package under SYSTEM DPAPI
-    Vault-->>Task: CredentialId.xml files
-    Task->>Task: Resume workflow at first incomplete action
-    Task->>Offline: Atomically update DeploymentState.json
-    Note over Task,ProgressOS: SYSTEM task is background-only;<br/>it does not host the visible WPF window.
-    Setup->>ProgressOS: Interactive user logon triggers UI task
-    ProgressOS->>Offline: Read DeploymentState.json
-    loop Until terminal state
-        Task->>Offline: Write action/percentage/status
-        ProgressOS->>Offline: Poll and render current state
-    end
-    Task->>Task: State = Completed; clean credentials and task
-    ProgressOS->>ProgressOS: Show completion and exit
 ```
 
-## 2. Trust and process boundaries
+---
+
+## 2. Execution & Privilege Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Server[Deployment source]
-        Config[BootConfig + workflow catalog]
-        Content[Windows images and drivers]
-        DV[DeployVault<br/>encrypted vault + seed]
+graph TD
+    subgraph WinPE ["WinPE Environment (SYSTEM)"]
+        Boot["LiteDeploy.Boot.ps1<br/>(Network and Share Z:)"] --> Engine["LiteDeploy.Engine.ps1<br/>(Precheck, Disk, Image)"]
+        Engine --> Handoff["Handoff<br/>1. Stage Runtime + Tools<br/>2. WinPECT SOFTWARE hive credentials"]
     end
 
-    subgraph PE[WinPE - SYSTEM process]
-        BI[BootInitializer]
-        UI[HardwarePreCheck + Workflow UI]
-        EPE[Deployment Engine]
-        DF[DiskPreparation Engine]
-        PPE[Progress UI process]
-        BO[BootObject<br/>in memory only]
+    subgraph WindowsFirstBoot ["Windows First Boot"]
+        ActionsGate{"actions.Count > 0?"}
+        ActionsGate -->|No| OOBE["OOBE only (no FullOS Run)"]
+        ActionsGate -->|Yes| Specialize["specialize: Order 2 HKLM Run<br/>+ DJ Orders 3–4 EnableLUA=0 if needed"]
+        Specialize --> Logon["Interactive logon<br/>Audit Admin or AutoLogon"]
+        Logon --> FullOSLaunch["HKLM Run → FullOS.ps1"]
     end
 
-    subgraph Disk[Installed OS staging]
-        Sel[DeploymentSelection.json<br/>no secrets]
-        State[DeploymentState.json<br/>no secrets]
-        Bin[Secrets.bin<br/>encrypted + hardware bound]
-        Hive[Offline SOFTWARE hive<br/>bootstrap material]
-        Runtime[Local LiteDeploy runtime]
+    subgraph Session1 ["Session 1 (Interactive Desktop)"]
+        FullOSLaunch --> FullOS["LiteDeploy.FullOS.ps1"]
+        FullOS --> KillSysprep["Stop-Process sysprep.exe"]
+        FullOS --> Unseal["WinPECT in-memory secret unseal"]
+        Unseal --> MountZ["New-SmbMapping Z:<br/>EnableLinkedConnections=1"]
+        MountZ --> Mirror["Log mirror to remote UID"]
+        Mirror --> Arm["Re-arm HKLM Run"]
+        Arm --> Probe["Interactive Probe second window"]
+        Arm --> Pkg["Packages (planned)"]
+        Pkg -->|Reboot when wired| RebootLoop["Reboot Computer"]
+        RebootLoop --> RunKey["HKLM Run LiteDeployFullOS"]
+        RunKey --> FullOS
+        FullOS --> Cleanup["Clear Run + restore EnableLUA if bypassed"]
     end
 
-    subgraph OS[FullOS]
-        Bootstrap[SetupComplete / specialize<br/>SYSTEM bootstrap]
-        Engine[EngineResume task<br/>SYSTEM, background]
-        Secrets[DPAPI CLIXML<br/>SYSTEM-owned]
-        PUI[ProgressUI task<br/>interactive user]
-    end
-
-    Config --> BI
-    Content --> EPE
-    DV -->|Required IDs only| EPE
-    BI --> BO --> UI --> EPE
-    EPE --> DF
-    EPE --> Sel
-    EPE --> State
-    EPE --> Bin
-    EPE --> Hive
-    EPE --> Runtime
-    State --> PPE
-    Runtime --> Bootstrap --> Engine
-    Bin --> Engine
-    Hive --> Engine
-    Engine --> Secrets
-    Engine -->|Atomic state writes| State
-    State -->|Read only| PUI
-
-    classDef secret fill:#ffe3e3,stroke:#c92a2a,color:#5f0000
-    classDef state fill:#e7f5ff,stroke:#1971c2,color:#003b66
-    class DV,Bin,Hive,Secrets secret
-    class Sel,State state
+    Handoff ==>|Machine Reboots into OS| WindowsFirstBoot
+    WindowsFirstBoot ==> Session1
 ```
 
-## 3. Durable state transitions
+---
 
-```mermaid
-stateDiagram-v2
-    [*] --> Initialized
-    Initialized --> SetupStarting: Selection and credentials validated
-    SetupStarting --> Failed: Setup launch or exit failure
-    SetupStarting --> SetupReturned: Accepted Setup result
-    SetupReturned --> Failed: Offline Windows validation failed
-    SetupReturned --> OfflineHandoffStaged: Runtime, state, WPCT, bootstrap verified
-    OfflineHandoffStaged --> Failed: Final validation failed
-    OfflineHandoffStaged --> RebootRequested: State committed atomically
-    RebootRequested --> FullOSBootstrap: Controlled first reboot
-    FullOSBootstrap --> CredentialImport: Tasks registered idempotently
-    CredentialImport --> Failed: Required credential import failed
-    CredentialImport --> WorkflowRunning: SYSTEM DPAPI credentials verified
-    WorkflowRunning --> WorkflowRunning: Complete next idempotent action
-    WorkflowRunning --> Failed: Non-retryable action failure
-    WorkflowRunning --> RebootRequested: Workflow action requires reboot
-    WorkflowRunning --> Completed: All actions complete
-    Completed --> [*]
-```
-
-## 4. FullOS bootstrap decision flow
+## 3. WinPE Runtime Pipeline Architecture
 
 ```mermaid
 flowchart TD
-    Boot[Windows reaches specialize / SetupComplete] --> Entry{Which bootstrap entry ran?}
-    Entry -->|SetupComplete.cmd| Script[LiteDeploy.FullOSBootstrap.ps1]
-    Entry -->|Unattend specialize fallback| Script
-    Script --> Validate{Runtime and state valid?}
-    Validate -->|No| Fail[Write Failed state and safe bootstrap log]
-    Validate -->|Yes| TaskExists{EngineResume task matches desired definition?}
-    TaskExists -->|No| Register[Create or replace SYSTEM task]
-    TaskExists -->|Yes| Keep[Keep existing task]
-    Register --> UIReg[Create or update interactive ProgressUI task]
-    Keep --> UIReg
-    UIReg --> Running{Engine instance already owns deployment lock?}
-    Running -->|Yes| Exit[Exit bootstrap successfully]
-    Running -->|No| Run[schtasks /Run EngineResume]
-    Run --> Exit
+    subgraph BootPhase["Phase 0: WinPE Bootstrap"]
+        StartNet["startnet.cmd"] --> BootInit["LiteDeploy.Boot.ps1<br/>or legacy BootInitializer"]
+        BootInit --> NetConn["Network / DHCP / SMB Connect"]
+        NetConn --> MountShare["Mount Deployment Share (Z:)"]
+        MountShare --> HandEngine["LiteDeploy.Engine.ps1<br/>alias: DeploymentEngine.ps1"]
+    end
+
+    subgraph EnginePhase["Phases 1-4: Precheck through Image"]
+        HandEngine --> Precheck["UI.HardwarePrecheck"]
+        Precheck --> Selection["UI.WorkflowSelection"]
+        Selection --> Progress["UI.Progress host"]
+        Progress --> Disk["LiteDeploy.Disk -ConfirmDestroy"]
+        Disk --> Image["LiteDeploy.Image -ExecuteSetup"]
+    end
+
+    subgraph HandoffPhase["Phase 5: Handoff and Staging"]
+        Image --> StagePayload["Stage Runtime + Tools"]
+        StagePayload --> WinPECT["WinPECT export (RAM secrets + SOFTWARE hive)"]
+        WinPECT --> HandoffLogs["Logs and State Mirror to W:\\~LiteDeploy"]
+        HandoffLogs --> StopProgress["Stop-LiteDeployProgressHost"]
+        HandoffLogs --> RebootTarget["Reboot into installed Windows"]
+    end
 ```
 
-## 5. Reboot ownership
+---
 
-```text
-WinPE Setup launch
-    |
-    | setup.exe /NoReboot
-    v
-Setup returns to LiteDeploy
-    |
-    | stage + validate runtime, state, credentials, and bootstrap
-    v
-LiteDeploy requests FIRST reboot with wpeutil
-    |
-    v
-Windows Setup controls its later installation reboots
-    |
-    v
-FullOS EngineResume controls only workflow-requested reboots
+## 4. Component Responsibility Matrix
+
+| Component | Execution Context | Trigger | Key Responsibilities |
+| :--- | :--- | :--- | :--- |
+| [`LiteDeploy.Engine.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.Engine.ps1) | WinPE (SYSTEM) | `LiteDeploy.Boot.ps1` | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
+| [`LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.FullOS.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | State progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
+| [`LiteDeploy.FullOS.InteractiveProbe.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.FullOS.InteractiveProbe.ps1) | Session 1 | `Start-Process` from FullOS | Temporary Progress dry-run in a second window; monitors state / `Z:`. |
+| [`LiteDeploy.Image.ps1`](../../Engine/Scripts/Runtime/LiteDeploy.Image.ps1) | WinPE | Engine Image phase | Unattend: Order 1 description; Order 2 FullOS Run when `WorkflowTag.Actions` > 0; Orders 3–4 `EnableLUA=0` + marker when Domain Join (no Audit) + actions; Audit reseal when `<!--AuditMode-->` + actions. |
+| **HKLM Run** | Interactive admin | specialize first arm; logon thereafter | Primary FullOS entry + mid-deploy reboot survival (`LiteDeployFullOS`). Kept for now (not MDT Startup / Task Scheduler). |
+| **Setup CmdLine (sysprep)** | Windows Setup / Audit | stock Audit continue | Left intact; FullOS kills the `sysprep.exe` process instead of rewriting Setup. |
+
+---
+
+## 5. Disk Layout Architectures
+
+```mermaid
+classDiagram
+    class UEFI_GPT_Layout {
+        +Partition 1: EFI System Partition (ESP) - FAT32 (S:) [100 MB - 500 MB]
+        +Partition 2: Microsoft Reserved (MSR) [16 MB - 128 MB]
+        +Partition 3: Windows OS Partition - NTFS (W:) [Primary Volume]
+        +Partition 4: Windows Recovery (WinRE) - NTFS [500 MB - 1 GB]
+    }
+
+    class BIOS_MBR_Layout {
+        +Partition 1: System Reserved (Active / Boot) - NTFS (S:) [500 MB]
+        +Partition 2: Windows OS Partition - NTFS (W:) [Primary Volume]
+    }
 ```
 
-`/NoReboot` suppresses only the first Windows Setup reboot. The FullOS resume state must therefore already exist before LiteDeploy calls `wpeutil reboot`.
+---
+
+## 6. Logs & State Synchronization (Quad Mirror Architecture)
+
+```mermaid
+flowchart LR
+    StateSource["LiteDeploy State & Log Generator"]
+    
+    StateSource -->|1. Live IPC / MMF| RAM["RAM / Memory-Mapped File (Progress UI live)"]
+    StateSource -->|2. WinPE Ramdisk| LocalDisk["X:\\~LiteDeploy\\WorkLogs\\"]
+    StateSource -->|3. OS Volume Target| TargetVolume["C:\\~LiteDeploy\\WorkLogs\\"]
+    StateSource -->|4. Deployment Share| RemoteShare["Z:\\WorkLogs\\Deployments\\<UID>\\"]
+```
+
+---
+
+## 7. Component Ownership & Publishing Layout
+
+```mermaid
+flowchart LR
+    subgraph DevelopmentRepo["Development Repository"]
+        AdminSrc["Engine\\Scripts\\Admin\\000-090"]
+        RuntimeSrc["Engine\\Scripts\\Runtime\\000-110"]
+        UISrc["Runtime\\110-UI"]
+        ToolsSrc["Engine\\Tools\\WinPECT\\"]
+    end
+
+    subgraph AdminBuild["Admin.Build → C:\\DeploymentShare"]
+        AdminSrc --> BuildProc["LiteDeploy.Admin.Build.ps1"]
+        RuntimeSrc --> BuildProc
+        UISrc --> BuildProc
+        ToolsSrc --> BuildProc
+    end
+
+    subgraph PublishedShare["Production share layout"]
+        BuildProc --> FlatRuntime["Engine\\Scripts\\Runtime\\LiteDeploy.Engine.ps1"]
+        BuildProc --> FlatFullOS["Engine\\Scripts\\Runtime\\LiteDeploy.FullOS.ps1"]
+        BuildProc --> CompatAlias["LiteDeploy.DeploymentEngine.ps1<br/>byte-identical alias"]
+        FlatRuntime -.->|copy| CompatAlias
+        BuildProc --> FlatUI["Runtime\\UI\\"]
+        BuildProc --> FlatAdmin["Engine\\Scripts\\Admin\\"]
+        BuildProc --> FlatTools["Engine\\Tools\\WinPECT\\"]
+        FlatTools --> StageOS["WinPE handoff to OS volume"]
+        FlatRuntime --> StageOS
+        FlatFullOS --> StageOS
+    end
+```
 

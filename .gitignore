@@ -18,3 +18,27 @@ Secrets.bin
 
 # Local tooling
 .vscode/
+
+# Local-only / scratch (not part of the product tree)
+/_Experiments/
+/_TestFixtures/
+
+# Accidental Admin.Build / Production-layout mirrors inside the git source tree.
+# Editable source is numbered folders only (Runtime\000-Boot\, Admin\000-Build\, …).
+# Flat LiteDeploy.*.ps1 (+ UI\) belong on DeploymentShare (or another publish root), not here.
+/Engine/Scripts/Runtime/LiteDeploy.*.ps1
+/Engine/Scripts/Runtime/LiteDeploy.DeploymentEngine.ps1
+/Engine/Scripts/Runtime/SetupComplete.cmd
+/Engine/Scripts/Runtime/UI/
+/Engine/Scripts/Admin/LiteDeploy.Admin.*.ps1
+/Engine/Scripts/Admin/UI/
+
+# Bun WinPE experiment binaries staged on the share (rebuild via Publish-ToDeploymentShare.ps1)
+DeploymentShare/Tools/BunWinPeSuite/**/*.exe
+DeploymentShare/Tools/BunWinPeSuite/node_modules/
+DeploymentShare/Tools/BunWinPeSuite/Results/
+DeploymentShare/Tools/BunWinPeSuite/Catalogs/
+DeploymentShare/Tools/BunWinPeSuite/CatalogWork/
+DeploymentShare/Tools/BunWinPeSuite/Packs/
+DeploymentShare/Tools/BunWinPeSuite/**/BunWinPeSuite.Results*.json
+DeploymentShare/Tools/BunWinPeSuite/**/BunWinPeSuite.DownloadProbe.txt

@@ -3,35 +3,23 @@
   "workflowId": "intune-ready",
   "name": "Intune Ready",
   "description": "Entra joined and enrolled in Intune",
+  "comment": "No FullOS actions yet — unattend skips HKLM Run FullOS and AuditMode reseal.",
+  "order": 2,
+  "expanded": true,
   "enabled": true,
   "revision": 1,
   "osCatalogPath": "Content/OperatingSystems/catalog.json",
-  "unattendPath": "Content/Unattend/Autopilot.xml",
+  "unattendPath": "Content/Unattend/IntuneReady.xml",
   "operatingSystems": [
     {
-      "osId": "win11-25h2-en-us-26200.8037-x64",
+      "osId": "win11-26h2-26300.9457-x64",
       "editionIds": [
-        "win11-25h2-windows-11-pro-26200.8037-x64"
-      ]
-    },
-    {
-      "osId": "win11-26h2-en-us-26300.8772-x64",
-      "editionIds": [
-        "win11-26h2-windows-11-pro-26300.8772-x64",
-        "win11-26h2-windows-11-enterprise-26300.8772-x64"
+        "win11-26h2-windows-11-enterprise-26300.9457-x64",
+        "win11-26h2-windows-11-education-26300.9457-x64"
       ]
     }
   ],
+  "computerSetup": {},
   "requiredCredentialIds": [],
-  "actions": [
-    {
-      "actionId": "autopilot-enroll",
-      "name": "Enroll in Intune with Autopilot",
-      "packageId": "autopilot-enroll",
-      "phase": "FullOS",
-      "executionContext": "System",
-      "requiredCredentialIds": [],
-      "continueOnError": false
-    }
-  ]
+  "actions": []
 }

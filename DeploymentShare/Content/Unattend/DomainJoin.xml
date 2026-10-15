@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--WorkflowInfo-->
+<!-- Note: Do NOT remove XML comments; LiteDeploy uses them as dynamic template placeholders. -->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- 1. WINDOWS PE PASS (Disk targeting, Setup UI & EULA) -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <!--DiskID-->
+            <!--PartitionID-->
+          </InstallTo>
+          <WillShowUI>OnError</WillShowUI>
+        </OSImage>
+      </ImageInstall>
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <ProductKey>
+          <!--Key-->
+          <WillShowUI>Never</WillShowUI>
+        </ProductKey>
+      </UserData>
+    </component>
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SetupUILanguage>
+        <!--SetupUILanguage-->
+      </SetupUILanguage>
+      <!--InputLocale-->
+      <!--SystemLocale-->
+      <!--UILanguage-->
+      <!--UserLocale-->
+    </component>
+  </settings>
+
+  <!-- 2. SPECIALIZE PASS (Computer Name, TimeZone, Domain Join, Registration) -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!--ComputerName-->
+      <!--TimeZone-->
+      <!--RegisteredOwner-->
+      <!--RegisteredOrganization-->
+    </component>
+    <component name="Microsoft-Windows-UnattendedJoin" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <Identification>
+        <!--Credentials-->
+        <!--JoinDomain-->
+        <!--JoinWorkGroup-->
+        <!--MachineObjectOU-->
+        <!--OfflineDomainJoinBlob-->
+      </Identification>
+    </component>
+    <!-- Order 1: ComputerDescription. Order 2: LiteDeployFullOSRun. Order 3: DisableUacForFullOS (Domain Join / non-Audit only; FullOS restores). -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunSynchronous>
+        <!--ComputerDescription-->
+        <!--LiteDeployFullOSRun-->
+        <!--DisableUacForFullOS-->
+      </RunSynchronous>
+    </component>
+    <!--ProvisioningPackage-->
+  </settings>
+
+  <!-- 3. OOBESYSTEM PASS (Regional settings, Suppress OOBE & Local Accounts) -->
+  <settings pass="oobeSystem">
+    <!--ProvisioningPackage-->
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!--InputLocale-->
+      <!--SystemLocale-->
+      <!--UILanguage-->
+      <!--UserLocale-->
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>user</Name>
+            <DisplayName>user</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
+              <PlainText>false</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+      <!--UserAccounts-->
+      <!-- AutoLogon: local test admin "user". HKLM Run FullOS (if actions>0) starts for whatever interactive account signs in (this user, built-in Admin, etc.). No AuditMode on Domain Join. -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>user</Username>
+        <LogonCount>999</LogonCount>
+        <Password>
+          <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
+          <PlainText>false</PlainText>
+        </Password>
+      </AutoLogon>
+    </component>
+  </settings>
+</unattend>

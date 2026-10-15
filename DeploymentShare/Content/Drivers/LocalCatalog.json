@@ -1,0 +1,38 @@
+﻿{
+    "Manufacturers":  {
+                          "Microsoft":  {
+                                            "Catalog":  {
+                                                            "Version":  "sample.1.0",
+                                                            "DateTime":  "2026-10-09T16:39:33",
+                                                            "DownloadedOn":  "2026-10-09T16:39:33"
+                                                        },
+                                            "DrivePacks":  [
+
+                                                           ]
+                                        },
+                          "Dell Inc.":  {
+                                            "Catalog":  null,
+                                            "DrivePacks":  [
+                                                               {
+                                                                   "SystemSKU":  [
+                                                                                     "TEST1"
+                                                                                 ],
+                                                                   "Model":  "Test Model Wim",
+                                                                   "FileName":  "DriverPackage.wim",
+                                                                   "ContentLocation":  "Dell Inc\\Test Model Wim\\Content",
+                                                                   "OSVersion":  "Windows11",
+                                                                   "ReleaseDate":  "2026-10-09",
+                                                                   "Format":  "wim",
+                                                                   "Size":  1539,
+                                                                   "SHA256":  "19845624FC1352F3E8EAA9C2989A62CC94D4651F1786C6625AEDAF01B3682476",
+                                                                   "Url":  "",
+                                                                   "DownloadedOn":  "2026-10-09T17:28:06",
+                                                                   "ContentExtracted":  true,
+                                                                   "ExtractedOn":  "2026-10-09T17:28:06",
+                                                                   "WimLocation":  "Dell Inc\\Test Model Wim\\DriverPackage.wim",
+                                                                   "MatchBy":  "SKU"
+                                                               }
+                                                           ]
+                                        }
+                      }
+}

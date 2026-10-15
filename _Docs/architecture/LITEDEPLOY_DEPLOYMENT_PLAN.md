@@ -1,411 +1,62 @@
-# LiteDeploy Deployment Orchestration Plan
+# LiteDeploy Deployment Plan (Architecture v2)
 
-Status: **Proposed implementation plan; orchestration code is not yet implemented.**
+## Goal
 
-This document defines how LiteDeploy will move from WinPE selection into Windows Setup, preserve credentials securely across the reboot, resume the selected workflow in the installed operating system, and display deployment progress.
+Bare-metal Windows deployment from WinPE with a thin Boot parent, domain Runtime components, and WPF UI screens. Numbered source folders are **dev/repo organization only**; production loads **flat** published scripts.
 
-Related project documents:
+## Principles
 
-- [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) — architecture and sequence diagrams.
-- [LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md](LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md) — OS, workflow, action, and package JSON contracts.
-- [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md) — current implementation inventory and continuation checklist.
-- [WinPEBuilder](https://github.com/cmartinezone/WinPEBuilder) — WinPE ISO and `Boot.wim` builder for WDS/PXE (separate repository).
-- [DeployVault](https://github.com/cmartinezone/DeployVault) — encrypted credential vault (separate repository).
-- [WinPECT](https://github.com/cmartinezone/WinPECT) — WinPE to FullOS credential transfer (separate repository).
+1. PowerShell 5.1 + WinPE; `Set-StrictMode -Version 2.0`.
+2. Boot remains the WinPE parent STA process (`startnet`).
+3. Environment owns named paths. Engine verifies requirements, visibly imports missing helpers, then sequences phases.
+4. Credentials stay in-memory (`PSCredential`); share mount via native PowerShell only.
+5. Disk/Image are non-destructive unless Engine passes `-ConfirmDestroy` / `-ExecuteSetup`.
+6. UI theme comes from `BootConfig.Ui.Theme` and is shared across Precheck, WorkflowSelection, Progress.
 
-## 1. Design goals
-
-- Keep `LiteDeploy.BootInitializer.ps1` as the parent WinPE shell started by `startnet.cmd`.
-- Run HardwarePreCheck and workflow selection in the same PowerShell process so the in-memory `BootObject` and deployment-share `PSCredential` are preserved.
-- Generate an unattended answer file from the validated workflow selections.
-- Run Windows Setup with `/NoReboot` and let LiteDeploy control the first reboot.
-- Stage the FullOS engine, progress host, state, and encrypted credentials before rebooting.
-- Use `SetupComplete.cmd` to register and start the FullOS continuation tasks.
-- Run the deployment engine as `NT AUTHORITY\SYSTEM` and keep its WPF progress UI in an interactive user session.
-- Make every transition resumable and idempotent so an unexpected reboot does not repeat destructive disk or Setup operations.
-- Never store plaintext credentials in the unattended file, JSON state, command-line arguments, or logs.
-
-## 2. Component responsibilities
-
-| Component | Phase | Responsibility |
-| --- | --- | --- |
-| `LiteDeploy.BootInitializer.ps1` | WinPE | Persistent parent shell; loads configuration, initializes networking, maps the deployment source, obtains the share credential, and launches DeploymentEngine. Unhandled engine errors → GUI (return discarded) + `Write-LiteDeployPauseNotice` (`[NOTICE]` / `startnet`). |
-| `LiteDeploy.Hardware.ps1` | WinPE | Importable inventory helpers; includes `Get-HardwarePhysicalDisks` / `Test-HardwareDiskSelectionHasCapacity` for WorkflowSelection wipe-target grid. |
-| `LiteDeploy.HardwarePreCheck.ps1` | WinPE | BootConfigPath-driven readiness UI. Markup in sibling `LiteDeploy.HardwarePreCheck.UI.xaml`. Uses `LiteDeploy.Hardware` for inventory. Returns `{ Passed, BootConfigPath, Inventory }` to DeploymentEngine. |
-| `LiteDeploy.WorkflowSelection.ps1` | WinPE | PreCheck-chrome wizard: identity, firmware, catalog workflows, disk (`DriveSelection`), drivers (OEM Info dialog, truncated OEM combo paths, LocalCatalog + optional media online). Contract: `-BootConfigPath`, optional `-BootConfig` / `-DeploymentUid`, `-DeploymentSharePath`. Returns selection object + `%SystemDrive%\WorkflowSelection.json`. Planned: return last `BootConfig` + structured `Drivers` metadata. |
-| `LiteDeploy.WorkflowSelectionDriverPicker.ps1` | WinPE | Themed WinPE WPF driver-folder browser: DeploymentShare (Z:) labeling, live Select blocking for roots/system paths, `.inf`/`.sys`/`.cat` BFS depth 8 on confirm. |
-| `LiteDeploy.DriverStaging.ps1` | WinPE | Importable LocalCatalog detection (pack metadata, Content vs Archive for Dell/Lenovo), online reachability. Logs catalog load + match only. Extract/inject/download reserved. |
-| `LiteDeploy.DeploymentEngine.ps1` | Both | Runtime pipeline orchestrator. In WinPE it sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and Setup; in FullOS it resumes workflow actions from persisted state. |
-| `LiteDeploy.DiskPreparation.ps1` | WinPE | Wipes target storage, applies certified UEFI/GPT or Legacy/MBR layout, mounts temporary OS staging volume (W:), and stamps WinRE recovery attributes (0x8000000000000001). |
-| `LiteDeploy.Progress.ps1` | Both | Read-only WPF progress client. It renders `DeploymentState.json`; it does not own deployment operations. |
-| [DeployVault](https://github.com/cmartinezone/DeployVault) | WinPE/server | Resolves only the credential IDs declared by the selected workflow. The vault files remain on the deployment source. |
-| [WinPECT](https://github.com/cmartinezone/WinPECT) | WinPE to FullOS | Encrypts the required `PSCredential` objects for the target machine and imports them into SYSTEM-owned DPAPI CLIXML after boot. |
-| `SetupComplete.cmd` | FullOS bootstrap | Registers the scheduled tasks and immediately starts the engine-resume task. It contains no workflow logic or secrets. |
-| Task Scheduler | FullOS | Runs the engine reliably as SYSTEM and starts the progress UI in an interactive session. |
-
-### Planned production layout
-
-The development repository keeps each runtime component in a numbered folder under `Engine/Scripts/Runtime/`. `SyncComponents` publishes the `.ps1` files as flat siblings.
+## Execution sequence
 
 ```text
-Engine/Scripts/Runtime/                 repository
-  000-LogWriter/
-  000-HostShell/
-  000-Progress/
-  010-BootInitializer/
-  020-DeploymentEngine/
-  030-HardwarePreCheck/
-    LiteDeploy.HardwarePreCheck.ps1
-    LiteDeploy.HardwarePreCheck.UI.xaml
-    SingleFile/                         reference only (not synced)
-  040-WorkflowSelection/
-  050-DiskPreparation/
-  060-DriverStaging/                    detection helpers (extract/inject reserved)
-  070-AnswerFileGenerator/              reserved
-  080-OSInstallation/
-  090-CredentialTransfer/               reserved
-  100-DeploymentCleanup/                reserved
-
-Network boot
-  Z:\Engine\Scripts\Runtime\LiteDeploy.<Component>.ps1
-
-Media boot
-  E:\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.<Component>.ps1
+1. startnet.cmd → powershell -STA LiteDeploy.Boot.ps1
+2. Boot discovers BootConfig.json (media or local), optional network share map to Z:
+3. Boot builds BootObject (paths, mode, credential, Config) and launches Engine
+4. Engine creates provisional local state without an ID; resolves Ui.Theme
+5. Phase 1 — UI.HardwarePrecheck
+6. Assign deployment ID; Phase 2 — UI.WorkflowSelection; after Passed=true and valid target, create remote log folder
+7. Start UI.Progress; Phase 3 — Disk format; Logs enables the selected OS-volume handoff
+8. Phase 4 — Image (setup.exe /NoReboot)
+9. Success — Status Completed; artifacts on RAM + share + OS volume
+10. Failure — Status Failed/Cancelled; Progress stays visible (if started); console NOTICE
 ```
 
-Published runtime scripts:
-
-```text
-LiteDeploy.LogWriter.ps1
-LiteDeploy.HostShell.ps1
-LiteDeploy.LogWriter.ps1
-LiteDeploy.Hardware.ps1
-LiteDeploy.HostShell.ps1
-LiteDeploy.Progress.ps1
-LiteDeploy.BootInitializer.ps1
-LiteDeploy.DeploymentEngine.ps1
-LiteDeploy.HardwarePreCheck.ps1
-LiteDeploy.HardwarePreCheck.UI.xaml
-LiteDeploy.WorkflowSelection.ps1
-LiteDeploy.WorkflowSelection.UI.xaml
-LiteDeploy.WorkflowSelectionDriverPicker.ps1
-LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml
-LiteDeploy.DiskPreparation.ps1
-LiteDeploy.DriverStaging.ps1
-LiteDeploy.OSInstallation.ps1
-```
-
-The deployment engine resolves sibling scripts from `$PSScriptRoot`. WorkflowSelection also imports sibling `LiteDeploy.Hardware.ps1` and `LiteDeploy.DriverStaging.ps1`. It does not depend on local repository development paths.
-
-## 3. End-to-end execution sequence
-
-### Phase A: WinPE initialization and selection
-
-1. `startnet.cmd` launches `LiteDeploy.BootInitializer.ps1` in Windows PowerShell 5.1 STA mode.
-2. BootInitializer discovers `BootConfig.json`, initializes networking, connects the deployment source, and creates `BootObject`.
-3. DeploymentEngine invokes HardwarePreCheck with `& $preCheckPath -BootConfigPath $BootObject.ConfigPath`.
-4. HardwarePreCheck closes and returns `{ Passed, BootConfigPath, Inventory }`.
-5. If HardwarePreCheck did not pass or Continue was not selected, DeploymentEngine stops without changing a disk.
-6. DeploymentEngine invokes WorkflowSelection (`-BootConfigPath`, optional `-BootConfig`, `-DeploymentSharePath`, `-DeploymentUid`). WorkflowSelection imports Hardware + DriverStaging.
-7. Workflow selection returns a structured selection object (disk rows from `Get-HardwarePhysicalDisks`; drivers from DriverStaging).
-8. If the technician cancels or WorkflowSelection fails, DeploymentEngine stops without changing a disk. Unhandled throws surface to BootInitializer → `[NOTICE]` / `startnet`.
-
-### Phase B: validation, disk preparation, credentials, and Setup preparation
-
-1. The deployment engine validates the target disk number again against current hardware immediately before any destructive operation.
-2. It invokes `LiteDeploy.DiskPreparation.ps1` with the selected disk index, firmware boot mode (UEFI/GPT or Legacy/MBR), and temporary OS staging letter (`W:`). The disk is cleared, partition structure created, NTFS/FAT32 volumes formatted, and `0x8000000000000001` WinRE attributes applied.
-3. It resolves the selected image, edition/index, drivers, workflow definition, and required credential IDs.
-4. It obtains `DeploymentShare` from `BootObject.Credential` when FullOS needs access to the share.
-5. It resolves only the selected workflow's required IDs through DeployVault.
-6. Missing, disabled, or duplicate required credentials stop deployment before disk modification.
-7. It generates the unattended answer file without passwords or serialized credentials, mapping computer identity and registration details (`RegisteredOrganization`, `RegisteredOwner`, `TimeZone`, `KeyboardLocale`) directly from `BootConfig.json` (`ComputerSetup`).
-8. It creates the deployment state and starts the WinPE progress host as a separate process.
-9. It launches Windows Setup, waits for it to exit, and records the exit code.
-
-Conceptual invocation:
+## Publish
 
 ```powershell
-$process = Start-Process `
-    -FilePath $setupPath `
-    -ArgumentList $setupArguments `
-    -Wait `
-    -PassThru
+.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+  -DeploymentShare "C:\DeploymentShare" -Clean
 ```
 
-`$setupArguments` must include `/NoReboot` and the generated unattended answer-file argument. The final command builder will add only switches supported by the selected Setup media.
+Produces:
 
-### Phase C: controlled pre-reboot handoff
+- `Engine\Scripts\Runtime\` — flat domain scripts
+- `Engine\Scripts\Runtime\UI\` — flat UI
+- `Engine\Scripts\Admin\` — flat admin
 
-LiteDeploy reboots only after all of the following succeed:
-
-1. Windows Setup returns an accepted success code.
-2. The installed Windows volume is rediscovered by its Windows directory; drive letter `C:` is not assumed in WinPE.
-3. The offline Windows installation and `Windows\System32\Config\SOFTWARE` hive exist.
-4. The local LiteDeploy runtime is copied to the installed operating system.
-5. The workflow selection and deployment state are persisted atomically.
-6. WinPECredentialTransfer writes `Secrets.bin` and its hardware-bound bootstrap material to the offline SOFTWARE hive.
-7. `Windows\Setup\Scripts\SetupComplete.cmd` and the FullOS bootstrap script are staged.
-8. Every required handoff artifact is re-opened and validated.
-9. The state advances to `RebootRequested`.
-10. WinPE calls `wpeutil reboot`.
-
-If any verification fails, LiteDeploy does not reboot. It marks the deployment `Failed`, leaves the WinPE console available, and shows a Windows Forms alert containing a safe error message and log location.
-
-## 4. Windows Setup `/NoReboot` requirements
-
-Microsoft documents that `/NoReboot` suppresses only the first reboot. Subsequent Windows Setup reboots are not suppressed. WinPE support begins with Windows 11 version 24H2 Setup.
-
-Required behavior:
-
-- Inspect the Setup executable version before launch.
-- Require Windows 11 24H2/26100-or-newer Setup when using `/NoReboot` from WinPE.
-- Fail closed when the media does not meet the requirement.
-- Never infer success only because `setup.exe` returned; validate its exit code, logs, and offline Windows artifacts.
-- Do not reboot after a failed or indeterminate Setup result.
-
-Reference: [Windows Setup command-line options](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-setup-command-line-options?view=windows-11).
-
-## 5. Installed-OS staging layout
-
-The WinPE drive letter for the installed OS is temporary. All paths are built relative to the detected offline Windows volume. After boot, that volume is expected to be `C:` and the runtime layout is:
+## WinPE inject (minimal)
 
 ```text
-C:\~LiteDeploy\
-  Engine\
-    Scripts\
-      LiteDeploy.DeploymentEngine.ps1
-      LiteDeploy.Progress.ps1
-      LiteDeploy.FullOSBootstrap.ps1
-    Credentials\
-      WinPECredentialTransfer.ps1
-      LiteDeploy-FullOS-Credential.ps1
-    Secrets\
-      <CredentialId>.xml
-  State\
-    DeploymentSelection.json
-    DeploymentState.json
-    Secrets.bin
-  Logs\
-    LiteDeploy.Engine.log
-    LiteDeploy.Setup.log
-
-C:\Windows\Setup\Scripts\
-  SetupComplete.cmd
+X:\~LiteDeploy\
+  Boot\LiteDeploy.Boot.ps1
+  Runtime\LiteDeploy.Logs.ps1
+  Runtime\LiteDeploy.Environment.ps1
+  Runtime\LiteDeploy.Hardware.ps1
+  Config\BootConfig.json
 ```
 
-`Engine\Secrets` must be ACL-restricted to SYSTEM and Administrators. `Secrets.bin` and the temporary bootstrap registry material are deleted after a successful DPAPI import.
+Full Engine/UI come from the mapped share (`Z:\Engine\…`) or offline media `~\LiteDeploy\Engine\…`.
 
-## 6. SetupComplete and scheduled-task design
+## Soft-fail policy
 
-### SetupComplete responsibilities
+Unhandled throws and phase failures set deployment `Status` to `Failed` or `Cancelled`, save state, restore console, and print `[NOTICE]` / `startnet` guidance. Disk formatting starts only after a confirmed selection and valid target index. A failed format can still leave the disk partially changed.
 
-`SetupComplete.cmd` runs as Local System. It must remain small and deterministic:
+FullOS resume (specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1`, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z:, Interactive Probe second window) is implemented; Packages orchestration and driver application gaps remain. See [current diagrams](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [maintenance](../guides/MAINTENANCE.md) before release.
 
-1. Call `LiteDeploy.FullOSBootstrap.ps1` using the local Windows PowerShell executable.
-2. Pass only the local state path; never pass credentials.
-3. Record a bootstrap exit code in the LiteDeploy log.
-4. Return control to Windows Setup promptly.
-
-The bootstrap script performs idempotent registration of two tasks and starts the engine task immediately with `schtasks /Run` or the Task Scheduler API.
-
-### Task 1: `\LiteDeploy\EngineResume`
-
-| Setting | Specification |
-| --- | --- |
-| Identity | `NT AUTHORITY\SYSTEM` |
-| Run level | Highest |
-| Interaction | Background only |
-| Trigger | At system startup; SetupComplete also starts it immediately |
-| Action | Windows PowerShell 5.1 with `-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ...\LiteDeploy.DeploymentEngine.ps1 -Resume -StatePath ...\DeploymentState.json` |
-| Multiple instances | Ignore new instance |
-| Restart policy | Three attempts, 60-second interval |
-| Power policy | Do not stop because the device changes to battery power |
-| Network | Engine performs its own network readiness wait before share access |
-| Completion | Remove or disable the task only after workflow state becomes `Completed`; retain it on failure for diagnostics/retry |
-
-This task imports the WPCT package under SYSTEM, which ensures the resulting DPAPI CLIXML files can be consumed by later SYSTEM workflow actions.
-
-### Task 2: `\LiteDeploy\ProgressUI`
-
-| Setting | Specification |
-| --- | --- |
-| Identity | Interactive logged-on user |
-| Privilege | Standard interactive token is sufficient because the UI only reads state |
-| Trigger | At logon |
-| Action | Windows PowerShell 5.1 STA mode running `LiteDeploy.Progress.ps1 -Environment FullOS -StatePath ...\DeploymentState.json` |
-| Data access | Read-only access to deployment state; no access to credential CLIXML files |
-| Completion | Exit when state is `Completed`; remain available for a terminal `Failed` screen |
-
-A task running as SYSTEM does not have interactive logon rights, so its WPF window is not a reliable user-visible progress surface. The engine and UI therefore share the state file but run in different security sessions.
-
-References: [custom Windows Setup scripts](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup?view=windows-11), [schtasks commands](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks), and [schtasks create](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks-create).
-
-### SetupComplete licensing safeguard
-
-Microsoft states that SetupComplete is disabled when an OEM product key is used, except for Enterprise and Windows Server editions. Because LiteDeploy includes Professional workflows, SetupComplete cannot be the only continuation path.
-
-The unattended file should also call the same idempotent `LiteDeploy.FullOSBootstrap.ps1` through `Microsoft-Windows-Deployment\RunSynchronous` in the `specialize` pass. That pass runs in SYSTEM context. Either entry point may run first; both must produce the same task definitions without duplicating workflow execution.
-
-Reference: [RunSynchronous in the specialize pass](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-deployment-runsynchronous).
-
-## 7. Process and data contracts
-
-### HardwarePreCheck result
-
-```json
-{
-  "Passed": true,
-  "BootConfigPath": "Z:\\Config\\BootConfig.json",
-  "Inventory": {
-    "Vendor": "Dell",
-    "Model": "Latitude 5440",
-    "SerialNumber": "...",
-    "UUID": "...",
-    "PrimaryNicName": "Intel Ethernet...",
-    "PrimaryMacAddress": "AA:BB:...",
-    "IPAddress": "172.17.127.54",
-    "IPv4Cidr": "172.17.127.54/24",
-    "IPv6Address": null,
-    "DnsServers": ["10.0.0.1", "10.0.0.2"],
-    "HardDrives": [{ "Number": 0, "Model": "NVMe", "SizeGB": 512 }],
-    "Results": [],
-    "SkippedByPolicy": false
-  }
-}
-```
-
-HardwarePreCheck returns this object to DeploymentEngine and does not launch WorkflowSelection. The Engine Draft logs MDT-style computer information from `Inventory` (Make/Model/Serial/UUID, NIC/MAC, IPv4 CIDR, IPv6, DNS, per-disk lines).
-
-### Workflow-selection result
-
-```json
-{
-  "DeploymentRequested": true,
-  "ComputerName": "DESKTOP-01",
-  "ComputerDescription": "Finance laptop",
-  "WorkflowId": "W11-ENT-STD",
-  "WorkflowName": "Windows 11 Enterprise",
-  "OperatingSystem": "Windows 11 Enterprise 25H2",
-  "DiskNumber": 0,
-  "DiskModel": "KBG50ZNS256G NVMe KIOXIA 256GB",
-  "DriverMode": "Repository",
-  "DriverPath": "Content\\Drivers\\Lenovo\\21KC004AUS",
-  "RequiredCredentialIds": [
-    "DeploymentShare",
-    "DomainJoin"
-  ]
-}
-```
-
-`DiskNumber` must be numeric. Display labels such as `Disk 0` must never be passed to disk-management commands.
-
-### Persisted selection
-
-`DeploymentSelection.json` contains non-secret selections and credential IDs only. It must never contain a username, password, secure string, `PSCredential`, vault seed, or vault payload.
-
-### Deployment state
-
-`DeploymentState.json` is the durable coordination contract between the engine and progress host:
-
-```json
-{
-  "schemaVersion": 1,
-  "deploymentId": "LD-20260812-001",
-  "environment": "FullOS",
-  "phase": "Workflow",
-  "status": "Running",
-  "currentStep": "Installing applications",
-  "stepNumber": 7,
-  "totalSteps": 12,
-  "stepPercent": 40,
-  "overallPercent": 68,
-  "message": "Installing required software",
-  "logMessage": "Started workflow action App.Install.Office",
-  "lastUpdatedUtc": "2026-08-12T18:30:00Z"
-}
-```
-
-State writes must use a temporary file followed by an atomic replacement. Readers must tolerate a short sharing violation and retry without resetting the displayed state.
-
-## 8. State machine and resume rules
-
-| State | Owner | Resume behavior |
-| --- | --- | --- |
-| `Initialized` | WinPE engine | Validate selection and credentials. |
-| `SetupStarting` | WinPE engine | Launch Setup only if no successful Setup marker exists. |
-| `SetupReturned` | WinPE engine | Validate result and offline Windows installation. |
-| `OfflineHandoffStaged` | WinPE engine | Revalidate runtime, state, SetupComplete, and WPCT package. |
-| `RebootRequested` | WinPE engine | Reboot once; never rerun Setup. |
-| `FullOSBootstrap` | FullOS bootstrap | Register tasks idempotently and start EngineResume. |
-| `CredentialImport` | SYSTEM engine | Import WPCT once and verify every required ID. |
-| `WorkflowRunning` | SYSTEM engine | Resume at the first incomplete action. |
-| `Completed` | SYSTEM engine | Remove temporary transfer data, disable tasks, and close progress UI. |
-| `Failed` | Current owner | Preserve safe logs and state; do not advance automatically unless the action explicitly supports retry. |
-
-Each workflow action requires a stable action ID and a completion record. Destructive actions must be idempotent or guarded by durable completion evidence.
-
-## 9. Credential lifecycle
-
-1. The deployment-share `PSCredential` remains in `BootObject.Credential` during WinPE.
-2. Workflow definitions declare `RequiredCredentialIds`.
-3. The WinPE engine resolves the minimum required credential set from BootObject and DeployVault.
-4. Credentials remain as in-memory `PSCredential` objects until passed directly to WinPECredentialTransfer.
-5. WPCT creates `C:\~LiteDeploy\State\Secrets.bin` and stores bootstrap material in the offline `HKLM\SOFTWARE\LiteDeploy\Temp` location.
-6. The FullOS SYSTEM engine imports the package to `C:\~LiteDeploy\Engine\Secrets\<CredentialId>.xml` using SYSTEM DPAPI.
-7. Workflow actions request a declared credential by ID and validate that the imported object is a `PSCredential`.
-8. Successful import deletes the transfer package and temporary registry material.
-9. Final workflow cleanup removes DPAPI credential files when they are no longer required.
-
-Prohibited:
-
-- Copying `localvault.bin` or `localseed.bin` onto the target OS.
-- Writing plaintext or reversible passwords into `Unattend.xml`.
-- Serializing credentials into `DeploymentState.json` or `DeploymentSelection.json`.
-- Passing passwords on a process command line.
-- Logging secure strings, password values, or serialized credential objects.
-
-## 10. Logging and diagnostics
-
-- WinPE logs: `X:\~LiteDeploy\WorkLogs` until the offline OS is available.
-- Before reboot, copy relevant WinPE logs into the installed OS `C:\~LiteDeploy\Logs` directory.
-- FullOS engine log: `C:\~LiteDeploy\Logs\LiteDeploy.Engine.log`.
-- Record timestamps in UTC, deployment ID, phase, action ID, status, safe message, and exit code.
-- Collect Windows Setup logs after Setup returns and after FullOS starts, but do not copy unrelated sensitive content into the UI state.
-- The progress UI displays a friendly error and log path; detailed exceptions remain in the engine log.
-
-## 11. Failure policy
-
-- Before disk modification: show an alert and return to selection where safe.
-- After disk modification but before Setup: mark `Failed`; do not silently restart selection.
-- Setup failure: capture the exit code and Setup logs; do not reboot.
-- Handoff validation failure: do not reboot.
-- FullOS credential import failure: stop workflow actions that require credentials and preserve the scheduled task for repair.
-- Workflow action failure: apply only the retry policy declared for that action.
-- Progress UI failure: must not stop the engine; restarting the UI reconstructs its view from state.
-
-## 12. Implementation order
-
-1. Add structured return contracts to HardwarePreCheck and workflow selection.
-2. Define the workflow catalog schema, image metadata, action IDs, and `RequiredCredentialIds`.
-3. Create `LiteDeploy.DeploymentEngine.ps1` with state-machine and atomic-state helpers.
-4. Implement unattended generation and media/version validation.
-5. Implement Setup launch with `/NoReboot`, exit-code handling, and offline Windows discovery.
-6. Integrate DeployVault and WinPECredentialTransfer before reboot.
-7. Create the FullOS bootstrap and idempotent scheduled-task definitions.
-8. Add SetupComplete and `specialize` fallback generation.
-9. Connect the FullOS engine resume path and workflow action runner.
-10. Connect the interactive progress task.
-11. Add VM tests, PowerShell 5.1 tests, forced-reboot resume tests, credential cleanup tests, and physical WinPE validation.
-
-## 13. Acceptance criteria
-
-- Canceling HardwarePreCheck or workflow selection never changes a disk.
-- A single detected physical disk binds to the UI without `ItemsSource` conversion errors.
-- Setup never reboots before LiteDeploy has staged and verified the FullOS handoff.
-- Unsupported Setup media is rejected before Setup starts.
-- Re-running SetupComplete or the `specialize` bootstrap does not create duplicate engines or duplicate workflow actions.
-- The SYSTEM engine continues without an interactive user.
-- The progress window becomes visible after an interactive logon and accurately reconstructs current state.
-- Required credentials survive the reboot encrypted, import under SYSTEM, and are never present in plaintext artifacts.
-- A reboot during FullOS workflow execution resumes at the first incomplete action.
-- Successful completion removes temporary credential-transfer material and disables or removes continuation tasks.

@@ -1,0 +1,75 @@
+{
+    "$schema": "./schemas/os-catalog.schema.json",
+    "operatingSystems": [
+        {
+            "osId": "win11-26h2-26300.9457-x64",
+            "fullName": "Windows 11 26H2",
+            "osName": "Windows 11 26H2 (26300.9457)",
+            "version": "26H2",
+            "buildVersion": "10.0.26300.9457",
+            "defaultLanguage": "en-us",
+            "supportedLanguages": "en-us",
+            "importedDate": "2026-10-03",
+            "arch": "x64",
+            "isCustomImage": false,
+            "enabled": true,
+            "mediaRoot": "Content/OperatingSystems/win11_26H2_26300_9457",
+            "setupPath": "Content/OperatingSystems/win11_26H2_26300_9457/setup.exe",
+            "imagePath": "Content/OperatingSystems/win11_26H2_26300_9457/sources/install.wim",
+            "editions": [
+                {
+                    "editionId": "win11-26h2-windows-11-home-26300.9457-x64",
+                    "editionName": "Windows 11 Home",
+                    "skuCode": "Core",
+                    "imageIndex": 1,
+                    "enabled": true,
+                    "buildVersion": "10.0.26300.9457",
+                    "arch": "x64",
+                    "defaultLanguage": "en-us",
+                    "supportedLanguages": "en-us",
+                    "createdTime": "9/13/2026 2:45:00 PM",
+                    "modifiedTime": "9/13/2026 3:20:00 PM"
+                },
+                {
+                    "editionId": "win11-26h2-windows-11-education-26300.9457-x64",
+                    "editionName": "Windows 11 Education",
+                    "skuCode": "Education",
+                    "imageIndex": 2,
+                    "enabled": true,
+                    "buildVersion": "10.0.26300.9457",
+                    "arch": "x64",
+                    "defaultLanguage": "en-us",
+                    "supportedLanguages": "en-us",
+                    "createdTime": "9/13/2026 2:48:28 PM",
+                    "modifiedTime": "9/13/2026 3:22:21 PM"
+                },
+                {
+                    "editionId": "win11-26h2-windows-11-enterprise-26300.9457-x64",
+                    "editionName": "Windows 11 Enterprise",
+                    "skuCode": "Enterprise",
+                    "imageIndex": 3,
+                    "enabled": true,
+                    "buildVersion": "10.0.26300.9457",
+                    "arch": "x64",
+                    "defaultLanguage": "en-us",
+                    "supportedLanguages": "en-us",
+                    "createdTime": "9/13/2026 3:01:47 PM",
+                    "modifiedTime": "9/13/2026 3:22:58 PM"
+                },
+                {
+                    "editionId": "win11-26h2-windows-11-pro-26300.9457-x64",
+                    "editionName": "Windows 11 Pro",
+                    "skuCode": "Professional",
+                    "imageIndex": 5,
+                    "enabled": true,
+                    "buildVersion": "10.0.26300.9457",
+                    "arch": "x64",
+                    "defaultLanguage": "en-us",
+                    "supportedLanguages": "en-us",
+                    "createdTime": "9/13/2026 2:45:46 PM",
+                    "modifiedTime": "9/13/2026 3:23:34 PM"
+                }
+            ]
+        }
+    ]
+}

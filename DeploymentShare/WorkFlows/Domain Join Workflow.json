@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "workflowId": "domain-join",
+  "name": "Domain Join",
+  "description": "Active Directory Domain joined workstation",
+  "comment": "",
+  "order": 1,
+  "expanded": true,
+  "enabled": true,
+  "revision": 1,
+  "osCatalogPath": "Content/OperatingSystems/catalog.json",
+  "unattendPath": "Content/Unattend/DomainJoin.xml",
+  "operatingSystems": [
+    {
+      "osId": "win11-26h2-26300.9457-x64",
+      "editionIds": [
+        "win11-26h2-windows-11-pro-26300.9457-x64",
+        "win11-26h2-windows-11-enterprise-26300.9457-x64"
+      ]
+    }
+  ],
+  "computerSetup": {
+    "ImageEngine": "dism.exe"
+  },
+  "requiredCredentialIds": [],
+  "actions": [
+    { "id": "action01" },
+    { "id": "action02" },
+    { "id": "action03" }
+  ]
+}

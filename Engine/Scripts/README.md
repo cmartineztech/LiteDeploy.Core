@@ -1,86 +1,105 @@
-# Engine Scripts
+# Engine Scripts (Architecture v2)
 
-This directory contains the primary PowerShell engine modules, graphical interfaces, and administrative tooling for **LiteDeploy**.
+## Dev vs production
 
-The components are divided into two operational scopes:
-- **`Admin/`**: Tools executed by deployment administrators on server/technician workstations to configure shares, ingest media, generate configurations, and prepare credentials.
-- **`Runtime/`**: Engines and interfaces executed during WinPE boot and the target machine deployment pipeline.
+**Numbered folders (`000-Boot`, `110-UI`, …) are for development and repository organization only.**
 
----
+| Location | Role |
+| :--- | :--- |
+| `Engine\Scripts\Runtime\<NNN-*>\` | Dev source (this repo) |
+| `Engine\Scripts\Runtime\110-UI\` | Dev Runtime UI source |
+| `Engine\Scripts\Admin\<NNN-*>\` | Dev Admin source |
+| **Published share** `Engine\Scripts\Runtime\*.ps1` | Flat domain scripts |
+| **Published share** `Engine\Scripts\Runtime\UI\` | Runtime UI |
+| **Published share** `Engine\Scripts\Admin\*.ps1` | Flat Admin tools |
+| **Published share** `Engine\Scripts\Admin\UI\` | Admin UI |
 
-## 🛠️ Administrative Components (`Admin/`)
+Publish with:
 
-These tools prepare and maintain the deployment environment before a client device boots:
-
-| Component | Folder | Description |
-| :--- | :--- | :--- |
-| **SetConfig** | [`Admin/LiteDeploy.SetConfig.ps1`](Admin/LiteDeploy.SetConfig.ps1) | Generates `BootConfig.json` templates and active configurations for `BootWim`, `DeploymentShare`, and `Media` modes. |
-| **SetDeploymentShareAcl** | [`Admin/LiteDeploy.SetDeploymentShareAcl.ps1`](Admin/LiteDeploy.SetDeploymentShareAcl.ps1) | Provisions local deployment share folder structures, SMB share permissions, and isolated NTFS write-only ACLs for deployment logs. |
-| **SyncComponents** | [`Admin/LiteDeploy.SyncComponents.ps1`](Admin/LiteDeploy.SyncComponents.ps1) | Synchronizes repository scripts to production Deployment Shares, WinPE Builder staging directories, and Media roots. |
-| **ImportOSMedia** | [`Admin/LiteDeploy.ImportOSMedia.ps1`](Admin/LiteDeploy.ImportOSMedia.ps1) | High-performance CLI and WPF tool for ingesting Windows ISOs/WIMs, resolving DISM edition metadata, and publishing `catalog.json`. |
-| **Credentials** | [`Admin/LiteDeploy.Credentials.ps1`](Admin/LiteDeploy.Credentials.ps1) | Integration architecture and technical guides for server-side vaulting ([DeployVault](https://github.com/cmartinezone/DeployVault)) and cross-reboot credential transfer ([WinPECT](https://github.com/cmartinezone/WinPECT)). |
-
----
-
-## ⚡ Runtime Deployment Components (`Runtime/`)
-
-These engines execute inside Windows PE on the target device:
-
-| Component | Folder | ComponentId | Execution Timing & Purpose |
-| :--- | :--- | :--- | :--- |
-| **LogWriter** | [`Runtime/000-LogWriter`](Runtime/000-LogWriter) | `LogWriter` | Core logging engine. Generates live colored console output and Microsoft CMTrace XML logs. |
-| **Hardware** | [`Runtime/000-Hardware`](Runtime/000-Hardware) | `Hardware` | WinPE-first `Get-Hardware*` inventory (identity, firmware, NIC/IP/CIDR/DNS, disks) for Precheck and Engine logs; `Get-HardwarePhysicalDisks` for WorkflowSelection grid. |
-| **HostShell** | [`Runtime/000-HostShell`](Runtime/000-HostShell) | `HostShell` | Manages classic WinPE console window geometry, positioning, border styles, color palettes, and shell presets. |
-| **Progress** | [`Runtime/000-Progress`](Runtime/000-Progress) | `Progress` | Zero-dependency WPF progress dashboard that renders real-time state from `DeploymentState.json` in both WinPE and FullOS phases. |
-| **BootInitializer** | [`Runtime/010-BootInitializer`](Runtime/010-BootInitializer) | `BootInitializer` | WinPE entry point started by `startnet.cmd`. Discovers `BootConfig.json`, tests network connectivity, authenticates and maps `Z:\`, launches DeploymentEngine; unhandled engine errors → `[NOTICE]` / `startnet`. |
-| **DeploymentEngine** | [`Runtime/020-DeploymentEngine`](Runtime/020-DeploymentEngine) | `DeploymentEngine` | Pipeline orchestrator. Sequences HardwarePreCheck, WorkflowSelection, DiskPreparation, and OSInstallation in WinPE. |
-| **HardwarePreCheck** | [`Runtime/030-HardwarePreCheck`](Runtime/030-HardwarePreCheck) | `HardwarePreCheck` | BootConfigPath-driven WPF readiness wizard (`.ps1` + `.xaml`); inventory via Hardware; returns `{ Passed, Inventory }` to the Engine. |
-| **WorkflowSelection** | [`Runtime/040-WorkflowSelection`](Runtime/040-WorkflowSelection) | `WorkflowSelection` | PreCheck-chrome wizard: identity, firmware, catalog workflows, disk (`DriveSelection`), drivers (OEM Info dialog, truncated OEM paths, picker BFS depth 8). Returns selection object + `%SystemDrive%\WorkflowSelection.json`. |
-| **DiskPreparation** | [`Runtime/050-DiskPreparation`](Runtime/050-DiskPreparation) | `DiskPreparation` | Bare-metal disk wipe, UEFI (GPT) and Legacy (MBR) partitioning, formatting, and WinRE flags. |
-| **DriverStaging** | [`Runtime/060-DriverStaging`](Runtime/060-DriverStaging) | `DriverStaging` | LocalCatalog detection + pack metadata + online reachability (imported by WorkflowSelection). Extract/inject/download still reserved. |
-| **AnswerFileGenerator** | [`Runtime/070-AnswerFileGenerator`](Runtime/070-AnswerFileGenerator) | — | Reserved. Builds `X:\unattended.xml` from the workflow selection and disk result. |
-| **OSInstallation** | [`Runtime/080-OSInstallation`](Runtime/080-OSInstallation) | `OSInstallation` | Generates the unattended answer file and runs `setup.exe /NoReboot`. |
-| **CredentialTransfer** | [`Runtime/090-CredentialTransfer`](Runtime/090-CredentialTransfer) | — | Reserved. Moves in-memory credentials from WinPE onto the installed OS. |
-| **DeploymentCleanup** | [`Runtime/100-DeploymentCleanup`](Runtime/100-DeploymentCleanup) | — | Reserved. Cleans the deployment session after credential transfer. |
-
----
-
-## 🔄 Deployment Share Mapping
-
-When promoted to production or staged on a deployment share root (see [`DeploymentShare`](../../DeploymentShare)), scripts are published into matching `Engine\Scripts` subdirectories:
-
-```text
-DeploymentShare\Engine\Scripts\
-├── Admin\
-│   ├── LiteDeploy.ImportOSMedia.ps1
-│   ├── LiteDeploy.ImportOSMediaGUI.ps1
-│   ├── LiteDeploy.SetConfig.ps1
-│   └── LiteDeploy.SetDeploymentShareAcl.ps1
-└── Runtime\
-    ├── LiteDeploy.LogWriter.ps1
-    ├── LiteDeploy.Hardware.ps1
-    ├── LiteDeploy.HostShell.ps1
-    ├── LiteDeploy.Progress.ps1
-    ├── LiteDeploy.BootInitializer.ps1
-    ├── LiteDeploy.DeploymentEngine.ps1
-    ├── LiteDeploy.HardwarePreCheck.ps1
-    ├── LiteDeploy.HardwarePreCheck.UI.xaml
-    ├── LiteDeploy.WorkflowSelection.ps1
-    ├── LiteDeploy.WorkflowSelection.UI.xaml
-    ├── LiteDeploy.WorkflowSelectionDriverPicker.ps1
-    ├── LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml
-    ├── LiteDeploy.DiskPreparation.ps1
-    ├── LiteDeploy.DriverStaging.ps1
-    └── LiteDeploy.OSInstallation.ps1
+```powershell
+.\Admin\000-Build\LiteDeploy.Admin.Build.ps1 -DeploymentShare "C:\DeploymentShare" -Clean
 ```
 
-`SingleFile\` folders under Runtime components are **not** synced (reference inlined scripts only).
+Environment owns the explicit layout, selected once when it is loaded:
 
----
+1. `-Mode Production` (default): flat scripts with screens beneath `UI`.
+2. `-Mode Development`: numbered source locations declared in Environment's top-level map.
 
-## 📋 Development Rules
+**Environment normalizes the environment and supplies paths.** Engine declares required
+component **names**; Environment maps them to exact files. Domain/UI consumers use
+`Get-LiteDeployComponentPath`, RuntimeFiles, or `Resolve-LiteDeployContentPath` — they do
+not guess sibling `DeploymentShare` trees, invent layouts when a file is missing, or create
+content directories unsolicited. Environment builds the required-file list once; Engine does
+not fall back to another layout.
+See [Understand and control Engine](../../_Docs/guides/ENGINE_READING_GUIDE.md) for the file map,
+visible imports, result contracts, and `-ValidateOnly` inspection.
 
-1. **Category Separation**: Keep technician/host administrative scripts under `Admin/` and WinPE/target-OS runtime code under `Runtime/`.
-2. **Path Agnostic**: Runtime scripts must resolve sibling scripts using `$PSScriptRoot` and the deployment share root rather than hardcoded development repository paths. Documentation examples use only generic roots (`Z:\`, `\\Server\Share$`, `E:\~LiteDeploy\`, `X:\`) — never personal profile or desktop paths.
-3. **Strict Validation**: All runtime scripts must maintain `Set-StrictMode -Version 2.0` and handle single-item arrays correctly for PowerShell 5.1 compatibility.
-4. **Experiments Boundary**: Prototyping and scratch work belongs in [`_Experiments`](../../_Experiments) and is not promoted to production shares.
+## Runtime (dev folders)
+
+| Folder | Component | Published file |
+| :--- | :--- | :--- |
+| `000-Boot` | Boot | `LiteDeploy.Boot.ps1` |
+| `010-Logs` | Logs | `LiteDeploy.Logs.ps1` |
+| `020-Environment` | Environment | `LiteDeploy.Environment.ps1` |
+| `030-Hardware` | Hardware | `LiteDeploy.Hardware.ps1` |
+| `040-State` | State | `LiteDeploy.State.ps1` |
+| `050-Workflow` | Workflow | `LiteDeploy.Workflow.ps1` |
+| `060-Disk` | Disk | `LiteDeploy.Disk.ps1` |
+| `070-Drivers` | Drivers | `LiteDeploy.Drivers.ps1` |
+| `080-Image` | Image | `LiteDeploy.Image.ps1` |
+| `090-Packages` | Packages | `LiteDeploy.Packages.ps1` |
+| `100-Engine` | Engine | `LiteDeploy.Engine.ps1` |
+| `100-Engine` | FullOS | `LiteDeploy.FullOS.ps1` |
+| `110-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Scripts\Runtime\UI\` |
+
+### Execution
+
+```text
+startnet → Boot → Engine
+  Load required components once at script scope (stop on import failure)
+  → UI.HardwarePrecheck (honors Startup.SkipHardwarePreCheck)
+  → UI.WorkflowSelection
+  → UI.Progress (-WinPE, TopMost, theme from BootConfig)
+  → Disk (-ConfirmDestroy)
+  → Image (-ExecuteSetup; if Setup.exe + SkipSetupHardwareRequirements, LabConfig/MoSetup first)
+```
+
+BootConfig hardware-related flags: `Startup.SkipHardwarePreCheck` (Precheck UI) vs
+`ComputerSetup.SkipSetupHardwareRequirements` (Setup.exe WinPE registry bypass). See
+[_Docs/guides/COMPUTER_SETUP_MAPPING.md](../../_Docs/guides/COMPUTER_SETUP_MAPPING.md).
+
+## Admin (dev folders)
+
+| Folder | Component | Published file |
+| :--- | :--- | :--- |
+| `000-Build` | Admin.Build | `LiteDeploy.Admin.Build.ps1` |
+| `010-Content` | Admin.Content | `LiteDeploy.Admin.Content.ps1` |
+| `020-Images` | Admin.Images | `LiteDeploy.Admin.Images.ps1` |
+| `030-Drivers` | Admin.Drivers | `LiteDeploy.Admin.Drivers.ps1` |
+| `040-Packages` | Admin.Packages | `LiteDeploy.Admin.Packages.ps1` |
+| `050-Workflows` | Admin.Workflows | `LiteDeploy.Admin.Workflows.ps1` |
+| `060-Config` | Admin.Config | `LiteDeploy.Admin.Config.ps1` |
+| `070-Validation` | Admin.Validation | `LiteDeploy.Admin.Validation.ps1` |
+| `080-Utilities` | Admin.Utilities | `LiteDeploy.Admin.Utilities.ps1` |
+| `090-UI` | Admin UI | `LiteDeploy.Admin.UI.*` |
+
+Admin may reuse Runtime helpers. Runtime never depends on Admin.
+
+## Rules
+
+1. PowerShell 5.1 + WinPE + `Set-StrictMode -Version 2.0`
+2. Keep one clear responsibility per component; split only when it makes maintenance easier
+3. Standalone Disk/Image are non-destructive unless explicit switches
+4. Credentials: `_Docs/integrations/Credentials/`
+5. Architecture: `_Docs/architecture/LITEDEPLOY_COMPONENT_REFACTOR_V2.md`
+
+See [operation and maintenance](../../_Docs/guides/MAINTENANCE.md) for current support limits
+and the Windows PowerShell 5.1 smoke-test command. The architecture suite lives at
+[`_Tests\`](../../_Tests/README.md) (not under `Engine\Scripts`). Component authoring
+blueprints and inventory live at [`_Templates\`](../../_Templates/README.md). Dot-sourcing
+Engine loads its helpers without running the deployment pipeline; executing it starts
+deployment.
+
+## Current behavior and agreed follow-up
+
+See [the detailed guide](../../_Docs/guides/WINPE_BOOTSTRAP.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.

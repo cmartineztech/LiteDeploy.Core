@@ -1,0 +1,39 @@
+{
+  "$schemaVersion": "1.0",
+  "Metadata": {
+    "Name": "LiteDeploy",
+    "Environment": "Dev",
+    "Version": "1.0"
+  },
+  "Deployment": {
+    "Type": "Network",
+    "NetworkPath": "\\\\Server\\DeploymentShare$",
+    "LocalRootName": "~LiteDeploy"
+  },
+  "Startup": {
+    "SkipHardwarePreCheck": false
+  },
+  "ComputerSetup": {
+    "PromptForComputerName": true,
+    "ComputerNamePrefix": null,
+    "MaxComputerNameLength": 15,
+    "PromptForComputerDescription": true,
+    "DriveSelection": true,
+    "ImageEngine": "Setup.exe",
+    "SkipSetupHardwareRequirements": true,
+    "Language": "en-US",
+    "KeyboardLocale": "0409:00000409",
+    "TimeZone": "Eastern Standard Time",
+    "RegisteredOrganization": "IT Department",
+    "RegisteredOwner": "Network User"
+  },
+  "Drivers": {
+    "AutoDetectDrivers": true,
+    "AllowManualSelection": true,
+    "AutoOnlineDownloadOnMedia": true
+  },
+  "Ui": {
+    "Theme": "Ligth"
+  },
+  "_Comments": "DeploymentShare Testing"
+}

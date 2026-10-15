@@ -1,3 +1,5 @@
+> **Design specification for workflow actions.** FullOS Engine resume and WinPECT credential handoff are implemented; catalog-driven action execution after resume is not. See [project status](LITEDEPLOY_PROJECT_STATUS.md) and [Credentials](../integrations/Credentials/README.md).
+
 # LiteDeploy Catalog and Workflow Specification
 
 Status: **Proposed version 1 contract.** The existing ImportOSMedia catalog is authoritative; workflow and package catalogs are planned.
@@ -6,10 +8,11 @@ This specification keeps operating-system media, workflows, actions, and package
 
 Related documents:
 
+- [LITEDEPLOY_COMPONENT_REFACTOR_V2.md](LITEDEPLOY_COMPONENT_REFACTOR_V2.md)
 - [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md)
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md)
-- [ImportOSMedia/README.md](../../Engine/Scripts/Admin/LiteDeploy.ImportOSMedia.ps1/README.md)
+- [Admin.Images](../../Engine/Scripts/Admin/020-Images/README.md) (OS media / catalog; numbered folder is **dev only**)
 
 ## 1. Catalog relationship model
 
@@ -430,4 +433,5 @@ The deployment engine repeats safety-critical validation immediately before disk
 - Updating package payload or behavior increments its version.
 - Updating workflow ordering or policy increments its revision.
 - Deployment state records the resolved workflow revision and package versions so a resumed deployment cannot silently change definitions.
+
 
