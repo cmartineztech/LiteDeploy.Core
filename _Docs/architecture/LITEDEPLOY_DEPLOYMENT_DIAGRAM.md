@@ -29,53 +29,53 @@ Updated 2026-10-13. LiteDeploy Core v2 Architecture:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant PE as WinPE (LiteDeploy.Engine)
-    participant OSVol as Target OS Volume (C:\)
-    participant WSetup as Windows Setup (First Boot)
-    participant Admin as Session 1 (LiteDeploy.FullOS)
-    participant Share as DeploymentShare (Z:\)
+    participant PE as "WinPE / Engine"
+    participant OSVol as "OS volume"
+    participant WSetup as "Windows Setup"
+    participant Admin as "Session 1 / FullOS"
+    participant Share as "DeploymentShare Z:"
 
-    Note over PE,OSVol: 1. WINPE IMAGING AND STAGING
-    PE->>OSVol: Apply OS Image (WIM / Setup.exe)
-    PE->>OSVol: Stage Drivers (C:\~LiteDeploy\Content\Drivers)
-    PE->>OSVol: Stage unattend.xml (specialize Run + Audit/AutoLogon as workflow requires)
-    PE->>OSVol: Copy Runtime and Tools (C:\~LiteDeploy\...)
-    PE->>OSVol: WinPECT seals credentials (SOFTWARE hive LiteDeploy\CredentialTransfer)
+    Note over PE,OSVol: 1. WinPE imaging and staging
+    PE->>OSVol: Apply OS image (WIM / Setup.exe)
+    PE->>OSVol: Stage drivers under ~LiteDeploy/Content/Drivers
+    PE->>OSVol: Stage unattend.xml (specialize Run + Audit/AutoLogon)
+    PE->>OSVol: Copy Runtime and Tools under ~LiteDeploy
+    PE->>OSVol: WinPECT seals credentials in SOFTWARE hive
     PE->>OSVol: Save DeploymentState.json
     PE->>WSetup: Reboot into Windows
 
-    alt Workflow actions Count = 0 (e.g. Intune Ready)
-        Note over WSetup: Specialize skips FullOS Run; continue to OOBE only
-    else actions Count > 0
-        Note over WSetup,Admin: 2. SPECIALIZE ARMS RUN; FIRST INTERACTIVE FULLOS
-        WSetup->>WSetup: Order 1 description; Order 2 reg add HKLM Run (short powershell Path)
-        opt Domain Join (no AuditMode marker)
-            WSetup->>WSetup: Order 3 EnableLUA=0; Order 4 UacBypassed marker
+    alt No workflow actions (e.g. Intune Ready)
+        WSetup->>WSetup: Specialize skips FullOS Run - continue to OOBE only
+    else Workflow has actions
+        Note over WSetup,Admin: 2. Specialize arms Run - first interactive FullOS
+        WSetup->>WSetup: Order 1 description - Order 2 reg add HKLM Run
+        opt Domain Join without AuditMode marker
+            WSetup->>WSetup: Order 3 EnableLUA=0 - Order 4 UacBypassed marker
         end
         WSetup->>Admin: Interactive logon (Audit Admin or Domain Join AutoLogon)
         WSetup->>Admin: HKLM Run launches LiteDeploy.FullOS.ps1
 
-        Note over Admin,Share: 3. INTERACTIVE FULLOS (SESSION 1)
+        Note over Admin,Share: 3. Interactive FullOS Session 1
         Admin->>Admin: Kill sysprep.exe process
         Admin->>OSVol: Re-arm HKLM Run LiteDeployFullOS
-        Admin->>OSVol: Read DeploymentState.json (Status FullOS, Phase 5)
+        Admin->>OSVol: Read DeploymentState.json (FullOS / Phase 5)
         Admin->>OSVol: WinPECT unseals secrets in RAM
-        Admin->>Share: New-SmbMapping Z: (EnableLinkedConnections)
-        Admin->>Share: Mirror WorkLogs to Z:\WorkLogs\<DeploymentUid>\
-        Admin->>Admin: Start Interactive Probe (second window)
-        Note over Admin,Share: Packages orchestration planned (not fully wired)
+        Admin->>Share: New-SmbMapping Z: with EnableLinkedConnections
+        Admin->>Share: Mirror WorkLogs to share WorkLogs/Deployments/UID
+        Admin->>Admin: Start Interactive Probe second window
+        Note over Admin,Share: Packages orchestration planned - not fully wired
 
-        opt Mid-deploy reboot (re-arm path)
+        opt Mid-deploy reboot via re-arm path
             Admin->>WSetup: Restart-Computer
-            Note over WSetup,Admin: 4. REBOOT SURVIVAL VIA HKLM RUN
+            Note over WSetup,Admin: 4. Reboot survival via HKLM Run
             WSetup->>Admin: Autologon / interactive logon
             WSetup->>Admin: HKLM Run launches LiteDeploy.FullOS.ps1
             Admin->>OSVol: Increment ResumeCount and continue
         end
 
-        Note over Admin,OSVol: 5. FINALIZATION
-        Admin->>OSVol: Clear HKLM Run; restore EnableLUA if UacBypassed
-        Admin->>OSVol: Save DeploymentState.json (Status Completed)
+        Note over Admin,OSVol: 5. Finalization
+        Admin->>OSVol: Clear HKLM Run - restore EnableLUA if UacBypassed
+        Admin->>OSVol: Save DeploymentState.json Status Completed
         Admin->>Share: Final log mirror
     end
 ```
@@ -142,7 +142,7 @@ flowchart TD
     subgraph HandoffPhase["Phase 5: Handoff and Staging"]
         Image --> StagePayload["Stage Runtime + Tools"]
         StagePayload --> WinPECT["WinPECT export (RAM secrets + SOFTWARE hive)"]
-        WinPECT --> HandoffLogs["Logs and State Mirror to W:\\~LiteDeploy"]
+        WinPECT --> HandoffLogs["Logs and State Mirror to W:/~LiteDeploy"]
         HandoffLogs --> StopProgress["Stop-LiteDeployProgressHost"]
         HandoffLogs --> RebootTarget["Reboot into installed Windows"]
     end
@@ -186,12 +186,12 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    StateSource["LiteDeploy State & Log Generator"]
-    
-    StateSource -->|1. Live IPC / MMF| RAM["RAM / Memory-Mapped File (Progress UI live)"]
-    StateSource -->|2. WinPE Ramdisk| LocalDisk["X:\\~LiteDeploy\\WorkLogs\\"]
-    StateSource -->|3. OS Volume Target| TargetVolume["C:\\~LiteDeploy\\WorkLogs\\"]
-    StateSource -->|4. Deployment Share| RemoteShare["Z:\\WorkLogs\\Deployments\\<UID>\\"]
+    StateSource["LiteDeploy State and Log Generator"]
+
+    StateSource -->|1. Live IPC / MMF| RAM["RAM / Memory-Mapped File"]
+    StateSource -->|2. WinPE Ramdisk| LocalDisk["X:/~LiteDeploy/WorkLogs/"]
+    StateSource -->|3. OS Volume Target| TargetVolume["C:/~LiteDeploy/WorkLogs/"]
+    StateSource -->|4. Deployment Share| RemoteShare["Z:/WorkLogs/Deployments/UID/"]
 ```
 
 ---
@@ -201,13 +201,13 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph DevelopmentRepo["Development Repository"]
-        AdminSrc["Engine\\Scripts\\Admin\\000-090"]
-        RuntimeSrc["Engine\\Scripts\\Runtime\\000-110"]
-        UISrc["Runtime\\110-UI"]
-        ToolsSrc["Engine\\Tools\\WinPECT\\"]
+        AdminSrc["Engine/Scripts/Admin/000-090"]
+        RuntimeSrc["Engine/Scripts/Runtime/000-110"]
+        UISrc["Runtime/110-UI"]
+        ToolsSrc["Engine/Tools/WinPECT/"]
     end
 
-    subgraph AdminBuild["Admin.Build → C:\\DeploymentShare"]
+    subgraph AdminBuild["Admin.Build to DeploymentShare"]
         AdminSrc --> BuildProc["LiteDeploy.Admin.Build.ps1"]
         RuntimeSrc --> BuildProc
         UISrc --> BuildProc
@@ -215,13 +215,13 @@ flowchart LR
     end
 
     subgraph PublishedShare["Production share layout"]
-        BuildProc --> FlatRuntime["Engine\\Scripts\\Runtime\\LiteDeploy.Engine.ps1"]
-        BuildProc --> FlatFullOS["Engine\\Scripts\\Runtime\\LiteDeploy.FullOS.ps1"]
+        BuildProc --> FlatRuntime["Engine/Scripts/Runtime/LiteDeploy.Engine.ps1"]
+        BuildProc --> FlatFullOS["Engine/Scripts/Runtime/LiteDeploy.FullOS.ps1"]
         BuildProc --> CompatAlias["LiteDeploy.DeploymentEngine.ps1<br/>byte-identical alias"]
         FlatRuntime -.->|copy| CompatAlias
-        BuildProc --> FlatUI["Runtime\\UI\\"]
-        BuildProc --> FlatAdmin["Engine\\Scripts\\Admin\\"]
-        BuildProc --> FlatTools["Engine\\Tools\\WinPECT\\"]
+        BuildProc --> FlatUI["Runtime/UI/"]
+        BuildProc --> FlatAdmin["Engine/Scripts/Admin/"]
+        BuildProc --> FlatTools["Engine/Tools/WinPECT/"]
         FlatTools --> StageOS["WinPE handoff to OS volume"]
         FlatRuntime --> StageOS
         FlatFullOS --> StageOS
