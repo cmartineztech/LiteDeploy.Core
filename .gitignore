@@ -23,6 +23,15 @@ Secrets.bin
 /_Experiments/
 /_TestFixtures/
 
+# Repo DeploymentShare\Engine is a folder skeleton. Admin.Build publishes the flat
+# scripts and Tools onto the live share (C:\DeploymentShare), not into this tree.
+DeploymentShare/Engine/Scripts/**/*.ps1
+DeploymentShare/Engine/Scripts/**/*.xaml
+DeploymentShare/Engine/Scripts/**/*.cmd
+DeploymentShare/Engine/Tools/**/*.ps1
+DeploymentShare/Engine/Tools/**/*.md
+DeploymentShare/Engine/Tools/**/LICENSE
+
 # Accidental Admin.Build / Production-layout mirrors inside the git source tree.
 # Editable source is numbered folders only (Runtime\000-Boot\, Admin\000-Build\, …).
 # Flat LiteDeploy.*.ps1 (+ UI\) belong on DeploymentShare (or another publish root), not here.

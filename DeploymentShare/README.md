@@ -1,6 +1,6 @@
 # Deployment Share Root Template
 
-Lab publish skeleton. **Canonical tree** lives in this folder (`DeploymentShare\`). Numbered sources stay in the git repo under `Engine\Scripts\`; Admin.Build flattens Runtime/Admin/Tools here (or onto a live UNC / USB root with the same shape).
+Folder skeleton for a deployment share. Numbered sources stay under `Engine\Scripts\`. This tree keeps `Config`, `Content`, `WorkFlows`, catalogs, and empty `Engine` folders. `Admin.Build` writes the flat Runtime, Admin, and Tools files onto the live share (`C:\DeploymentShare`), not into these folders.
 
 ## Layout
 
@@ -21,14 +21,10 @@ DeploymentShare\
 │   └── Unattend\
 ├── Engine\
 │   ├── Scripts\
-│   │   ├── Runtime\                 # flat LiteDeploy.*.ps1 + UI\
-│   │   │   ├── LiteDeploy.Engine.ps1
-│   │   │   ├── LiteDeploy.DeploymentEngine.ps1   # BootInitializer alias (= Engine)
-│   │   │   ├── LiteDeploy.FullOS.ps1
-│   │   │   └── …
-│   │   └── Admin\                   # flat LiteDeploy.Admin.*.ps1 + UI\
+│   │   ├── Runtime\                 # empty here; live share gets flat LiteDeploy.*.ps1 + UI\
+│   │   └── Admin\                   # empty here; live share gets flat LiteDeploy.Admin.*.ps1 + UI\
 │   └── Tools\
-│       └── WinPECT\
+│       └── WinPECT\                 # empty here; source is repo Engine\Tools\WinPECT\
 ├── WorkFlows\
 └── WorkLogs\
     ├── Admin\
