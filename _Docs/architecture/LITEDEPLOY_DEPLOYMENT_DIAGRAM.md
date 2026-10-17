@@ -10,6 +10,7 @@ Updated 2026-10-13. LiteDeploy Core v2 Architecture:
   - In-memory WinPECT secret unsealing (`Read-WPCTCredentialTransfer` targeting `LiteDeploy\CredentialTransfer`)
   - Native PowerShell `New-SmbMapping` + `New-PSDrive`; `EnableLinkedConnections = 1` so `Z:` is Explorer-visible
   - Log mirroring (`WorkLogs\Deployments\<UID>`)
+  - On load, `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` (`{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}`) so consoles started afterward hand off to Windows Terminal. The window that already launched FullOS is unchanged. A registry failure does not stop resume
   - Kill `sysprep.exe` process; leave stock Setup `CmdLine` (sysprep) intact
   - Interactive Probe in a second independent PowerShell window (`Start-LiteDeployFullOSInteractiveProbe`); real Progress / packages still open
 - **Reboot Survival** (same HKLM Run value; FullOS may re-arm; LiteDeploy_* scheduled tasks gated off / cleaned)
@@ -56,6 +57,7 @@ sequenceDiagram
         WSetup->>Admin: HKLM Run launches LiteDeploy.FullOS.ps1
 
         Note over Admin,Share: 3. Interactive FullOS Session 1
+        Admin->>Admin: HKCU console handoff for later windows
         Admin->>Admin: Kill sysprep.exe process
         Admin->>OSVol: Re-arm HKLM Run LiteDeployFullOS
         Admin->>OSVol: Read DeploymentState.json (FullOS / Phase 5)
@@ -101,7 +103,8 @@ graph TD
 
     subgraph Session1 ["Session 1 (Interactive Desktop)"]
         FullOSLaunch --> FullOS["LiteDeploy.FullOS.ps1"]
-        FullOS --> KillSysprep["Stop-Process sysprep.exe"]
+        FullOS --> ConsoleHost["HKCU console handoff"]
+        ConsoleHost --> KillSysprep["Stop-Process sysprep.exe"]
         FullOS --> Unseal["WinPECT in-memory secret unseal"]
         Unseal --> MountZ["New-SmbMapping Z:<br/>EnableLinkedConnections=1"]
         MountZ --> Mirror["Log mirror to remote UID"]
@@ -155,7 +158,7 @@ flowchart TD
 | Component | Execution Context | Trigger | Key Responsibilities |
 | :--- | :--- | :--- | :--- |
 | [`LiteDeploy.Engine.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.Engine.ps1) | WinPE (SYSTEM) | [`LiteDeploy.Boot.ps1`](../../Engine/Scripts/Runtime/000-Boot/LiteDeploy.Boot.ps1) | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
-| [`LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | State progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
+| [`LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | On load, HKCU console handoff for later windows; state progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
 | [`LiteDeploy.FullOS.InteractiveProbe.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.InteractiveProbe.ps1) | Session 1 | `Start-Process` from FullOS | Temporary Progress dry-run in a second window; monitors state / `Z:`. |
 | [`LiteDeploy.Image.ps1`](../../Engine/Scripts/Runtime/080-Image/LiteDeploy.Image.ps1) | WinPE | Engine Image phase | Unattend: Order 1 description; Order 2 FullOS Run when `WorkflowTag.Actions` > 0; Orders 3–4 `EnableLUA=0` + marker when Domain Join (no Audit) + actions; Audit reseal when `<!--AuditMode-->` + actions. |
 | **HKLM Run** | Interactive admin | specialize first arm; logon thereafter | Primary FullOS entry + mid-deploy reboot survival (`LiteDeployFullOS`). Kept for now (not MDT Startup / Task Scheduler). |

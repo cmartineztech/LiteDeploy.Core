@@ -76,10 +76,11 @@ flowchart TB
 
   subgraph FullOS["FullOS — Session 1"]
     Run["HKLM Run → LiteDeploy.FullOS.ps1"]
+    Console["HKCU console handoff<br/>later windows only"]
     ReArm["Re-arm Run · kill sysprep.exe"]
     Secrets["WinPECT unseal · Z: · log mirror"]
     Probe["Interactive Probe window<br/>(Progress/packages next)"]
-    Run --> ReArm --> Secrets --> Probe
+    Run --> Console --> ReArm --> Secrets --> Probe
   end
 
   Build -.->|publish| Boot
@@ -98,9 +99,9 @@ Detailed sequence, privilege model, and reboot survival: [Architecture diagrams]
 | **Boot** | WinPE entry, share connect, BootObject, launch Engine | Disk wipe, imaging |
 | **Engine** | WinPE pipeline order, required component names, handoff | Domain catalog parsing (Workflow), UI chrome |
 | **Environment** | Dev vs Prod path map, content resolution | Guessing missing files / creating layout trees |
-| **Workflow + UI.Selection** | Catalog / selection contract | Imaging |
+| **Workflow + UI.Selection** | Catalog / selection contract. Row title is `editionName`; `(version)` is added only when that name does not already contain it | Imaging |
 | **Disk / Drivers / Image** | Destructive OS work behind explicit switches | FullOS package loop |
-| **FullOS** | Post-boot Session 1 resume, secrets, Z:, Run re-arm | WinPE UI |
+| **FullOS** | Post-boot Session 1 resume, console handoff, secrets, Z:, Run re-arm | WinPE UI |
 | **Admin.*** | Share authoring & publish | Runtime pipeline |
 | **`_Tests` / `_Templates`** | Smoke suite & authoring contract | Not published to the share |
 
@@ -215,7 +216,7 @@ startnet → Boot → Engine -BootObject
 ```text
 specialize: Order 1 description · Order 2 HKLM Run · Orders 3–4 UAC (Domain Join only)
 logon (Audit Admin | AutoLogon) → FullOS.ps1
-  → kill sysprep.exe · re-arm Run · WinPECT · Z: · probe · Packages (planned)
+  → HKCU console handoff (consoles started afterward) · kill sysprep.exe · re-arm Run · WinPECT · Z: · probe · Packages (planned)
   → clear Run · restore EnableLUA if bypassed
 ```
 
@@ -234,13 +235,13 @@ Native PowerShell share connect only. No SetupComplete / `auditUser` / Task Sche
 | Environment | `020-Environment` | `LiteDeploy.Environment.ps1` | Named paths, mode, theme helpers |
 | Hardware | `030-Hardware` | `LiteDeploy.Hardware.ps1` | Inventory / readiness |
 | State | `040-State` | `LiteDeploy.State.ps1` | DeploymentState.json + RAM map |
-| Workflow | `050-Workflow` | `LiteDeploy.Workflow.ps1` | Catalog / selection domain |
+| Workflow | `050-Workflow` | `LiteDeploy.Workflow.ps1` | Catalog / selection domain; edition title appends version only when the name omits it |
 | Disk | `060-Disk` | `LiteDeploy.Disk.ps1` | Wipe / partition / format |
 | Drivers | `070-Drivers` | `LiteDeploy.Drivers.ps1` | Catalog/hardware match (extract/stage stubs — not full apply yet) |
 | Image | `080-Image` | `LiteDeploy.Image.ps1` | DISM/Setup, unattend, bcdboot, drivers |
 | Packages | `090-Packages` | `LiteDeploy.Packages.ps1` | Package helpers (FullOS sequencing planned) |
 | Engine | `100-Engine` | `LiteDeploy.Engine.ps1` | WinPE orchestrator |
-| FullOS | `100-Engine` | `LiteDeploy.FullOS.ps1` | Post-boot Session 1 resume |
+| FullOS | `100-Engine` | `LiteDeploy.FullOS.ps1` | Post-boot Session 1 resume; HKCU console handoff on load |
 | UI.* | `110-UI\...` | `Runtime\UI\LiteDeploy.UI.*` | Precheck, Selection, Progress, Theme, HostShell |
 
 ### Admin

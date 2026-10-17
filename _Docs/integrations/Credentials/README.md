@@ -54,7 +54,8 @@ flowchart TD
     Gate -->|Yes| Spec["specialize: Order 2 HKLM Run<br/>+ DJ Orders 3–4 EnableLUA=0 if no Audit"]
     Spec --> Logon["Interactive logon<br/>Audit Admin or Domain Join AutoLogon"]
     Logon --> Run["HKLM Run → LiteDeploy.FullOS.ps1"]
-    Run --> Kill["Kill sysprep.exe process"]
+    Run --> Console["HKCU console handoff"]
+    Console --> Kill["Kill sysprep.exe process"]
     Kill --> State["Load DeploymentState.json"]
     State --> Read["Read-WPCTCredentialTransfer in RAM"]
     Read --> Net{"DeploymentType = Network?"}
@@ -68,6 +69,6 @@ flowchart TD
     Probe --> Done["Clear Run + restore EnableLUA if UacBypassed"]
 ```
 
-Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon local `user` + temporary UAC bypass when needed) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume.
+Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon local `user` + temporary UAC bypass when needed) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume.
 
 See [EndToEndDeploymentGuide.md](EndToEndDeploymentGuide.md), [Tools README](../../../Engine/Tools/README.md), and [deployment diagrams](../../architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).

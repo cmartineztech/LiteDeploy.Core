@@ -46,14 +46,15 @@ Engine FullOS (driven by `DeploymentState.json`):
 
 1. Interactive logon (Audit Admin on Standard, or Domain Join AutoLogon `user`) — Session 1
 2. **HKLM Run** launches FullOS (value staged in specialize; FullOS may re-arm for mid-deploy reboots)
-3. Kills `sysprep.exe` process; leaves stock Setup `CmdLine` (sysprep) intact
-4. Loads Runtime components; reads state for UID, `FullOSShare`, `CredentialHandoff`
-5. Imports WinPECT secrets in-memory via `Read-WPCTCredentialTransfer`
-6. **Network:** reconnects **Z:** via native PowerShell `New-SmbMapping`; `EnableLinkedConnections = 1`
-7. Mirrors logs to `Z:\WorkLogs\Deployments\<UID>\`
-8. Re-arms `HKLM\...\Run\LiteDeployFullOS` so mid-deploy reboots relaunch FullOS at logon
-9. Starts Interactive Probe in a second independent PowerShell window
-10. Scheduled-task registration is gated off (`$script:LiteDeployFullOSRegisterTasks = $false`)
+3. On load, sets `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` so consoles started afterward hand off to Windows Terminal. The current window stays as launched. A registry failure does not stop resume
+4. Kills `sysprep.exe` process; leaves stock Setup `CmdLine` (sysprep) intact
+5. Loads Runtime components; reads state for UID, `FullOSShare`, `CredentialHandoff`
+6. Imports WinPECT secrets in-memory via `Read-WPCTCredentialTransfer`
+7. **Network:** reconnects **Z:** via native PowerShell `New-SmbMapping`; `EnableLinkedConnections = 1`
+8. Mirrors logs to `Z:\WorkLogs\Deployments\<UID>\`
+9. Re-arms `HKLM\...\Run\LiteDeployFullOS` so mid-deploy reboots relaunch FullOS at logon
+10. Starts Interactive Probe in a second independent PowerShell window
+11. Scheduled-task registration is gated off (`$script:LiteDeployFullOSRegisterTasks = $false`)
 
 Call `Clear-LiteDeployFullOSRunKey` when the deployment finishes successfully so FullOS stops auto-launching at logon and **restores `EnableLUA=1`** if `UacBypassed` was set. Only a legacy LiteDeploy Setup `CmdLine` hijack is cleared (stock sysprep is never wiped).
 

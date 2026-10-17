@@ -39,7 +39,7 @@ Guides cover entry points, dependencies, parameters, effects, results and limits
 | Component templates / inventory | [Guide](../_Templates/README.md) (`_Templates\` — not published) |
 | Progress emulator | [Guide](../Engine/Scripts/Runtime/110-UI/Progress/TESTING.md) |
 
-FullOS (`LiteDeploy.FullOS.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, Interactive Probe in a second window) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
+FullOS (`LiteDeploy.FullOS.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, Interactive Probe in a second window) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
 
 ## Deployment setup and agreed designs
 

@@ -11,6 +11,8 @@ The folder browser has a separate [DriverPicker contract](DRIVER_PICKER.md).
 
 Phase 2 technician wizard (identity, workflow, disk, drivers). Theme follows Engine / `BootConfig.Ui.Theme`. Diagram: `Docs/SELECTWORKFLOW_DIAGRAM.md`.
 
+The tree parent is the workflow name. Each child title comes from Workflow: `editionName`, with ` (version)` added only when that name does not already contain the version text. The subtitle is `Imported: <date> | Leng: <lang> | Build <build>`.
+
 Workflow `computerSetup` (and returned BootConfig) may carry `ImageEngine` and
 `SkipSetupHardwareRequirements`; Image applies those during Phase 4. This screen does not
 write LabConfig registry keys.
