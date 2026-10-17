@@ -22,7 +22,11 @@ entry is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** wh
 has actions (not `auditUser`). Interactive session = Audit Admin (Standard) or AutoLogon
 (Domain Join; temporary `EnableLUA=0` when no Audit marker). FullOS may re-arm the same Run key
 for mid-deploy reboots, kills `sysprep.exe` (stock Setup CmdLine left intact), restores UAC on
-cleanup when bypassed, and starts Interactive Probe in a second window. Engine `-ResumeFullOS`
+cleanup when bypassed, and starts Interactive Probe in a second window. On direct
+execution, before resume, FullOS sets `HKCU\Console\%%Startup` `DelegationConsole` and
+`DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` so consoles started after
+that (including the probe) hand off to Windows Terminal. The already-open FullOS window
+is unchanged. A registry failure does not stop resume. Engine `-ResumeFullOS`
 remains for compat. `-ValidateOnly` checks the WinPE profile (`ValidationProfile = WinPE`) and
 still returns `RequirementsByEnvironment` for inspection.
 
@@ -86,7 +90,7 @@ process to recover STA, because doing so would lose in-memory inputs.
 **WinPE:** HardwarePrecheck → WorkflowSelection → Progress → Disk → Image → handoff
 (stage Runtime/Tools → WinPECT export → reboot).
 
-**FullOS (HKLM Run → `LiteDeploy.FullOS.ps1` at interactive logon):** state → kill sysprep.exe → WinPECT in-memory secret decryption → `New-SmbMapping` Z: reconnect → log mirror → re-arm `HKLM\...\Run\LiteDeployFullOS` (reboot survival) → start Interactive Probe in a second window. Packages and real Progress dispatch are next. First arm of Run is unattend specialize (`reg add` / `REG_EXPAND_SZ`), not FullOS.
+**FullOS (HKLM Run → `LiteDeploy.FullOS.ps1` at interactive logon):** console-host handoff (`HKCU\Console\%%Startup` DelegationConsole / DelegationTerminal) → state → kill sysprep.exe → WinPECT in-memory secret decryption → `New-SmbMapping` Z: reconnect → log mirror → re-arm `HKLM\...\Run\LiteDeployFullOS` (reboot survival) → start Interactive Probe in a second window. Packages and real Progress dispatch are next. First arm of Run is unattend specialize (`reg add` / `REG_EXPAND_SZ`), not FullOS. The console key applies to consoles created after it is written.
 
 Read the numbered phase comments in `Start-LiteDeployPipeline` / `Start-LiteDeployFullOSResume`.
 Precheck and selection require an explicit boolean Passed result. Selection must supply a
@@ -167,7 +171,7 @@ Call after dot-sourcing the component. Parameter declarations:
 
 ### Purpose
 
-Interactive Session 1 resume after imaging: load DeploymentState, kill `sysprep.exe` (stock Setup CmdLine left intact), WinPECT in-memory unseal, native `Z:` reconnect, log mirror, re-arm HKLM Run for mid-deploy reboots, temporary Interactive Probe window. Package loop and real Progress dispatch are not fully wired yet. Domain Join path may restore `EnableLUA` when `UacBypassed` was set in specialize.
+Interactive Session 1 resume after imaging: on direct execution, set `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` (Windows Terminal handoff for consoles started afterward; the current window stays as launched), then load DeploymentState, kill `sysprep.exe` (stock Setup CmdLine left intact), WinPECT in-memory unseal, native `Z:` reconnect, log mirror, re-arm HKLM Run for mid-deploy reboots, temporary Interactive Probe window. A failed console-host write is ignored. Package loop and real Progress dispatch are not fully wired yet. Domain Join path may restore `EnableLUA` when `UacBypassed` was set in specialize.
 
 ### Dependencies
 

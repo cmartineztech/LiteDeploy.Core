@@ -9,6 +9,9 @@
     FullOS may re-arm the same Run key for mid-deploy reboot survival. Stock Setup\CmdLine
     (sysprep) is left alone; FullOS kills the sysprep.exe process. Only a LiteDeploy-owned
     Setup CmdLine (legacy) is cleared to stop reboot loops.
+    On direct execution, before resume, writes HKCU\Console\%%Startup DelegationConsole
+    and DelegationTerminal ({B23D10C0-E52E-411E-9D5B-C09FDF709C7D}) so later consoles
+    hand off to Windows Terminal. The window that already launched FullOS is unchanged.
 
     Responsibilities:
       1. Loads FullOS dependencies (Logs, State, Hardware, Packages, HostShell).
@@ -1070,6 +1073,16 @@ function Start-LiteDeployFullOSResume {
 # ==============================================================================
 
 if ($MyInvocation.InvocationName -ne '.') {
+    # Hand the console host to Windows Terminal for this user before resume work starts.
+    try {
+        $Path = 'HKCU:\Console\%%Startup'
+        $GUID = '{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}'
+        New-Item -Path $Path -Force | Out-Null
+        Set-ItemProperty -Path $Path -Name DelegationConsole -Value $GUID
+        Set-ItemProperty -Path $Path -Name DelegationTerminal -Value $GUID
+    }
+    catch {}
+
     try {
         Start-LiteDeployFullOSResume -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -RuntimeRoot $PSScriptRoot -ForceDirect:$ForceDirect
     }

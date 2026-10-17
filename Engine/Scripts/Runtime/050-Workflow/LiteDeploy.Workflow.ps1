@@ -479,7 +479,9 @@ function Get-LiteDeployNativeArchitecture {
 function Get-LiteDeployEditionListLabel {
     <#
     .SYNOPSIS
-        Selectable row title: edition name plus release, e.g. "Windows 11 Pro (26H2)".
+        Selectable row title. Appends " (version)" only when the edition name does not already contain it.
+        "Windows 11 Pro" + 25H2 -> "Windows 11 Pro (25H2)".
+        "Windows 11 25H2 Testing" + 25H2 -> "Windows 11 25H2 Testing".
     #>
     param(
         [psobject]$Edition,
@@ -496,6 +498,7 @@ function Get-LiteDeployEditionListLabel {
     elseif ($Os -and $Os.PSObject.Properties['fullName'] -and $Os.fullName) {
         $edName = [string]$Os.fullName
     }
+    $edName = $edName.Trim()
 
     $ver = $null
     if ($Edition -and $Edition.PSObject.Properties['version'] -and $Edition.version) {
@@ -504,8 +507,11 @@ function Get-LiteDeployEditionListLabel {
     elseif ($Os -and $Os.PSObject.Properties['version'] -and $Os.version) {
         $ver = [string]$Os.version
     }
+    if ($ver) { $ver = $ver.Trim() }
 
-    if ($ver) { return "$edName ($ver)" }
+    if ($ver -and $edName.IndexOf($ver, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        return "$edName ($ver)"
+    }
     return $edName
 }
 

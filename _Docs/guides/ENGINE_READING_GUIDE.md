@@ -66,7 +66,11 @@ The environment lists near the top of Engine are intentionally simple:
 
 `$EngineRequirements.FullOSImplemented` is **true**. Primary FullOS entry is **HKLM Run**
 (`LiteDeployFullOS`), staged in unattend specialize when the workflow has actions; FullOS may
-re-arm that key for mid-deploy reboots. There is no `auditUser` FullOS launch. Engine
+re-arm that key for mid-deploy reboots. On direct execution, before resume, FullOS writes
+`HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal`
+(`{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}`) so consoles started after that hand off to Windows
+Terminal. The window that already launched FullOS is unchanged, and a registry failure does
+not stop resume. There is no `auditUser` FullOS launch. Engine
 `-ResumeFullOS` remains a compat path (not `-BootObject`). ValidateOnly still checks the WinPE
 pipeline and returns both `ValidationProfile` and `RequirementsByEnvironment` for inspection:
 
