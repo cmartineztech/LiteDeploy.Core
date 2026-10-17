@@ -1,0 +1,163 @@
+{
+  "$schema": "./schemas/os-catalog.schema.json",
+  "operatingSystems": [
+    {
+      "osId": "win11-25h2-es-es-26200.8037-x64",
+      "fullName": "Windows 11 25H2",
+      "osName": "Windows 11 25H2 (26200.8037)",
+      "version": "25H2",
+      "buildVersion": "10.0.26200.8037",
+      "defaultLanguage": "es-es",
+      "supportedLanguages": "es-es",
+      "importedDate": "2026-10-16",
+      "arch": "x64",
+      "isCustomImage": false,
+      "enabled": true,
+      "mediaRoot": "Content/OperatingSystems/win11_25H2_26200_8037_x64_eses",
+      "setupPath": "Content/OperatingSystems/win11_25H2_26200_8037_x64_eses/setup.exe",
+      "imagePath": "Content/OperatingSystems/win11_25H2_26200_8037_x64_eses/sources/install.wim",
+      "imageLastWriteTime": "2026-03-07T01:04:42.2250000Z",
+      "imageLength": 7557825550,
+      "editions": [
+        {
+          "editionId": "win11-25h2-windows-11-home-26200.8037-x64",
+          "editionName": "Windows 11 Home",
+          "skuCode": "Core",
+          "imageIndex": 1,
+          "enabled": true,
+          "version": "25H2",
+          "buildVersion": "10.0.26200.8037",
+          "arch": "x64",
+          "defaultLanguage": "es-es",
+          "supportedLanguages": "es-es",
+          "createdTime": "3/6/2026 8:08:57 PM",
+          "modifiedTime": "3/6/2026 8:42:28 PM"
+        },
+        {
+          "editionId": "win11-25h2-windows-11-pro-26200.8037-x64",
+          "editionName": "Windows 11 Pro",
+          "skuCode": "Professional",
+          "imageIndex": 6,
+          "enabled": true,
+          "version": "25H2",
+          "buildVersion": "10.0.26200.8037",
+          "arch": "x64",
+          "defaultLanguage": "es-es",
+          "supportedLanguages": "es-es",
+          "createdTime": "3/6/2026 8:09:22 PM",
+          "modifiedTime": "3/6/2026 8:44:16 PM"
+        },
+        {
+          "editionId": "win11-25h2-windows-11-pro-for-workstations-26200.8037-x64",
+          "editionName": "Windows 11 Pro for Workstations",
+          "skuCode": "ProfessionalWorkstation",
+          "imageIndex": 10,
+          "enabled": true,
+          "version": "25H2",
+          "buildVersion": "10.0.26200.8037",
+          "arch": "x64",
+          "defaultLanguage": "es-es",
+          "supportedLanguages": "es-es",
+          "createdTime": "3/6/2026 8:21:15 PM",
+          "modifiedTime": "3/6/2026 8:45:25 PM"
+        }
+      ]
+    },
+    {
+      "osId": "win11-26h2-26300.9457-arm64",
+      "fullName": "Windows 11 26H2",
+      "osName": "Windows 11 26H2 (26300.9457)",
+      "version": "26H2",
+      "buildVersion": "10.0.26300.9457",
+      "defaultLanguage": "en-us",
+      "supportedLanguages": "en-us",
+      "importedDate": "2026-10-16",
+      "arch": "arm64",
+      "isCustomImage": false,
+      "enabled": true,
+      "mediaRoot": "Content/OperatingSystems/win11_26H2_26300_9457_arm64",
+      "setupPath": "Content/OperatingSystems/win11_26H2_26300_9457_arm64/setup.exe",
+      "imagePath": "Content/OperatingSystems/win11_26H2_26300_9457_arm64/sources/install.wim",
+      "imageLastWriteTime": "2026-09-13T19:31:15.3010000Z",
+      "imageLength": 7612941295,
+      "editions": [
+        {
+          "editionId": "win11-26h2-windows-11-home-26300.9457-arm64",
+          "editionName": "Windows 11 Home",
+          "skuCode": "Core",
+          "imageIndex": 1,
+          "enabled": true,
+          "version": "26H2",
+          "buildVersion": "10.0.26300.9457",
+          "arch": "arm64",
+          "defaultLanguage": "en-us",
+          "supportedLanguages": "en-us",
+          "createdTime": "9/13/2026 2:39:07 PM",
+          "modifiedTime": "9/13/2026 3:15:06 PM"
+        },
+        {
+          "editionId": "win11-26h2-windows-11-pro-26300.9457-arm64",
+          "editionName": "Windows 11 Pro",
+          "skuCode": "Professional",
+          "imageIndex": 3,
+          "enabled": true,
+          "version": "26H2",
+          "buildVersion": "10.0.26300.9457",
+          "arch": "arm64",
+          "defaultLanguage": "en-us",
+          "supportedLanguages": "en-us",
+          "createdTime": "9/13/2026 2:40:08 PM",
+          "modifiedTime": "9/13/2026 3:15:49 PM"
+        }
+      ]
+    },
+    {
+      "osId": "win11-26h2-26300.9457-x64",
+      "fullName": "Windows 11 26H2",
+      "osName": "Windows 11 26H2 (26300.9457)",
+      "version": "26H2",
+      "buildVersion": "10.0.26300.9457",
+      "defaultLanguage": "en-us",
+      "supportedLanguages": "en-us",
+      "importedDate": "2026-10-16",
+      "arch": "x64",
+      "isCustomImage": false,
+      "enabled": true,
+      "mediaRoot": "Content/OperatingSystems/win11_26H2_26300_9457_x64",
+      "setupPath": "Content/OperatingSystems/win11_26H2_26300_9457_x64/setup.exe",
+      "imagePath": "Content/OperatingSystems/win11_26H2_26300_9457_x64/sources/install.wim",
+      "imageLastWriteTime": "2026-09-13T19:44:51.0300000Z",
+      "imageLength": 8029966800,
+      "editions": [
+        {
+          "editionId": "win11-26h2-windows-11-enterprise-26300.9457-x64",
+          "editionName": "Windows 11 Enterprise",
+          "skuCode": "Enterprise",
+          "imageIndex": 3,
+          "enabled": true,
+          "version": "26H2",
+          "buildVersion": "10.0.26300.9457",
+          "arch": "x64",
+          "defaultLanguage": "en-us",
+          "supportedLanguages": "en-us",
+          "createdTime": "9/13/2026 3:01:47 PM",
+          "modifiedTime": "9/13/2026 3:22:58 PM"
+        },
+        {
+          "editionId": "win11-26h2-windows-11-pro-26300.9457-x64",
+          "editionName": "Windows 11 Pro",
+          "skuCode": "Professional",
+          "imageIndex": 5,
+          "enabled": true,
+          "version": "26H2",
+          "buildVersion": "10.0.26300.9457",
+          "arch": "x64",
+          "defaultLanguage": "en-us",
+          "supportedLanguages": "en-us",
+          "createdTime": "9/13/2026 2:45:46 PM",
+          "modifiedTime": "9/13/2026 3:23:34 PM"
+        }
+      ]
+    }
+  ]
+}

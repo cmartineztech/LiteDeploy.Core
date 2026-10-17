@@ -21,11 +21,11 @@ Domain logic for OS/workflow catalogs and selection contracts consumed by `UI.Wo
 
 3. **Uniform Presentation Format**:
    - OS catalog items and workflow child nodes are formatted into a single uniform string:
-     `Windows 11 26H2 Pro • Build 10.0.26300.9457 • x64 • en-us • Imported: 2026-10-03`
+     `Windows 11 Pro (26H2)` with subtitle `Imported: 2026-10-16 | Leng: en-us | Build 10.0.26300.9457`
    - Each selectable child `Tag` includes `WorkflowId`, `UnattendPath`, `ComputerSetup`, **`Actions`**, and OS edition fields. Image uses `WorkflowTag.Actions` to decide whether to stage FullOS Run / Audit reseal in the answer file.
 
 4. **OS Catalog Fallback Mode**:
-   - If `WorkFlows\` contains no workflows or all workflows are disabled, the UI automatically falls back to `Content\OperatingSystems\catalog.json` using `Standard.xml` as default answer file.
+   - If `WorkFlows\` contains no workflows or all workflows are disabled, the UI automatically falls back to `Content\OperatingSystems\LocalCatalog.json` using `Standard.xml` as default answer file.
 
 5. **Workflow-Level Overrides (`computerSetup`)**:
    - Workflows can define `"computerSetup": { "ImageEngine": "dism.exe" }` (or `Setup.exe`) to override baseline `BootConfig.json` settings per workflow.

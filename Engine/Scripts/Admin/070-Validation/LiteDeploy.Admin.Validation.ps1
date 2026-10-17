@@ -63,7 +63,7 @@ function Test-LiteDeployContent {
 
 function Test-LiteDeployImages {
     param([string]$ShareRoot)
-    $catalog = Join-Path $ShareRoot "Content\OperatingSystems\catalog.json"
+    $catalog = Join-Path $ShareRoot "Content\OperatingSystems\LocalCatalog.json"
     $ok = Test-Path -LiteralPath $catalog -PathType Leaf
     Write-LiteDeployValidationLine -Status $(if ($ok) { "PASS" } else { "WARN" }) -Message "Images"
     return $ok

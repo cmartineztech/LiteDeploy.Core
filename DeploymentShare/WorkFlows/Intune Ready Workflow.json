@@ -8,7 +8,7 @@
   "expanded": true,
   "enabled": true,
   "revision": 1,
-  "osCatalogPath": "Content/OperatingSystems/catalog.json",
+  "osCatalogPath": "Content/OperatingSystems/LocalCatalog.json",
   "unattendPath": "Content/Unattend/IntuneReady.xml",
   "operatingSystems": [
     {
@@ -16,6 +16,12 @@
       "editionIds": [
         "win11-26h2-windows-11-enterprise-26300.9457-x64",
         "win11-26h2-windows-11-education-26300.9457-x64"
+      ]
+    },
+    {
+      "osId": "win11-25h2-es-es-26200.8037-x64",
+      "editionIds": [
+          "win11-25h2-windows-11-pro-26200.8037-x64"
       ]
     }
   ],

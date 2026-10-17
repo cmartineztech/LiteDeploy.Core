@@ -690,24 +690,36 @@ function Get-LiteDeployOperatingSystemsCatalog {
 }
 
 function Get-LiteDeployOsCatalogDateText {
-    param([psobject]$Os)
-
-    $parts = [System.Collections.Generic.List[string]]::new()
+    param(
+        [psobject]$Os,
+        [psobject]$Edition = $null
+    )
 
     $imported = $null
     if ($Os -and $Os.PSObject.Properties["importedDate"] -and $Os.importedDate) {
         $imported = [string]$Os.importedDate
     }
-    if ($imported) {
-        $parts.Add("Imported $imported")
+
+    $lang = $null
+    if ($Edition -and $Edition.PSObject.Properties["defaultLanguage"] -and $Edition.defaultLanguage) {
+        $lang = [string]$Edition.defaultLanguage
+    }
+    elseif ($Os -and $Os.PSObject.Properties["defaultLanguage"] -and $Os.defaultLanguage) {
+        $lang = [string]$Os.defaultLanguage
     }
 
-    if ($Os -and $Os.buildVersion) {
-        $parts.Add("Build $($Os.buildVersion)")
+    $build = $null
+    if ($Edition -and $Edition.PSObject.Properties["buildVersion"] -and $Edition.buildVersion) {
+        $build = [string]$Edition.buildVersion
     }
-    elseif ($Os -and $Os.version) {
-        $parts.Add("Version $($Os.version)")
+    elseif ($Os -and $Os.buildVersion) {
+        $build = [string]$Os.buildVersion
     }
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    if ($imported) { $parts.Add("Imported: $imported") }
+    if ($lang) { $parts.Add("Leng: $lang") }
+    if ($build) { $parts.Add("Build $build") }
 
     if ($parts.Count -eq 0) { return "Updated" }
     return ($parts -join " | ")

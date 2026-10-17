@@ -8,7 +8,7 @@
   "expanded": true,
   "enabled": true,
   "revision": 1,
-  "osCatalogPath": "Content/OperatingSystems/catalog.json",
+  "osCatalogPath": "Content/OperatingSystems/LocalCatalog.json",
   "unattendPath": "Content/Unattend/DomainJoin.xml",
   "operatingSystems": [
     {

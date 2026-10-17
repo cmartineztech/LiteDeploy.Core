@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Loads deployment workflow definitions from <ShareRoot>\WorkFlows\*.json and the operating-system
-    catalog from <ShareRoot>\Content\OperatingSystems\catalog.json, validates them, and resolves a workflow
+    catalog from <ShareRoot>\Content\OperatingSystems\LocalCatalog.json, validates them, and resolves a workflow
     plus an OS/edition selection into an ordered plan of steps.
 
     Workflow JSON (schemaVersion 1):
@@ -420,7 +420,7 @@ function Find-LiteDeployCatalogEdition {
 }
 
 # ==============================================================================
-# 4. OS CATALOG (extracted from WorkflowSelection: ImportOSMedia Content\OperatingSystems\catalog.json)
+# 4. OS CATALOG (extracted from WorkflowSelection: ImportOSMedia Content\OperatingSystems\LocalCatalog.json)
 # ==============================================================================
 
 function Get-LiteDeployOperatingSystemsCatalog {
@@ -432,10 +432,10 @@ function Get-LiteDeployOperatingSystemsCatalog {
         [Parameter(Mandatory = $true)]
         [string]$ShareRoot,
 
-        [string]$RelativePath = "Content\OperatingSystems\catalog.json"
+        [string]$RelativePath = "Content\OperatingSystems\LocalCatalog.json"
     )
 
-    if ([string]::IsNullOrWhiteSpace($RelativePath)) { $RelativePath = "Content\OperatingSystems\catalog.json" }
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) { $RelativePath = "Content\OperatingSystems\LocalCatalog.json" }
 
     $catalogPath = Join-LiteDeployWorkflowPath -Root $ShareRoot -ChildPath $RelativePath
     if (-not (Test-LiteDeployJsonFile -Path $catalogPath)) {
@@ -476,40 +476,75 @@ function Get-LiteDeployNativeArchitecture {
     }
 }
 
+function Get-LiteDeployEditionListLabel {
+    <#
+    .SYNOPSIS
+        Selectable row title: edition name plus release, e.g. "Windows 11 Pro (26H2)".
+    #>
+    param(
+        [psobject]$Edition,
+        [psobject]$Os
+    )
+
+    $edName = "Operating System"
+    if ($Edition -and $Edition.PSObject.Properties['editionName'] -and $Edition.editionName) {
+        $edName = [string]$Edition.editionName
+    }
+    elseif ($Edition -and $Edition.PSObject.Properties['name'] -and $Edition.name) {
+        $edName = [string]$Edition.name
+    }
+    elseif ($Os -and $Os.PSObject.Properties['fullName'] -and $Os.fullName) {
+        $edName = [string]$Os.fullName
+    }
+
+    $ver = $null
+    if ($Edition -and $Edition.PSObject.Properties['version'] -and $Edition.version) {
+        $ver = [string]$Edition.version
+    }
+    elseif ($Os -and $Os.PSObject.Properties['version'] -and $Os.version) {
+        $ver = [string]$Os.version
+    }
+
+    if ($ver) { return "$edName ($ver)" }
+    return $edName
+}
+
 function Get-LiteDeployOsCatalogDateText {
     <#
     .SYNOPSIS
-        "Build <n> • <arch> • <lang> • Imported: <date>" label used by the WorkflowSelection tree.
+        "Imported: <date> | Leng: <lang> | Build <n>" subtitle used by the WorkflowSelection tree.
     #>
     param(
         [psobject]$Os,
-        [string]$Separator = " • "
+        [psobject]$Edition = $null,
+        [string]$Separator = " | "
     )
-
-    $parts = [System.Collections.Generic.List[string]]::new()
-
-    if ($Os -and $Os.PSObject.Properties["buildVersion"] -and $Os.buildVersion) {
-        $parts.Add("Build $($Os.buildVersion)")
-    }
-    elseif ($Os -and $Os.PSObject.Properties["version"] -and $Os.version) {
-        $parts.Add("Version $($Os.version)")
-    }
-
-    if ($Os -and $Os.PSObject.Properties["arch"] -and $Os.arch) {
-        $parts.Add([string]$Os.arch)
-    }
-
-    if ($Os -and $Os.PSObject.Properties["defaultLanguage"] -and $Os.defaultLanguage) {
-        $parts.Add([string]$Os.defaultLanguage)
-    }
 
     $imported = $null
     if ($Os -and $Os.PSObject.Properties["importedDate"] -and $Os.importedDate) {
         $imported = [string]$Os.importedDate
     }
-    if ($imported) {
-        $parts.Add("Imported: $imported")
+
+    $lang = $null
+    if ($Edition -and $Edition.PSObject.Properties["defaultLanguage"] -and $Edition.defaultLanguage) {
+        $lang = [string]$Edition.defaultLanguage
     }
+    elseif ($Os -and $Os.PSObject.Properties["defaultLanguage"] -and $Os.defaultLanguage) {
+        $lang = [string]$Os.defaultLanguage
+    }
+
+    $build = $null
+    if ($Edition -and $Edition.PSObject.Properties["buildVersion"] -and $Edition.buildVersion) {
+        $build = [string]$Edition.buildVersion
+    }
+    elseif ($Os -and $Os.PSObject.Properties["buildVersion"] -and $Os.buildVersion) {
+        $build = [string]$Os.buildVersion
+    }
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    if ($imported) { $parts.Add("Imported: $imported") }
+    if ($lang) { $parts.Add("Leng: $lang") }
+    if ($build) { $parts.Add("Build $build") }
 
     if ($parts.Count -eq 0) { return "Ready" }
     return ($parts -join $Separator)
@@ -564,7 +599,6 @@ function Get-LiteDeployWorkflowPresentationGroups {
                             }
                         }
 
-                        $dateText = Get-LiteDeployOsCatalogDateText -Os $catOs
                         $editions = if ($catOs.PSObject.Properties['editions'] -and $catOs.editions) {
                             @($catOs.editions | Where-Object { -not ($_.PSObject.Properties['enabled'] -and $_.enabled -eq $false) })
                         } else { @() }
@@ -578,12 +612,8 @@ function Get-LiteDeployWorkflowPresentationGroups {
                                 continue
                             }
 
-                            $edName = if ($ed.PSObject.Properties['editionName'] -and $ed.editionName) { $ed.editionName }
-                            elseif ($ed.PSObject.Properties['name'] -and $ed.name) { $ed.name }
-                            else { $catOs.fullName }
-
-                            $cleanEdName = $edName -replace '^Windows\s+\d+\s*', ''
-                            $displayName = if ($catOs.fullName) { "$($catOs.fullName) $cleanEdName" } else { $edName }
+                            $displayName = Get-LiteDeployEditionListLabel -Edition $ed -Os $catOs
+                            $dateText = Get-LiteDeployOsCatalogDateText -Os $catOs -Edition $ed
 
                             $edIndex = if ($ed.PSObject.Properties['imageIndex'] -and $null -ne $ed.imageIndex) { [int]$ed.imageIndex }
                             elseif ($ed.PSObject.Properties['index'] -and $null -ne $ed.index) { [int]$ed.index }
@@ -656,19 +686,14 @@ function Get-LiteDeployWorkflowPresentationGroups {
             elseif ($os.PSObject.Properties['expandOnLoad']) { $expandOnLoad = [bool]$os.expandOnLoad }
             elseif ($os.PSObject.Properties['ExpandOnLoad']) { $expandOnLoad = [bool]$os.ExpandOnLoad }
 
-            $dateText = Get-LiteDeployOsCatalogDateText -Os $os
             $editions = if ($os.PSObject.Properties['editions'] -and $os.editions) {
                 @($os.editions | Where-Object { -not ($_.PSObject.Properties['enabled'] -and $_.enabled -eq $false) })
             } else { @() }
 
             $entries = [System.Collections.Generic.List[object]]::new()
             foreach ($ed in @($editions)) {
-                $edName = if ($ed.PSObject.Properties['editionName'] -and $ed.editionName) { $ed.editionName }
-                elseif ($ed.PSObject.Properties['name'] -and $ed.name) { $ed.name }
-                else { $os.fullName }
-
-                $cleanEdName = $edName -replace '^Windows\s+\d+\s*', ''
-                $displayName = if ($os.fullName) { "$($os.fullName) $cleanEdName" } else { $edName }
+                $displayName = Get-LiteDeployEditionListLabel -Edition $ed -Os $os
+                $dateText = Get-LiteDeployOsCatalogDateText -Os $os -Edition $ed
 
                 $edIndex = if ($ed.PSObject.Properties['imageIndex'] -and $null -ne $ed.imageIndex) { [int]$ed.imageIndex }
                 elseif ($ed.PSObject.Properties['index'] -and $null -ne $ed.index) { [int]$ed.index }
@@ -998,7 +1023,7 @@ function Test-LiteDeployWorkflow {
         if (-not $wf.Enabled) { $warnings.Add("Workflow is disabled.") }
 
         # --- OS catalog + unattend paths --------------------------------------
-        $catalogRelative = if ($wf.OsCatalogPath) { $wf.OsCatalogPath } else { "Content\OperatingSystems\catalog.json" }
+        $catalogRelative = if ($wf.OsCatalogPath) { $wf.OsCatalogPath } else { "Content\OperatingSystems\LocalCatalog.json" }
         $catalogFull = Join-LiteDeployWorkflowPath -Root $root -ChildPath $catalogRelative
         $catalog = $null
         if (-not (Test-LiteDeployWorkflowPathInside -ChildPath $catalogFull -ParentPath $root)) {

@@ -403,7 +403,7 @@ function Invoke-CatalogRebuild {
     param([string]$DeploymentShare)
 
     $osRootDir   = Join-Path $DeploymentShare "Content\OperatingSystems"
-    $catalogPath = Join-Path $osRootDir "catalog.json"
+    $catalogPath = Join-Path $osRootDir "LocalCatalog.json"
 
     Write-Host "`n[+] Rebuilding central catalog.json..." -ForegroundColor Cyan
     if (-not (Test-Path $osRootDir)) { throw "OperatingSystems directory not found at '$osRootDir'." }

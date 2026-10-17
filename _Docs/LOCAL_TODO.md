@@ -112,7 +112,18 @@
 
 ---
 
-## 5. Future analysis (ideas only — do not implement yet)
+## 5. Runtime orchestrator names (discussed, not started)
+
+- [ ] Rename the three phase entry points so the file name says where it runs. Shared components (`Disk`, `Image`, `Logs`, `State`, `Environment`, `Workflow`, UI) stay `LiteDeploy.*`.
+  - [ ] `LiteDeploy.Boot.ps1` → `LiteDeploy.PE.Boot`
+  - [ ] `LiteDeploy.Engine.ps1` → `LiteDeploy.PE.Engine` (WinPE pipeline)
+  - [ ] `LiteDeploy.FullOS.ps1` → `LiteDeploy.OS.Engine` (Session 1 resume)
+  - [ ] Decide the legacy alias `LiteDeploy.DeploymentEngine.ps1` (byte-identical copy for existing WinPE BootInitializer images).
+  - [ ] Update specialize `HKLM Run` so new images launch `LiteDeploy.OS.Engine.ps1`. In-flight installs still point at `LiteDeploy.FullOS.ps1` until republished.
+
+---
+
+## 6. Future analysis (ideas only — do not implement yet)
 
 - [ ] **JSONNormalizer / schema merge** vs current StrictMode `PSObject.Properties[...]` probing in catalog/workflow/BootConfig — see [IDEAS §13](planning/IDEAS_FOR_IMPLEMENTATION.md#13-future-analysis-json-schema-merge-jsonnormalizer-vs-defensive-property-probing). Keep State serializer (depth 8 / JSON depth 10) as-is.
 - [x] **Repo source layout:** removed untracked flat `Engine\Scripts\Runtime|Admin\LiteDeploy*.ps1` (+ `UI\`) mirrors; `.gitignore` blocks them. Edit numbered folders only; publish flat to `DeploymentShare` via Admin.Build.
@@ -120,7 +131,7 @@
 
 ---
 
-## 6. Documentation & References
+## 7. Documentation & References
 
 - [Docs map](README.md) — architecture / guides / integrations / planning
 - [Package Orchestrator Plan](planning/PACKAGE_ORCHESTRATOR_PLAN.md) *(plan + diagrams; not implemented)*
