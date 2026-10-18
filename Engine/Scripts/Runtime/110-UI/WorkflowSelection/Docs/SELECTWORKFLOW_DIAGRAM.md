@@ -14,7 +14,7 @@ flowchart TD
     View --> Config["Read initial configuration and apply policies"]
     Config --> Data["Read hardware, disk choices, OS catalog, and driver matches"]
     Data --> Screen["Technician reviews computer, workflow, disk, and driver choices"]
-    Screen -- Browse --> Browse["Open picker with RuntimeFiles.DriverPickerView"]
+    Screen -- Browse --> Browse["Open picker with no folder selected"]
     Browse --> Folder["Validate selected folder and driver files"]
     Folder --> Screen
     Screen -- "Refresh Disks" --> Disks["Refresh disks while preserving other selections"]

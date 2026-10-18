@@ -592,6 +592,52 @@ function Update-LiteDeployBrandHeader {
             "$componentName   | v$componentVersion"
         }
     }
+    Update-LiteDeployHeaderMark
+}
+
+function Update-LiteDeployHeaderMark {
+    # Same frosted square as Hardware Precheck (#28FFFFFF) for both LD and Config\logo.png.
+    $badgeBrush = (New-Object System.Windows.Media.BrushConverter).ConvertFromString("#28FFFFFF")
+    $badge = $window.FindName("BadgeLogo")
+    if ($null -eq $badge) { return }
+
+    $logoPath = Join-Path (Split-Path -Parent $script:BootConfigPath) "logo.png"
+    $loaded = $false
+    if (Test-Path -LiteralPath $logoPath -PathType Leaf) {
+        try {
+            $full = (Resolve-Path -LiteralPath $logoPath).Path
+            $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bitmap.BeginInit()
+            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmap.UriSource = New-Object System.Uri($full)
+            $bitmap.EndInit()
+            if ($bitmap.CanFreeze) { $bitmap.Freeze() }
+            $image = New-Object System.Windows.Controls.Image
+            $image.Source = $bitmap
+            $image.Stretch = [System.Windows.Media.Stretch]::UniformToFill
+            $image.Margin = New-Object System.Windows.Thickness(0)
+            $badge.Child = $image
+            $badge.Background = $badgeBrush
+            $clip = New-Object System.Windows.Media.RectangleGeometry
+            $clip.RadiusX = 4
+            $clip.RadiusY = 4
+            $clip.Rect = New-Object System.Windows.Rect(0, 0, 40, 40)
+            $badge.Clip = $clip
+            $loaded = $true
+        }
+        catch {}
+    }
+    if ($loaded) { return }
+
+    $mark = New-Object System.Windows.Controls.TextBlock
+    $mark.Text = "LD"
+    $mark.Foreground = [System.Windows.Media.Brushes]::White
+    $mark.FontWeight = [System.Windows.FontWeights]::Bold
+    $mark.FontSize = 16
+    $mark.HorizontalAlignment = "Center"
+    $mark.VerticalAlignment = "Center"
+    $badge.Child = $mark
+    $badge.Background = $badgeBrush
 }
 
 # Same PreCheck pattern: Metadata.Name / Environment / Version, else component fallback.
@@ -1258,21 +1304,10 @@ if ($null -ne $btnBrowseDriverFolder) {
             return
         }
 
-        # Picker was loaded once when this screen opened. Reopen the screen after code edits.
-
-        $initialDriverPath = if ($script:DetectionResult.FullPath) {
-            $detectedPath = [string]$script:DetectionResult.FullPath
-            if (Test-Path -LiteralPath $detectedPath -PathType Leaf) {
-                Split-Path -Parent $detectedPath
-            } else {
-                $detectedPath
-            }
-        } else {
-            Join-Path $script:DeploymentSharePath "Content\Drivers"
-        }
+        # Picker opens with no folder selected. It only returns a path that passes its own rules.
 
         $pickerViewPath = $RuntimeFiles.DriverPickerView
-        $customPath = Show-DriverPathDialog -WindowTitle "Select Driver Folder" -InitialPath $initialDriverPath -Owner $window -Theme $Theme -DeploymentSharePath $script:DeploymentSharePath -ViewPath $pickerViewPath
+        $customPath = Show-DriverPathDialog -WindowTitle "Select Driver Folder" -Owner $window -Theme $Theme -DeploymentSharePath $script:DeploymentSharePath -ViewPath $pickerViewPath
         if ($customPath) {
             $customEntry = "Custom folder: $customPath"
             $existingIndex = $cmbDriverPackPath.Items.IndexOf($customEntry)

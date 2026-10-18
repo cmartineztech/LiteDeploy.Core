@@ -832,6 +832,51 @@ $window.Add_KeyDown({ if ($_.Key -eq [System.Windows.Input.Key]::Escape) { $wind
 $window.Add_ContentRendered({ Invoke-HardwarePreCheck })
 
 # Fill empty XAML brand placeholders before show (peek only - do not consume optional -BootConfig).
+function Update-LiteDeployHeaderMark {
+    # Same 40x40 frosted square as Workflow Selection (#28FFFFFF) for LD and Config\logo.png.
+    $badgeBrush = (New-Object System.Windows.Media.BrushConverter).ConvertFromString("#28FFFFFF")
+    $badge = $window.FindName("BadgeLogo")
+    if ($null -eq $badge) { return }
+
+    $logoPath = Join-Path (Split-Path -Parent $script:BootConfigPath) "logo.png"
+    $loaded = $false
+    if (Test-Path -LiteralPath $logoPath -PathType Leaf) {
+        try {
+            $full = (Resolve-Path -LiteralPath $logoPath).Path
+            $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bitmap.BeginInit()
+            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmap.UriSource = New-Object System.Uri($full)
+            $bitmap.EndInit()
+            if ($bitmap.CanFreeze) { $bitmap.Freeze() }
+            $image = New-Object System.Windows.Controls.Image
+            $image.Source = $bitmap
+            $image.Stretch = [System.Windows.Media.Stretch]::UniformToFill
+            $image.Margin = New-Object System.Windows.Thickness(0)
+            $badge.Child = $image
+            $badge.Background = $badgeBrush
+            $clip = New-Object System.Windows.Media.RectangleGeometry
+            $clip.RadiusX = 4
+            $clip.RadiusY = 4
+            $clip.Rect = New-Object System.Windows.Rect(0, 0, 40, 40)
+            $badge.Clip = $clip
+            $loaded = $true
+        }
+        catch {}
+    }
+    if ($loaded) { return }
+
+    $mark = New-Object System.Windows.Controls.TextBlock
+    $mark.Text = "LD"
+    $mark.Foreground = [System.Windows.Media.Brushes]::White
+    $mark.FontWeight = [System.Windows.FontWeights]::Bold
+    $mark.FontSize = 16
+    $mark.HorizontalAlignment = "Center"
+    $mark.VerticalAlignment = "Center"
+    $badge.Child = $mark
+    $badge.Background = $badgeBrush
+}
+
 $brandConfig = $null
 if ($null -ne $script:PassedBootConfig) {
     $brandConfig = $script:PassedBootConfig
@@ -855,6 +900,7 @@ if ($null -ne $txtBrand) { $txtBrand.Text = $name }
 if ($null -ne $txtSubtitle) {
     $txtSubtitle.Text = if ($environment) { "$environment Environment | v$version" } else { "$componentName   | v$componentVersion" }
 }
+Update-LiteDeployHeaderMark
 
 $null = $window.ShowDialog()
 

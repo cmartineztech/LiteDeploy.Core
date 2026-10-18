@@ -19,7 +19,7 @@ PowerShell 5.1 STA, WPF and picker XAML. Supply ViewPath or preload Environment 
 
 ### What runs and changes
 
-Import defines functions; direct execution opens dialog. Enumeration/file checks read disk, not copy/install drivers.
+The drive list skips `Z:` so the dialog can open without waiting on the share. `DeploymentShare (Z:)` is still shown. Its folders are read only when that node is expanded. That node is not a selection. Vendor folders directly under Drivers are not selectable either. Only a folder inside one of those may be returned, and it must contain `.inf`, `.sys`, or `.cat`.
 
 ### Results and failures
 
@@ -54,8 +54,6 @@ param(
         [string]$Theme = "Light",
 
         [string]$WindowTitle = "Select Driver Folder",
-
-        [string]$InitialPath,
 
         [string]$DeploymentSharePath,
 

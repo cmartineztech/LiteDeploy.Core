@@ -472,3 +472,19 @@ A small **JSONNormalizer** helper (PS 5.1 / WinPE, no Newtonsoft):
 
 **Out of scope until then:** no new Runtime module, no bulk delete of `PSObject.Properties[` checks, no change to State MaxDepth.
 
+---
+
+## 14. Driver picker as part of Workflow Selection
+
+> **Status:** Idea only. Do **not** fold the picker into Workflow Selection until explicitly scheduled. Live path stays a separate dialog: `LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1`, opened from Browse.
+
+### Why it might feel faster
+
+Each Browse builds a new WPF window, theme brushes, and drive tree, then shows it. The share is already known when Workflow Selection is on screen. Building that tree once inside the same window (panel or overlay) would skip constructing the dialog on every click. `Z:` stays out of the first paint and is listed only when `DeploymentShare (Z:)` is expanded — that deferral is already in the separate picker and must stay.
+
+### Shape if scheduled
+
+- Keep the same selection rules: masked share is not a path, vendor folders under `Content\Drivers` are not selectable, a deeper folder must contain `.inf`, `.sys`, or `.cat`, cancel returns nothing.
+- Workflow Selection still stores the result as `Custom folder: ...`.
+- Do not probe `Z:` (`IsReady`, volume label, `GetFullPath` of `Content\Drivers`) until that node expands.
+

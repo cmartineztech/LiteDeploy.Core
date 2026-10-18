@@ -408,8 +408,13 @@ $(Get-SharedXamlResources)
                                         <DataGridTextColumn Header="MANUFACTURER" Binding="{Binding Manufacturer}" Width="120"/>
                                         <DataGridTextColumn Header="MODEL" Binding="{Binding Model}" Width="180"/>
                                         <DataGridTextColumn Header="SKU" Binding="{Binding SystemSKU}" Width="100"/>
-                                        <DataGridTextColumn Header="PACK STATUS" Binding="{Binding Status}" Width="120"
-                                                            ToolTip="Download state from LocalCatalog (if a pack exists for this CSV row)"/>
+                                        <DataGridTextColumn Header="PACK STATUS" Binding="{Binding Status}" Width="120">
+                                            <DataGridTextColumn.CellStyle>
+                                                <Style TargetType="DataGridCell" BasedOn="{StaticResource DataGridCellStyle}">
+                                                    <Setter Property="ToolTip" Value="Download state from LocalCatalog (if a pack exists for this CSV row)"/>
+                                                </Style>
+                                            </DataGridTextColumn.CellStyle>
+                                        </DataGridTextColumn>
                                         <DataGridTextColumn Header="CONTENT LOCATION" Binding="{Binding ContentLocation}" Width="*"/>
                                     </DataGrid.Columns>
                                 </DataGrid>

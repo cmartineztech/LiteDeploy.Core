@@ -35,8 +35,6 @@ function Show-DriverPathDialog {
 
         [string]$WindowTitle = "Select Driver Folder",
 
-        [string]$InitialPath,
-
         [string]$DeploymentSharePath,
 
         # Supplied by WorkflowSelection from Environment; standalone uses the current peer file.
@@ -55,35 +53,23 @@ function Show-DriverPathDialog {
     if (-not [string]::IsNullOrWhiteSpace($DeploymentSharePath)) {
         try {
             $shareInput = $DeploymentSharePath.Trim()
-            # GetFullPath("Z:") uses the process CWD on that drive - force a real root.
+            # A drive-letter root is already absolute. GetFullPath("Z:\...") waits on the share.
             if ($shareInput -match '^([A-Za-z]):\\?$') {
                 $letter = $Matches[1].ToUpperInvariant()
                 $deploymentShareRoot = ($letter + ':')
+                $deploymentDriversRoot = ($letter + ':\Content\Drivers')
             } else {
                 $deploymentShareRoot = [System.IO.Path]::GetFullPath($shareInput).TrimEnd('\', '/')
+                $deploymentDriversRoot = [System.IO.Path]::GetFullPath((Join-Path ($deploymentShareRoot.TrimEnd('\') + '\') 'Content\Drivers'))
             }
-            $deploymentDriversRoot = [System.IO.Path]::GetFullPath((Join-Path ($deploymentShareRoot.TrimEnd('\') + '\') 'Content\Drivers'))
         } catch {
             $deploymentShareRoot = $null
             $deploymentDriversRoot = $null
         }
     }
 
-    # Z:\ is always labeled DeploymentShare when that volume is present.
-    try {
-        $zDrive = [System.IO.DriveInfo]::new('Z')
-        if ($zDrive.IsReady) {
-            $labelAsDeploymentShare = $true
-            if (-not $deploymentShareRoot -or $deploymentShareRoot -notmatch '^(?i)Z:') {
-                $deploymentShareRoot = 'Z:'
-                $deploymentDriversRoot = 'Z:\Content\Drivers'
-            } elseif (-not $deploymentDriversRoot) {
-                $deploymentDriversRoot = [System.IO.Path]::GetFullPath((Join-Path ($deploymentShareRoot.TrimEnd('\') + '\') 'Content\Drivers'))
-            }
-        }
-    } catch {
-        # Z: not available
-    }
+    # Show the masked node from the path we already have. Do not probe Z: until it is expanded.
+    $labelAsDeploymentShare = [bool]($deploymentShareRoot -match '^(?i)Z:')
 
     $isDark = ($Theme -eq "Dark")
 
@@ -234,11 +220,18 @@ function Show-DriverPathDialog {
             return $true
         }
 
-        # DeploymentShare (Z:) root is Content\Drivers - require a subfolder (vendor/model pack).
+        # Content\Drivers itself, and the vendor folders directly under it, are not a pack.
+        # Only a folder inside those vendor folders may be selected.
         if ($deploymentDriversRoot) {
             $driversRootTrimmed = [System.IO.Path]::GetFullPath($deploymentDriversRoot).TrimEnd('\', '/')
             if ($full.Equals($driversRootTrimmed, [System.StringComparison]::OrdinalIgnoreCase)) {
                 return $true
+            }
+            if ($full.StartsWith($driversRootTrimmed + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $relative = $full.Substring($driversRootTrimmed.Length).TrimStart('\')
+                if ($relative -notmatch '[\\/]') {
+                    return $true
+                }
             }
         }
 
@@ -447,16 +440,28 @@ function Show-DriverPathDialog {
         return $stack
     }
 
+    $readyDrives = New-Object System.Collections.Generic.List[System.IO.DriveInfo]
     try {
-        $readyDrives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady }
+        foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+            # IsReady and VolumeLabel on Z: wait for the share. Skip it here; the masked node is separate.
+            if ($drive.Name.TrimEnd('\').ToUpperInvariant() -eq 'Z:') { continue }
+            try {
+                if ($drive.IsReady) { $readyDrives.Add($drive) }
+            } catch {}
+        }
     } catch {
-        $readyDrives = @()
+        $readyDrives = New-Object System.Collections.Generic.List[System.IO.DriveInfo]
     }
 
     $treeView.Add_SelectedItemChanged({
-        if ($treeView.SelectedItem -and $treeView.SelectedItem.Tag) {
-            Update-DriverSelectionUi -Path ([string]$treeView.SelectedItem.Tag)
-        } else {
+        $selected = $treeView.SelectedItem
+        if ($selected -and $selected.Uid -eq 'DeploymentShareRoot') {
+            Update-DriverSelectionUi -Path $null
+        }
+        elseif ($selected -and $selected.Tag) {
+            Update-DriverSelectionUi -Path ([string]$selected.Tag)
+        }
+        else {
             Update-DriverSelectionUi -Path $null
         }
     })
@@ -490,38 +495,17 @@ function Show-DriverPathDialog {
         $item.Cursor = [System.Windows.Input.Cursors]::Hand
         $null = $item.Items.Add("")
         $null = $treeView.Items.Add($item)
-
-        if ($InitialPath -and $InitialPath.StartsWith($driveRootFull, [System.StringComparison]::OrdinalIgnoreCase) -and
-            -not ($deploymentShareRoot -and $InitialPath.StartsWith($deploymentShareRoot, [System.StringComparison]::OrdinalIgnoreCase))) {
-            $item.IsExpanded = $true
-            $item.IsSelected = $true
-            Update-DriverSelectionUi -Path $driveRootFull
-        }
     }
 
     # DeploymentShare (Z:) stays last - same position Z: would have in the list.
     if ($labelAsDeploymentShare -and $deploymentShareRoot -and $deploymentDriversRoot) {
         $shareItem = New-Object System.Windows.Controls.TreeViewItem
         $shareItem.Header = New-TreeHeader -Text "DeploymentShare (Z:)" -IconElement (New-VectorIconElement -Geometry $fixedDriveGeometry -Color $fixedDriveColor) -TextColor $fgText
+        $shareItem.Uid = 'DeploymentShareRoot'
         $shareItem.Tag = $deploymentDriversRoot
         $shareItem.Cursor = [System.Windows.Input.Cursors]::Hand
         $null = $shareItem.Items.Add("")
         $null = $treeView.Items.Add($shareItem)
-
-        if ($InitialPath -and (
-                $InitialPath.StartsWith($deploymentDriversRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-                $InitialPath.StartsWith($deploymentShareRoot, [System.StringComparison]::OrdinalIgnoreCase)
-            )) {
-            $shareItem.IsExpanded = $true
-            $shareItem.IsSelected = $true
-            Update-DriverSelectionUi -Path $(
-                if ($InitialPath.StartsWith($deploymentDriversRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $InitialPath
-                } else {
-                    $deploymentDriversRoot
-                }
-            )
-        }
     }
 
     $treeView.AddHandler(

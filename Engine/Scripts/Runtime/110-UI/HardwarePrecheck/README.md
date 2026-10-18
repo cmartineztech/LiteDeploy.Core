@@ -6,6 +6,8 @@
 
 Phase 1 readiness UI. Theme: `-Theme` or `BootConfig.Ui.Theme` (default Light). Diagram: `Docs/PRECHECK_DIAGRAM.md`.
 
+The header badge matches Workflow Selection: a 40×40 `#28FFFFFF` square. It shows **LD** unless `Config\logo.png` sits next to BootConfig.
+
 Engine passes the verified RuntimeFiles map. For standalone use, start Windows PowerShell 5.1 with -STA and load Environment with the correct mode first. The screen then uses named paths and reuses loaded backend helpers.
 
 ### BootConfig.Startup

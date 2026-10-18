@@ -267,8 +267,8 @@
                             <ColumnDefinition Width="*" MinWidth="140"/>
                             <ColumnDefinition Width="*" MinWidth="160"/>
                         </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0" Background="#28FFFFFF" CornerRadius="4" Width="40" Height="40">
-                            <TextBlock Text="LD" Foreground="White" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border Name="BadgeLogo" Grid.Column="0" Background="#28FFFFFF" CornerRadius="4" Width="40" Height="40">
+                            <TextBlock Name="TxtLogoMark" Text="LD" Foreground="White" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,12,0">
                             <!-- Filled at runtime from BootConfig.Metadata (Name / Environment / Version) -->
