@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Component Synchronization & Distribution Engine.
 
@@ -250,7 +250,92 @@ function Get-RepoComponentFiles {
 # 4. SYNCHRONIZATION WORKFLOWS
 # ==============================================================================
 
+function Assert-LiteDeploySafeCleanTarget {
+    <#
+    .SYNOPSIS
+        Validates that a target directory is safe for -Clean removal (not a drive root, shallow path, or reparse point).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TargetPath)) {
+        throw "Refusing to clean an empty target path."
+    }
+
+    $trimmed = $TargetPath.Trim().TrimEnd('\', '/')
+    if ($trimmed -match '^[A-Za-z]:$') {
+        throw "Safety gate blocked -Clean on drive root '$TargetPath'."
+    }
+
+    $segments = @($trimmed -split '[\\/]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($segments.Count -lt 2) {
+        throw "Safety gate blocked -Clean on shallow path '$TargetPath' (minimum 2 path segments required)."
+    }
+
+    if (Test-Path -LiteralPath $TargetPath) {
+        $item = Get-Item -LiteralPath $TargetPath -Force -ErrorAction Stop
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Safety gate blocked -Clean on reparse point / junction '$TargetPath'."
+        }
+    }
+
+    return $true
+}
+
+function New-LiteDeployReleaseManifest {
+    <#
+    .SYNOPSIS
+        Generates ReleaseManifest.json containing SHA-256 digests for published Runtime scripts and UI assets.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RuntimeDirectory
+    )
+
+    $manifestPath = Join-Path $RuntimeDirectory "ReleaseManifest.json"
+    if (-not $PSCmdlet.ShouldProcess($manifestPath, "Write ReleaseManifest.json SHA-256 integrity manifest")) {
+        Write-SyncLog " [DRY-RUN] Would generate integrity manifest: Engine\Scripts\Runtime\ReleaseManifest.json" -Level "INFO" -ForegroundColor DarkGray
+        return $null
+    }
+
+    if (-not (Test-Path -LiteralPath $RuntimeDirectory -PathType Container)) {
+        return $null
+    }
+
+    $entries = New-Object System.Collections.Generic.List[object]
+    $files = @(Get-ChildItem -LiteralPath $RuntimeDirectory -Recurse -File -ErrorAction Stop |
+        Where-Object { $_.Name -ne 'ReleaseManifest.json' -and $_.Extension -in @('.ps1', '.xaml', '.json') } |
+        Sort-Object FullName)
+
+    foreach ($file in $files) {
+        $rel = $file.FullName.Substring($RuntimeDirectory.Length).TrimStart('\', '/')
+        $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+        $entries.Add([PSCustomObject]@{
+            RelativePath = $rel
+            SHA256       = $hash
+            Length       = [int64]$file.Length
+        })
+    }
+
+    $manifestObj = [PSCustomObject]@{
+        SchemaVersion    = "1.0"
+        GeneratedTimeUtc = [DateTime]::UtcNow.ToString("o")
+        Files            = @($entries.ToArray())
+    }
+
+    $json = $manifestObj | ConvertTo-Json -Depth 5
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($manifestPath, $json, $utf8NoBom)
+    Write-SyncLog " [MANIFEST] Generated Engine\Scripts\Runtime\ReleaseManifest.json ($($entries.Count) files hashed)" -Level "SUCCESS" -ForegroundColor Green
+    return $manifestPath
+}
+
 function Sync-DeploymentShareTarget {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$SharePath,
@@ -264,6 +349,10 @@ function Sync-DeploymentShareTarget {
     Write-SyncLog "Syncing components to Deployment Share: '$SharePath'..." -Level "INFO" -ForegroundColor Cyan
     Write-SyncLog "------------------------------------------------------------------" -Level "INFO" -ForegroundColor Cyan
 
+    if ($CleanTarget) {
+        [void](Assert-LiteDeploySafeCleanTarget -TargetPath $SharePath)
+    }
+
     # Published share layout (numbered folders stay in the git repo only):
     #   Engine\Scripts\Runtime\       flat domain LiteDeploy.*.ps1
     #   Engine\Scripts\Runtime\UI\    Runtime UI
@@ -276,68 +365,122 @@ function Sync-DeploymentShareTarget {
 
     foreach ($dir in @($runtimeDest, $runtimeUiDest, $adminDest, $adminUiDest)) {
         if (-not (Test-Path -LiteralPath $dir)) {
-            $null = New-Item -Path $dir -ItemType Directory -Force
-            Write-SyncLog "Created directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            if ($PSCmdlet.ShouldProcess($dir, "Create directory")) {
+                $null = New-Item -Path $dir -ItemType Directory -Force
+                Write-SyncLog "Created directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would create directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
         elseif ($CleanTarget) {
-            Write-SyncLog "Cleaning target directory '$dir'..." -Level "WARNING" -ForegroundColor Yellow
-            Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.Extension -in '.ps1', '.xaml', '.cmd' } |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-            # Remove leftover numbered/dev folders if a prior sync mirrored the tree here
-            Get-ChildItem -Path $dir -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -ne 'UI' } |
-                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            [void](Assert-LiteDeploySafeCleanTarget -TargetPath $dir)
+            if ($PSCmdlet.ShouldProcess($dir, "Clean target directory")) {
+                Write-SyncLog "Cleaning target directory '$dir'..." -Level "WARNING" -ForegroundColor Yellow
+                Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and
+                        ($_.Extension -in '.ps1', '.xaml', '.cmd', '.json')
+                    } |
+                    Remove-Item -Force -ErrorAction SilentlyContinue
+                # Remove leftover numbered/dev folders if a prior sync mirrored the tree here (skipping reparse points)
+                Get-ChildItem -LiteralPath $dir -Directory -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        $_.Name -ne 'UI' -and
+                        (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)
+                    } |
+                    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would clean target directory '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
     }
 
     $copyCount = 0
 
     foreach ($file in $Components.RuntimeScripts) {
-        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeDest $file.Name) -Force
-        Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Scripts\Runtime\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $destFile = Join-Path $runtimeDest $file.Name
+        if ($PSCmdlet.ShouldProcess($destFile, "Copy runtime script $($file.Name)")) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Scripts\Runtime\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy $($file.Name) -> Engine\Scripts\Runtime\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     # Compat alias: older WinPE BootInitializer launches LiteDeploy.DeploymentEngine.ps1 -BootObject ...
-    # Always publish the v2 Engine under that name (overwrite any legacy monolith copy).
-    $engineDest = Join-Path $runtimeDest "LiteDeploy.Engine.ps1"
+    # Always source directly from the authoritative LiteDeploy.Engine.ps1 component file.
+    $engineSource = @($Components.RuntimeScripts | Where-Object { $_.Name -ieq 'LiteDeploy.Engine.ps1' } | Select-Object -First 1)
     $compatDest = Join-Path $runtimeDest "LiteDeploy.DeploymentEngine.ps1"
-    if (Test-Path -LiteralPath $engineDest -PathType Leaf) {
-        Copy-Item -LiteralPath $engineDest -Destination $compatDest -Force
-        Write-SyncLog " [RUNTIME] Published Engine as LiteDeploy.DeploymentEngine.ps1 (BootInitializer compat)" -Level "WARNING" -ForegroundColor Yellow
-        $copyCount++
+    if ($engineSource.Count -gt 0 -and (Test-Path -LiteralPath $engineSource[0].FullName -PathType Leaf)) {
+        if ($PSCmdlet.ShouldProcess($compatDest, "Publish LiteDeploy.Engine.ps1 as LiteDeploy.DeploymentEngine.ps1")) {
+            Copy-Item -LiteralPath $engineSource[0].FullName -Destination $compatDest -Force
+            Write-SyncLog " [RUNTIME] Published Engine as LiteDeploy.DeploymentEngine.ps1 (BootInitializer compat)" -Level "WARNING" -ForegroundColor Yellow
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would publish Engine as LiteDeploy.DeploymentEngine.ps1" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     $uiScripts = if ($Components.PSObject.Properties['UiScripts']) { $Components.UiScripts } else { @() }
     foreach ($file in $uiScripts) {
-        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeUiDest $file.Name) -Force
-        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $destFile = Join-Path $runtimeUiDest $file.Name
+        if ($PSCmdlet.ShouldProcess($destFile, "Copy UI script $($file.Name)")) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     $uiAssets = if ($Components.PSObject.Properties['UiAssets']) { $Components.UiAssets } else { $Components.RuntimeAssets }
     foreach ($file in $uiAssets) {
-        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeUiDest $file.Name) -Force
-        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $destFile = Join-Path $runtimeUiDest $file.Name
+        if ($PSCmdlet.ShouldProcess($destFile, "Copy UI asset $($file.Name)")) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     foreach ($file in $Components.AdminScripts) {
-        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $adminDest $file.Name) -Force
-        Write-SyncLog " [ADMIN]   Copied $($file.Name) -> Engine\Scripts\Admin\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $destFile = Join-Path $adminDest $file.Name
+        if ($PSCmdlet.ShouldProcess($destFile, "Copy Admin script $($file.Name)")) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [ADMIN]   Copied $($file.Name) -> Engine\Scripts\Admin\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy $($file.Name) -> Engine\Scripts\Admin\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     $adminUi = if ($Components.PSObject.Properties['AdminUiScripts']) { $Components.AdminUiScripts } else { @() }
     foreach ($file in $adminUi) {
-        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $adminUiDest $file.Name) -Force
-        Write-SyncLog " [ADMIN UI] Copied $($file.Name) -> Engine\Scripts\Admin\UI\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $destFile = Join-Path $adminUiDest $file.Name
+        if ($PSCmdlet.ShouldProcess($destFile, "Copy Admin UI asset $($file.Name)")) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+            Write-SyncLog " [ADMIN UI] Copied $($file.Name) -> Engine\Scripts\Admin\UI\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy $($file.Name) -> Engine\Scripts\Admin\UI\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
-    $toolsCopied = Sync-LiteDeployToolsToShare -SharePath $SharePath -RepoRoot $RepoRoot -CleanTarget $CleanTarget
+    $toolsCopied = Sync-LiteDeployToolsToShare -SharePath $SharePath -RepoRoot $RepoRoot -CleanTarget $CleanTarget -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
     $copyCount += $toolsCopied
+
+    $null = New-LiteDeployReleaseManifest -RuntimeDirectory $runtimeDest -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
 
     Write-SyncLog "Deployment Share sync complete ($copyCount files copied)." -Level "SUCCESS" -ForegroundColor Green
 }
@@ -347,6 +490,7 @@ function Sync-LiteDeployToolsToShare {
     .SYNOPSIS
         Publishes repo Tools\ (WinPECT, etc.) to DeploymentShare\Tools\.
     #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$SharePath,
@@ -373,8 +517,13 @@ function Sync-LiteDeployToolsToShare {
 
     $toolsDst = Join-Path (Join-Path $SharePath 'Engine') 'Tools'
     if (-not (Test-Path -LiteralPath $toolsDst -PathType Container)) {
-        $null = New-Item -Path $toolsDst -ItemType Directory -Force
-        Write-SyncLog "Created directory: 'Engine\Tools'" -Level "INFO" -ForegroundColor DarkGray
+        if ($PSCmdlet.ShouldProcess($toolsDst, "Create directory Engine\Tools")) {
+            $null = New-Item -Path $toolsDst -ItemType Directory -Force
+            Write-SyncLog "Created directory: 'Engine\Tools'" -Level "INFO" -ForegroundColor DarkGray
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would create directory: 'Engine\Tools'" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     Write-SyncLog "Syncing Tools from '$toolsSrc' -> '$toolsDst'..." -Level "INFO" -ForegroundColor Cyan
@@ -383,20 +532,34 @@ function Sync-LiteDeployToolsToShare {
     # Tools\README.md
     $readmeSrc = Join-Path $toolsSrc 'README.md'
     if (Test-Path -LiteralPath $readmeSrc -PathType Leaf) {
-        Copy-Item -LiteralPath $readmeSrc -Destination (Join-Path $toolsDst 'README.md') -Force
-        Write-SyncLog " [TOOLS]   Copied README.md -> Engine\Tools\" -Level "SUCCESS" -ForegroundColor Green
-        $copyCount++
+        $readmeDst = Join-Path $toolsDst 'README.md'
+        if ($PSCmdlet.ShouldProcess($readmeDst, "Copy Tools README.md")) {
+            Copy-Item -LiteralPath $readmeSrc -Destination $readmeDst -Force
+            Write-SyncLog " [TOOLS]   Copied README.md -> Engine\Tools\" -Level "SUCCESS" -ForegroundColor Green
+            $copyCount++
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would copy README.md -> Engine\Tools\" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     # Each tool folder (WinPECT, DeployVault, …)
     foreach ($toolDir in @(Get-ChildItem -LiteralPath $toolsSrc -Directory -ErrorAction SilentlyContinue)) {
         $destTool = Join-Path $toolsDst $toolDir.Name
         if ($CleanTarget -and (Test-Path -LiteralPath $destTool -PathType Container)) {
-            Write-SyncLog "Cleaning Engine\Tools\$($toolDir.Name)..." -Level "WARNING" -ForegroundColor Yellow
-            Remove-Item -LiteralPath $destTool -Recurse -Force -ErrorAction SilentlyContinue
+            [void](Assert-LiteDeploySafeCleanTarget -TargetPath $destTool)
+            if ($PSCmdlet.ShouldProcess($destTool, "Clean tool directory $($toolDir.Name)")) {
+                Write-SyncLog "Cleaning Engine\Tools\$($toolDir.Name)..." -Level "WARNING" -ForegroundColor Yellow
+                Remove-Item -LiteralPath $destTool -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would clean Engine\Tools\$($toolDir.Name)" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
         if (-not (Test-Path -LiteralPath $destTool -PathType Container)) {
-            $null = New-Item -Path $destTool -ItemType Directory -Force
+            if ($PSCmdlet.ShouldProcess($destTool, "Create tool directory $($toolDir.Name)")) {
+                $null = New-Item -Path $destTool -ItemType Directory -Force
+            }
         }
 
         foreach ($file in @(Get-ChildItem -LiteralPath $toolDir.FullName -Recurse -File -ErrorAction SilentlyContinue)) {
@@ -404,15 +567,22 @@ function Sync-LiteDeployToolsToShare {
             $destFile = Join-Path $destTool $rel
             $destParent = Split-Path -Parent $destFile
             if (-not (Test-Path -LiteralPath $destParent -PathType Container)) {
-                $null = New-Item -Path $destParent -ItemType Directory -Force
+                if ($PSCmdlet.ShouldProcess($destParent, "Create directory $destParent")) {
+                    $null = New-Item -Path $destParent -ItemType Directory -Force
+                }
             }
-            Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
-            Write-SyncLog " [TOOLS]   Copied $($toolDir.Name)\$rel -> Engine\Tools\$($toolDir.Name)\" -Level "SUCCESS" -ForegroundColor Green
-            $copyCount++
+            if ($PSCmdlet.ShouldProcess($destFile, "Copy tool file $($toolDir.Name)\$rel")) {
+                Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+                Write-SyncLog " [TOOLS]   Copied $($toolDir.Name)\$rel -> Engine\Tools\$($toolDir.Name)\" -Level "SUCCESS" -ForegroundColor Green
+                $copyCount++
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would copy $($toolDir.Name)\$rel -> Engine\Tools\$($toolDir.Name)\" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
     }
 
-    if ($copyCount -lt 1) {
+    if ($copyCount -lt 1 -and (-not $WhatIfPreference)) {
         Write-SyncLog "Engine\Tools\ present but no files copied." -Level "WARNING" -ForegroundColor Yellow
     }
 
@@ -420,6 +590,7 @@ function Sync-LiteDeployToolsToShare {
 }
 
 function Sync-WinPEStagingTarget {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$StagingPath,
@@ -435,21 +606,40 @@ function Sync-WinPEStagingTarget {
 
     $targetRoot = Join-Path $StagingPath $InjectionSubfolder
 
+    if ($CleanTarget) {
+        [void](Assert-LiteDeploySafeCleanTarget -TargetPath $targetRoot)
+    }
+
     if (-not (Test-Path -LiteralPath $targetRoot)) {
-        $null = New-Item -Path $targetRoot -ItemType Directory -Force
-        Write-SyncLog "Created WinPE bootstrap root: '$targetRoot'" -Level "INFO" -ForegroundColor DarkGray
+        if ($PSCmdlet.ShouldProcess($targetRoot, "Create WinPE bootstrap root")) {
+            $null = New-Item -Path $targetRoot -ItemType Directory -Force
+            Write-SyncLog "Created WinPE bootstrap root: '$targetRoot'" -Level "INFO" -ForegroundColor DarkGray
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would create WinPE bootstrap root: '$targetRoot'" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
     elseif ($CleanTarget) {
-        Write-SyncLog "Cleaning WinPE bootstrap root '$targetRoot'..." -Level "WARNING" -ForegroundColor Yellow
-        Get-ChildItem -Path $targetRoot -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in '.ps1', '.xaml', '.json' } |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        if ($PSCmdlet.ShouldProcess($targetRoot, "Clean WinPE bootstrap root")) {
+            Write-SyncLog "Cleaning WinPE bootstrap root '$targetRoot'..." -Level "WARNING" -ForegroundColor Yellow
+            Get-ChildItem -LiteralPath $targetRoot -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object {
+                    (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and
+                    ($_.Extension -in '.ps1', '.xaml', '.json')
+                } |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+        else {
+            Write-SyncLog " [DRY-RUN] Would clean WinPE bootstrap root '$targetRoot'" -Level "INFO" -ForegroundColor DarkGray
+        }
     }
 
     foreach ($sub in @("Boot", "Runtime", "UI", "Config")) {
         $p = Join-Path $targetRoot $sub
         if (-not (Test-Path -LiteralPath $p)) {
-            $null = New-Item -Path $p -ItemType Directory -Force
+            if ($PSCmdlet.ShouldProcess($p, "Create WinPE subdirectory $sub")) {
+                $null = New-Item -Path $p -ItemType Directory -Force
+            }
         }
     }
 
@@ -461,11 +651,18 @@ function Sync-WinPEStagingTarget {
             $destFile = Join-Path $targetRoot $entry.DestRelative
             $destDir = Split-Path -Parent $destFile
             if (-not (Test-Path -LiteralPath $destDir)) {
-                $null = New-Item -Path $destDir -ItemType Directory -Force
+                if ($PSCmdlet.ShouldProcess($destDir, "Create directory $destDir")) {
+                    $null = New-Item -Path $destDir -ItemType Directory -Force
+                }
             }
-            Copy-Item -LiteralPath $entry.File.FullName -Destination $destFile -Force
-            Write-SyncLog " [WINPE]   Injected $($entry.File.Name) -> $InjectionSubfolder\$($entry.DestRelative)" -Level "SUCCESS" -ForegroundColor Green
-            $copyCount++
+            if ($PSCmdlet.ShouldProcess($destFile, "Inject WinPE bootstrap file $($entry.File.Name)")) {
+                Copy-Item -LiteralPath $entry.File.FullName -Destination $destFile -Force
+                Write-SyncLog " [WINPE]   Injected $($entry.File.Name) -> $InjectionSubfolder\$($entry.DestRelative)" -Level "SUCCESS" -ForegroundColor Green
+                $copyCount++
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would inject $($entry.File.Name) -> $InjectionSubfolder\$($entry.DestRelative)" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
     }
 
@@ -473,6 +670,7 @@ function Sync-WinPEStagingTarget {
 }
 
 function Sync-MediaRootTarget {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
         [string]$MediaRootPath,
@@ -486,16 +684,25 @@ function Sync-MediaRootTarget {
     Write-SyncLog "Syncing components to Media Root: '$MediaRootPath'..." -Level "INFO" -ForegroundColor Cyan
     Write-SyncLog "------------------------------------------------------------------" -Level "INFO" -ForegroundColor Cyan
 
+    if ($CleanTarget) {
+        [void](Assert-LiteDeploySafeCleanTarget -TargetPath $MediaRootPath)
+    }
+
     # Sync Engine publish layouts on media (flat + Scripts\Runtime tree)
-    Sync-DeploymentShareTarget -SharePath $MediaRootPath -Components $Components -CleanTarget $CleanTarget -RepoRoot $RepoRoot
+    Sync-DeploymentShareTarget -SharePath $MediaRootPath -Components $Components -CleanTarget $CleanTarget -RepoRoot $RepoRoot -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
 
     # Ensure Media standard folders exist (Config, Content, WorkFlows)
     $mediaDirs = @("Config", "Content\OperatingSystems", "Content\Drivers", "Content\Packages", "WorkFlows", "WorkLogs\Deployments")
     foreach ($dir in $mediaDirs) {
         $p = Join-Path $MediaRootPath $dir
         if (-not (Test-Path -LiteralPath $p)) {
-            $null = New-Item -Path $p -ItemType Directory -Force
-            Write-SyncLog "Created media directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            if ($PSCmdlet.ShouldProcess($p, "Create media directory $dir")) {
+                $null = New-Item -Path $p -ItemType Directory -Force
+                Write-SyncLog "Created media directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            }
+            else {
+                Write-SyncLog " [DRY-RUN] Would create media directory: '$dir'" -Level "INFO" -ForegroundColor DarkGray
+            }
         }
     }
 
@@ -507,6 +714,9 @@ function Sync-MediaRootTarget {
 # ==============================================================================
 
 function Start-LiteDeploySync {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
     if ([string]::IsNullOrWhiteSpace($DeploymentShare) -and 
         [string]::IsNullOrWhiteSpace($WinPEStagingPath) -and 
         [string]::IsNullOrWhiteSpace($MediaRoot)) {
@@ -536,23 +746,25 @@ function Start-LiteDeploySync {
 
     # Execute Deployment Share Sync
     if (-not [string]::IsNullOrWhiteSpace($DeploymentShare)) {
-        Sync-DeploymentShareTarget -SharePath $DeploymentShare -Components $components -CleanTarget $Clean -RepoRoot $repoRoot
+        Sync-DeploymentShareTarget -SharePath $DeploymentShare -Components $components -CleanTarget $Clean -RepoRoot $repoRoot -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
     }
 
     # Execute WinPE Staging Sync
     if (-not [string]::IsNullOrWhiteSpace($WinPEStagingPath)) {
-        Sync-WinPEStagingTarget -StagingPath $WinPEStagingPath -InjectionSubfolder $WinPEInjectionPath -Components $components -CleanTarget $Clean
+        Sync-WinPEStagingTarget -StagingPath $WinPEStagingPath -InjectionSubfolder $WinPEInjectionPath -Components $components -CleanTarget $Clean -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
     }
 
     # Execute Media Root Sync
     if (-not [string]::IsNullOrWhiteSpace($MediaRoot)) {
-        Sync-MediaRootTarget -MediaRootPath $MediaRoot -Components $components -RepoRoot $repoRoot -CleanTarget $Clean
+        Sync-MediaRootTarget -MediaRootPath $MediaRoot -Components $components -RepoRoot $repoRoot -CleanTarget $Clean -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
     }
 
     Write-Host ""
     Write-SyncLog "All synchronization tasks completed successfully." -Level "SUCCESS" -ForegroundColor Green
 }
 
-# Run synchronization
-Start-LiteDeploySync
+# Run synchronization when executed directly
+if ($MyInvocation.InvocationName -ne '.') {
+    Start-LiteDeploySync -WhatIf:$WhatIfPreference -Confirm:$ConfirmPreference
+}
 

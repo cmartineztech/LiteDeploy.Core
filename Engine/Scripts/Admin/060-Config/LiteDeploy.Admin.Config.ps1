@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Generates LiteDeploy configurations (BootConfig, etc.) for BootWim, DeploymentShare, or Media modes.
 

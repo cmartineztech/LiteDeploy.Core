@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Workflow - workflow catalog, validation, and plan resolution (business logic only; no UI).
 

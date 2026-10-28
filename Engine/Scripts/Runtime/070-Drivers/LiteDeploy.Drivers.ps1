@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Drivers - LocalCatalog detection and shared driver helpers (WinPE-first, architecture v2).
 
@@ -681,7 +681,8 @@ function Find-LiteDeployDriverPackage {
 function Expand-LiteDeployDriverPackage {
     <#
     .SYNOPSIS
-        Extracts OEM / vendor driver archives (.exe / .cab) into a destination directory.
+        Extracts OEM / vendor driver archives (.exe / .cab) into a destination directory
+        with Authenticode verification and bounded process-tree timeout.
     #>
     [CmdletBinding()]
     param(
@@ -689,7 +690,9 @@ function Expand-LiteDeployDriverPackage {
         [psobject]$Detection,
         [Parameter(Mandatory = $true)]
         [string]$DestinationPath,
-        [string]$ArchivePath = ""
+        [string]$ArchivePath = "",
+        [int]$TimeoutSeconds = 600,
+        [switch]$SkipAuthenticodeCheck
     )
 
     $isDetected = [bool]($Detection.PSObject.Properties["IsDetected"] -and $Detection.IsDetected)
@@ -738,6 +741,15 @@ function Expand-LiteDeployDriverPackage {
             $exitCode = $LASTEXITCODE
         }
         else {
+            if (-not $SkipAuthenticodeCheck -and (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) {
+                $sig = Get-AuthenticodeSignature -LiteralPath $targetArchive -ErrorAction Stop
+                if ($null -eq $sig -or $sig.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+                    $sigStatus = if ($null -ne $sig) { [string]$sig.Status } else { "Unknown" }
+                    Write-LiteDeployLog " [ERROR]   Authenticode signature check failed for driver archive '$archiveName' (Status=$sigStatus). Refusing to execute." -Level "ERROR" -ForegroundColor Red -Component "DriverStaging"
+                    return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "AuthenticodeFailed"; SourcePath = $targetArchive; ExpandedPath = $null; Message = "Authenticode signature status '$sigStatus' is not Valid." }
+                }
+            }
+
             # Same switches Bun extractPack.ts / OSDCloud Dell path:
             #   Dell  : /s /e=<dir>
             #   HP    : /s /e /f <dir>
@@ -757,10 +769,22 @@ function Expand-LiteDeployDriverPackage {
             }
 
             $exitCode = -1
+            $waitMs = if ($TimeoutSeconds -gt 0) { [int][Math]::Min([int]::MaxValue, ([long]$TimeoutSeconds * 1000)) } else { 600000 }
             foreach ($arguments in $attemptArgs) {
                 Write-LiteDeployLog " [INIT]    Spawn: $archiveName $arguments" -Level "INIT" -ForegroundColor Cyan -Component "DriverStaging"
-                $proc = Start-Process -FilePath $targetArchive -ArgumentList $arguments -Wait -PassThru -NoNewWindow
-                $exitCode = $proc.ExitCode
+                $proc = Start-Process -FilePath $targetArchive -ArgumentList $arguments -PassThru -NoNewWindow
+                if ($proc.WaitForExit($waitMs)) {
+                    $exitCode = $proc.ExitCode
+                }
+                else {
+                    try {
+                        & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+                    }
+                    catch {}
+                    try { if (-not $proc.HasExited) { $proc.Kill() } } catch {}
+                    Write-LiteDeployLog " [ERROR]   Driver archive extraction timed out after $TimeoutSeconds seconds: '$archiveName'" -Level "ERROR" -ForegroundColor Red -Component "DriverStaging"
+                    return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "TimedOut"; SourcePath = $targetArchive; ExpandedPath = $null; Message = "Driver archive extraction timed out after $TimeoutSeconds seconds." }
+                }
                 $successCodesTry = if ($isHp) { @(0, 1168) } else { @(0) }
                 $hasTry = Test-DriverFolderHasDriverFiles -RootPath $DestinationPath -MaxDepth 10
                 if (($successCodesTry -contains $exitCode) -and $hasTry) { break }
@@ -906,8 +930,25 @@ function Stage-LiteDeployDrivers {
         Write-LiteDeployLog " [WARNING] Could not verify staged driver archive size: $($_.Exception.Message)" -Level "WARNING" -Component "DriverStaging"
     }
 
-    # Verify file integrity of the copied archive locally before extracting
-    $expectedSha = if ($Detection.PSObject.Properties["SHA256"] -and $Detection.SHA256) { [string]$Detection.SHA256 } else { $null }
+    # Verify file integrity of the copied archive locally before extracting (mandatory for Archive packs)
+    $expectedSha = if ($Detection.PSObject.Properties["SHA256"] -and $Detection.SHA256) { ([string]$Detection.SHA256).Trim() } else { $null }
+
+    if ([string]::IsNullOrWhiteSpace($expectedSha)) {
+        Write-LiteDeployLog " [ERROR]   Driver archive '$archiveName' is missing a required SHA256 digest in catalog/detection metadata. Refusing to extract unverified archive." -Level "ERROR" -ForegroundColor Red -Component "DriverStaging"
+        if (Test-Path -LiteralPath $stagedArchive -PathType Leaf) {
+            Remove-Item -LiteralPath $stagedArchive -Force -ErrorAction SilentlyContinue
+        }
+        return [PSCustomObject]@{
+            Success         = $false
+            Staged          = $false
+            Status          = "MissingHash"
+            DriverPath      = $null
+            SourcePath      = $fullPath
+            DestinationPath = $null
+            Detection       = $Detection
+            Message         = "Driver archive is missing required SHA256 digest."
+        }
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($expectedSha)) {
         Write-LiteDeployLog " [CHECK]   Verifying SHA256 integrity of staged archive '$archiveName'..." -Level "INFO" -Component "DriverStaging"

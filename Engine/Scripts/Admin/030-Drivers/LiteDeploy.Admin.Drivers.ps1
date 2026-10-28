@@ -180,26 +180,13 @@ function Get-SafeName {
 
 function Get-CurlPath {
     # System curl (Windows 10 1803+) uses the Windows certificate store, so it works behind TLS inspection.
+    if ($env:SystemRoot) {
+        $inboxCurl = Join-Path $env:SystemRoot 'System32\curl.exe'
+        if (Test-Path -LiteralPath $inboxCurl -PathType Leaf) { return $inboxCurl }
+    }
     $system = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($system) { return $system.Path }
-    $bundled = Get-ChildItem (Join-Path $ToolsPath 'curl') -Filter curl.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($bundled) { return $bundled.FullName }
     return $null
-}
-
-function Install-Curl {
-    $zip = Join-Path $TempPath 'curl.zip'
-    $stage = Join-Path $TempPath 'curl'
-    Write-Log 'curl.exe not found. Downloading it to Engine\Tools\curl...'
-    New-Directory $TempPath
-    Remove-Item $zip, $stage -Recurse -Force -ErrorAction SilentlyContinue
-    Invoke-WebRequest -Uri 'https://curl.se/windows/latest.cgi?p=win64-mingw.zip' -OutFile $zip -UseBasicParsing
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $stage)
-    $exe = Get-ChildItem $stage -Filter curl.exe -Recurse | Select-Object -First 1
-    New-Directory (Join-Path $ToolsPath 'curl')
-    Copy-Item (Join-Path $exe.DirectoryName '*') (Join-Path $ToolsPath 'curl') -Recurse -Force
-    Remove-Item $zip, $stage -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Save-Url {
@@ -209,10 +196,11 @@ function Save-Url {
     try {
         if ($curl) {
             $progress = if ($Quiet) { '--silent', '--show-error' } else { @() }
-            & $curl --location --fail --ssl-no-revoke --retry 5 --retry-delay 3 @progress --output $partial $Url
+            & $curl --location --fail --tlsv1.2 --retry 5 --retry-delay 3 @progress --output $partial $Url
             if ($LASTEXITCODE -ne 0) { throw "curl exit code $LASTEXITCODE" }
         }
         else {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $Url -OutFile $partial -UseBasicParsing
         }
         Move-Item $partial $Path -Force
@@ -225,10 +213,13 @@ function Save-Url {
 
 function Test-PackHash {
     param([string]$Path, [pscustomobject]$Pack)
-    if ($Pack.SHA256) { return (Get-FileHash $Path -Algorithm SHA256).Hash -eq $Pack.SHA256 }
-    if ($Pack.MD5)    { return (Get-FileHash $Path -Algorithm MD5).Hash -eq $Pack.MD5 }
-    Write-Log "The catalog has no hash for $($Pack.FileName); skipping verification." -Level WARN
-    return $true
+    if ($null -eq $Pack -or (-not $Pack.PSObject.Properties['SHA256']) -or [string]::IsNullOrWhiteSpace([string]$Pack.SHA256)) {
+        Write-Log "Catalog entry for '$($Pack.FileName)' is missing a required SHA256 digest; failing integrity verification." -Level ERROR
+        return $false
+    }
+    $expected = ([string]$Pack.SHA256).Trim()
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.Trim()
+    return $actual.Equals($expected, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 function Test-Is32BitExe {
@@ -758,12 +749,25 @@ function Expand-Pack {
         if ($IsWinPE -and [Environment]::Is64BitOperatingSystem -and (Test-Is32BitExe $Archive)) {
             throw "$fileName is a 32-bit extractor and can't run in WinPE x64. Extract it on a full OS and copy the Content folder."
         }
+        if (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $Archive -ErrorAction Stop
+            if ($null -eq $sig -or $sig.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+                $sigStatus = if ($null -ne $sig) { [string]$sig.Status } else { 'Unknown' }
+                throw "Authenticode signature verification failed for '$fileName' (Status=$sigStatus). Refusing to execute untrusted installer."
+            }
+        }
         $arguments = switch ($Vendor.Short) {
             'Lenovo' { "/VERYSILENT /SUPPRESSMSGBOXES /DIR=`"$Destination`" /EXTRACT=YES" }
             'HP'     { "/s /e /f `"$Destination`"" }
             default  { "/s /e=`"$Destination`"" }
         }
-        $exitCode = (Start-Process -FilePath $Archive -ArgumentList $arguments -Wait -PassThru -NoNewWindow).ExitCode
+        $proc = Start-Process -FilePath $Archive -ArgumentList $arguments -PassThru -NoNewWindow
+        if (-not $proc.WaitForExit(600000)) {
+            try { & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null } catch {}
+            try { if (-not $proc.HasExited) { $proc.Kill() } } catch {}
+            throw "Extraction timed out after 600 seconds for $fileName."
+        }
+        $exitCode = $proc.ExitCode
     }
 
     # HP SoftPaqs return 1168 (Element not found) after a successful extract-only run.
@@ -1110,8 +1114,7 @@ function Initialize-Engine {
     }
     if (-not (Test-Path $LocalCatalogPath)) { Save-LocalCatalog (Get-LocalCatalog) }
     if (-not (Get-CurlPath)) {
-        try { Install-Curl }
-        catch { Write-Log "Could not install curl; Invoke-WebRequest will be used. $($_.Exception.Message)" -Level WARN }
+        Write-Log "System curl.exe not found; TLS 1.2 Invoke-WebRequest will be used." -Level INFO
     }
     Write-Log "Ready. Share: $DeploymentShare | Drivers: $DriversPath | Temp: $TempPath | Log: $LogPath"
 }
@@ -1124,6 +1127,7 @@ function Get-TargetVendors {
 }
 
 # --- Main ---
+if ($MyInvocation.InvocationName -ne '.') {
 try {
     # powershell.exe -File passes "$false" as text, so accept $true/$false, true/false, and 1/0.
     $Extract = switch -Regex ([string]$Extract) {
@@ -1172,3 +1176,4 @@ catch {
     exit 1
 }
 exit 0
+}

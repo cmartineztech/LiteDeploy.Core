@@ -422,3 +422,44 @@ function Import-LiteDeployWinPECTCredentials {
         Payload         = $result.Payload
     }
 }
+
+function Remove-LiteDeployWinPECTCredentials {
+    <#
+    .SYNOPSIS
+        Purges WinPECT transfer artifacts and DPAPI CLIXML files from the OS volume.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$OsDriveLetter = $env:SystemDrive,
+
+        [string]$LocalRootName = '~LiteDeploy',
+
+        [switch]$RemoveClixml
+    )
+
+    Import-LiteDeployWinPECTEngine
+    $paths = Get-LiteDeployWinPECTPaths -OsDriveLetter $OsDriveLetter -LocalRootName $LocalRootName
+    $removedTransfer = $null
+    if (Get-Command Remove-WPCTCredentialTransfer -ErrorAction SilentlyContinue) {
+        $removedTransfer = Remove-WPCTCredentialTransfer -SecretFilePath $paths.SecretFilePath -RegistrySubKey $paths.RegistrySubKey -AllowExternalRemoval
+    }
+    elseif (Test-Path -LiteralPath $paths.SecretFilePath -PathType Leaf) {
+        Remove-Item -LiteralPath $paths.SecretFilePath -Force -ErrorAction SilentlyContinue
+    }
+
+    $removedClixml = @()
+    if ($RemoveClixml -and (Test-Path -LiteralPath $paths.OutputDirectory -PathType Container)) {
+        foreach ($clixml in @(Get-ChildItem -LiteralPath $paths.OutputDirectory -Filter '*.clixml' -File -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $clixml.FullName -Force -ErrorAction SilentlyContinue
+            $removedClixml += $clixml.FullName
+        }
+    }
+
+    return [pscustomobject]@{
+        Success          = $true
+        SecretFilePath   = $paths.SecretFilePath
+        RegistrySubKey   = $paths.RegistrySubKey
+        RemovedClixml    = $removedClixml
+        TransferCleanup  = $removedTransfer
+    }
+}

@@ -64,6 +64,24 @@ param (
     [switch]$ConfirmDestroy,
 
     [Parameter(Mandatory = $false)]
+    [string]$ExpectedUniqueId = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$ExpectedSerialNumber = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$ExpectedModel = "",
+
+    [Parameter(Mandatory = $false)]
+    [int64]$ExpectedSizeBytes = 0,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ExpectedBusType = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$DeploymentRootPath = "",
+
+    [Parameter(Mandatory = $false)]
     [switch]$Metadata
 )
 
@@ -125,15 +143,139 @@ function Write-ComponentLog {
 }
 
 # ==============================================================================
-# 3. CORE DISK FORMAT PAYLOAD (primary engine entry - behavior unchanged)
+# 3. CORE DISK FORMAT PAYLOAD & TARGET IDENTITY VERIFICATION
 # ==============================================================================
+
+function Assert-LiteDeployTargetDiskIdentity {
+    <#
+    .SYNOPSIS
+        Verifies physical disk identity, bus type, non-boot/non-system flags, and mounted volume exclusions
+        immediately prior to destructive disk operations (Clear-Disk / Initialize-Disk).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Disk,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExpectedUniqueId = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExpectedSerialNumber = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExpectedModel = "",
+
+        [Parameter(Mandatory = $false)]
+        [int64]$ExpectedSizeBytes = 0,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExpectedBusType = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$DeploymentRootPath = ""
+    )
+
+    if ($null -eq $Disk) {
+        throw "Target disk object is null; aborting destructive operation."
+    }
+
+    $diskNum = if ($Disk.PSObject.Properties['Number'] -and $null -ne $Disk.Number) { [int]$Disk.Number } elseif ($Disk.PSObject.Properties['DiskNumber'] -and $null -ne $Disk.DiskNumber) { [int]$Disk.DiskNumber } else { -1 }
+    $actualBus = if ($Disk.PSObject.Properties['BusType'] -and $Disk.BusType) { ([string]$Disk.BusType).Trim() } else { "" }
+    $actualUniqueId = if ($Disk.PSObject.Properties['UniqueId'] -and $Disk.UniqueId) { ([string]$Disk.UniqueId).Trim() } else { "" }
+    $actualSerial = if ($Disk.PSObject.Properties['SerialNumber'] -and $Disk.SerialNumber) { ([string]$Disk.SerialNumber).Trim() } else { "" }
+    $actualModel = if ($Disk.PSObject.Properties['Model'] -and $Disk.Model) { ([string]$Disk.Model).Trim() } elseif ($Disk.PSObject.Properties['FriendlyName'] -and $Disk.FriendlyName) { ([string]$Disk.FriendlyName).Trim() } else { "" }
+    $actualSize = if ($Disk.PSObject.Properties['Size'] -and $null -ne $Disk.Size) { [int64]$Disk.Size } elseif ($Disk.PSObject.Properties['TotalBytes'] -and $null -ne $Disk.TotalBytes) { [int64]$Disk.TotalBytes } else { [int64]0 }
+    $isBoot = [bool]($Disk.PSObject.Properties['IsBoot'] -and $Disk.IsBoot)
+    $isSystem = [bool]($Disk.PSObject.Properties['IsSystem'] -and $Disk.IsSystem)
+
+    if ($actualBus -ieq 'USB') {
+        throw "Safety gate blocked wipe of Disk ${diskNum}: target disk BusType is 'USB' (removable/boot media exclusion)."
+    }
+
+    if ($isBoot -or $isSystem) {
+        throw "Safety gate blocked wipe of Disk ${diskNum}: target disk is marked IsBoot=$isBoot or IsSystem=$isSystem."
+    }
+
+    # Check mounted partitions against active WinPE SystemDrive (X:) and deployment root / media drive
+    $protectedDriveLetters = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($env:SystemDrive)) {
+        $sysLetter = $env:SystemDrive.Trim().TrimEnd(':\')
+        if ($sysLetter.Length -eq 1) {
+            $protectedDriveLetters.Add($sysLetter.ToUpperInvariant())
+        }
+    }
+    foreach ($candidateRoot in @($DeploymentRootPath, $env:LITEDEPLOY_ROOT)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidateRoot) -and $candidateRoot -match '^([A-Za-z]):') {
+            $rootLetter = $Matches[1].ToUpperInvariant()
+            if (-not $protectedDriveLetters.Contains($rootLetter)) {
+                $protectedDriveLetters.Add($rootLetter)
+            }
+        }
+    }
+
+    if ($diskNum -ge 0 -and (Get-Command Get-Partition -ErrorAction SilentlyContinue)) {
+        $existingPartitions = @(Get-Partition -DiskNumber $diskNum -ErrorAction SilentlyContinue)
+        foreach ($part in $existingPartitions) {
+            if ($part -and $part.PSObject.Properties['DriveLetter'] -and $part.DriveLetter) {
+                $partLetter = ([string]$part.DriveLetter).Trim().ToUpperInvariant()
+                if ($protectedDriveLetters.Contains($partLetter)) {
+                    throw "Safety gate blocked wipe of Disk ${diskNum}: disk hosts protected active volume '${partLetter}:'."
+                }
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedUniqueId)) {
+        $expUid = $ExpectedUniqueId.Trim()
+        if ([string]::IsNullOrWhiteSpace($actualUniqueId) -or ($actualUniqueId -notlike $expUid -and (-not $actualUniqueId.Equals($expUid, [System.StringComparison]::OrdinalIgnoreCase)))) {
+            throw "Safety gate blocked wipe of Disk ${diskNum}: UniqueId mismatch (expected '$expUid', actual '$actualUniqueId')."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSerialNumber)) {
+        $expSn = $ExpectedSerialNumber.Trim()
+        if ([string]::IsNullOrWhiteSpace($actualSerial) -or (-not $actualSerial.Equals($expSn, [System.StringComparison]::OrdinalIgnoreCase))) {
+            throw "Safety gate blocked wipe of Disk ${diskNum}: SerialNumber mismatch (expected '$expSn', actual '$actualSerial')."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedModel)) {
+        $expMod = $ExpectedModel.Trim()
+        if ([string]::IsNullOrWhiteSpace($actualModel) -or (-not $actualModel.Equals($expMod, [System.StringComparison]::OrdinalIgnoreCase))) {
+            throw "Safety gate blocked wipe of Disk ${diskNum}: Model mismatch (expected '$expMod', actual '$actualModel')."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedBusType)) {
+        $expBus = $ExpectedBusType.Trim()
+        if ([string]::IsNullOrWhiteSpace($actualBus) -or (-not $actualBus.Equals($expBus, [System.StringComparison]::OrdinalIgnoreCase))) {
+            throw "Safety gate blocked wipe of Disk ${diskNum}: BusType mismatch (expected '$expBus', actual '$actualBus')."
+        }
+    }
+
+    if ($ExpectedSizeBytes -gt 0) {
+        $sizeDelta = [math]::Abs($actualSize - $ExpectedSizeBytes)
+        if ($sizeDelta -gt 1048576) {
+            throw "Safety gate blocked wipe of Disk ${diskNum}: Size mismatch (expected $ExpectedSizeBytes bytes, actual $actualSize bytes)."
+        }
+    }
+
+    return $true
+}
 
 function Invoke-DiskPreparation {
     [CmdletBinding()]
     param(
         [int]$TargetDiskNumber,
         [string]$TargetBootMode,
-        [string]$TargetDriveLetter
+        [string]$TargetDriveLetter,
+        [string]$ExpectedUniqueId = "",
+        [string]$ExpectedSerialNumber = "",
+        [string]$ExpectedModel = "",
+        [int64]$ExpectedSizeBytes = 0,
+        [string]$ExpectedBusType = "",
+        [string]$DeploymentRootPath = ""
     )
 
     Write-ComponentLog "Targeting Disk $TargetDiskNumber under $TargetBootMode mode..." -Level "INIT" -ForegroundColor Cyan
@@ -141,6 +283,16 @@ function Invoke-DiskPreparation {
     # 1. Query and inspect target disk
     Update-HostStorageCache
     $disk = Get-Disk -Number $TargetDiskNumber -ErrorAction Stop
+
+    # Verify immutable target disk identity and non-boot/non-USB safety gates prior to any mutation
+    [void](Assert-LiteDeployTargetDiskIdentity `
+        -Disk $disk `
+        -ExpectedUniqueId $ExpectedUniqueId `
+        -ExpectedSerialNumber $ExpectedSerialNumber `
+        -ExpectedModel $ExpectedModel `
+        -ExpectedSizeBytes $ExpectedSizeBytes `
+        -ExpectedBusType $ExpectedBusType `
+        -DeploymentRootPath $DeploymentRootPath)
 
     # Bring online and clear read-only flag if required
     if ($disk.IsOffline) {
@@ -399,6 +551,12 @@ function Clear-LiteDeployDisk {
     param(
         [Alias("DiskNumber")]
         [int]$Number = 0,
+        [string]$ExpectedUniqueId = "",
+        [string]$ExpectedSerialNumber = "",
+        [string]$ExpectedModel = "",
+        [int64]$ExpectedSizeBytes = 0,
+        [string]$ExpectedBusType = "",
+        [string]$DeploymentRootPath = "",
         [switch]$ConfirmDestroy
     )
 
@@ -408,6 +566,14 @@ function Clear-LiteDeployDisk {
 
     Update-HostStorageCache
     $disk = Get-Disk -Number $Number -ErrorAction Stop
+    [void](Assert-LiteDeployTargetDiskIdentity `
+        -Disk $disk `
+        -ExpectedUniqueId $ExpectedUniqueId `
+        -ExpectedSerialNumber $ExpectedSerialNumber `
+        -ExpectedModel $ExpectedModel `
+        -ExpectedSizeBytes $ExpectedSizeBytes `
+        -ExpectedBusType $ExpectedBusType `
+        -DeploymentRootPath $DeploymentRootPath)
 
     if (-not $PSCmdlet.ShouldProcess("Disk $Number", "Clear partition table and remove all data")) {
         return [PSCustomObject]@{ Success = $false; DiskNumber = $Number; Cleared = $false; Status = "WhatIf" }
@@ -481,6 +647,13 @@ function New-LiteDeployPartitionLayout {
 
         [string]$OSTempDriveLetter = $null,
 
+        [string]$ExpectedUniqueId = "",
+        [string]$ExpectedSerialNumber = "",
+        [string]$ExpectedModel = "",
+        [int64]$ExpectedSizeBytes = 0,
+        [string]$ExpectedBusType = "",
+        [string]$DeploymentRootPath = "",
+
         [switch]$ConfirmDestroy
     )
 
@@ -491,7 +664,16 @@ function New-LiteDeployPartitionLayout {
         return [PSCustomObject]@{ Success = $false; DiskNumber = $Number; Status = "WhatIf" }
     }
 
-    return Invoke-DiskPreparation -TargetDiskNumber $Number -TargetBootMode $BootMode -TargetDriveLetter $OSTempDriveLetter
+    return Invoke-DiskPreparation `
+        -TargetDiskNumber $Number `
+        -TargetBootMode $BootMode `
+        -TargetDriveLetter $OSTempDriveLetter `
+        -ExpectedUniqueId $ExpectedUniqueId `
+        -ExpectedSerialNumber $ExpectedSerialNumber `
+        -ExpectedModel $ExpectedModel `
+        -ExpectedSizeBytes $ExpectedSizeBytes `
+        -ExpectedBusType $ExpectedBusType `
+        -DeploymentRootPath $DeploymentRootPath
 }
 
 function Format-LiteDeployPartition {
@@ -559,7 +741,16 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     try {
         Write-ComponentLog "-ConfirmDestroy supplied: Disk $DiskNumber WILL be wiped and re-partitioned ($BootMode)." -Level "WARNING" -ForegroundColor Yellow
-        $result = Invoke-DiskPreparation -TargetDiskNumber $DiskNumber -TargetBootMode $BootMode -TargetDriveLetter $OSTempDriveLetter
+        $result = Invoke-DiskPreparation `
+            -TargetDiskNumber $DiskNumber `
+            -TargetBootMode $BootMode `
+            -TargetDriveLetter $OSTempDriveLetter `
+            -ExpectedUniqueId $ExpectedUniqueId `
+            -ExpectedSerialNumber $ExpectedSerialNumber `
+            -ExpectedModel $ExpectedModel `
+            -ExpectedSizeBytes $ExpectedSizeBytes `
+            -ExpectedBusType $ExpectedBusType `
+            -DeploymentRootPath $DeploymentRootPath
         return $result
     }
     catch {

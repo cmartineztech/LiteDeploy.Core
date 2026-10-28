@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy State - deployment state object, persistence, resume, and validation (architecture v2).
 
@@ -317,10 +317,10 @@ function Get-LiteDeployStateTimestamp {
 }
 
 function New-LiteDeployStateUid {
-    # Fallback UID (e.g. 260806-A3F1) when the caller does not supply one.
-    $bytes = New-Object byte[] 2
+    # 48-bit CSPRNG deployment UID (yyMMdd-XXXXXXXXXXXX, 12 uppercase hex chars).
+    $bytes = New-Object byte[] 6
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    try { $rng.GetBytes($bytes) } finally { if ($null -ne $rng) { $rng.Dispose() } }
     $hex = [System.BitConverter]::ToString($bytes) -replace '-'
     return ("{0}-{1}" -f (Get-Date).ToString('yyMMdd'), $hex)
 }
@@ -589,63 +589,274 @@ function ConvertTo-LiteDeploySerializableObject {
 function Write-LiteDeployStateFile {
     <#
     .SYNOPSIS
-        Writes UTF-8 (no BOM) text; uses temp-file + move so readers never see a half-written file.
+        Writes UTF-8 (no BOM) state text atomically using a PID-scoped temporary file,
+        FileStream.Flush($true), and File.Replace with .bak backup (never truncating in place).
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
-        [Parameter(Mandatory = $true)]
-        [string]$Content
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Content = "",
+
+        [Parameter(Mandatory = $false)]
+        $StateObject = $null
     )
+
+    if ([string]::IsNullOrWhiteSpace($Content) -and $null -ne $StateObject) {
+        $serializable = ConvertTo-LiteDeploySerializableObject -InputObject $StateObject
+        $Content = $serializable | ConvertTo-Json -Depth 10
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Content)) {
+        throw "Write-LiteDeployStateFile refuses to write empty state content to '$Path'."
+    }
 
     $directory = Split-Path -Parent $Path
     if ($directory -and -not (Test-Path -LiteralPath $directory)) {
-        $null = New-Item -Path $directory -ItemType Directory -Force
+        $null = New-Item -Path $directory -ItemType Directory -Force -ErrorAction Stop
     }
 
-    $utf8 = New-Object System.Text.UTF8Encoding($false)
-    $tempPath = "$Path.tmp"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $bytes = $utf8NoBom.GetBytes($Content)
+    $tempPath = "$Path.$PID.tmp"
+    $backupPath = "$Path.bak"
+
     try {
-        [System.IO.File]::WriteAllText($tempPath, $Content, $utf8)
-        Move-Item -LiteralPath $tempPath -Destination $Path -Force
+        $stream = New-Object System.IO.FileStream(
+            $tempPath,
+            [System.IO.FileMode]::Create,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None
+        )
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush($true)
+        }
+        finally {
+            $stream.Dispose()
+        }
+
+        $maxAttempts = 5
+        $replaced = $false
+        $lastReplaceError = $null
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            try {
+                if (Test-Path -LiteralPath $Path -PathType Leaf) {
+                    [System.IO.File]::Replace($tempPath, $Path, $backupPath, $true)
+                }
+                else {
+                    [System.IO.File]::Move($tempPath, $Path)
+                }
+                $replaced = $true
+                break
+            }
+            catch {
+                $lastReplaceError = $_
+                if ($attempt -lt $maxAttempts) {
+                    Start-Sleep -Milliseconds (40 * $attempt)
+                }
+            }
+        }
+
+        if (-not $replaced) {
+            throw $lastReplaceError.Exception
+        }
     }
     catch {
-        # Target may be held open by the Progress UI reader; fall back to an in-place write.
-        if (Test-Path -LiteralPath $tempPath) {
+        if (Test-Path -LiteralPath $tempPath -PathType Leaf) {
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
         }
-        [System.IO.File]::WriteAllText($Path, $Content, $utf8)
+        throw "Atomic state write to '$Path' failed without modifying target in place: $($_.Exception.Message)"
+    }
+}
+
+function Read-LiteDeployStateRawFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath
+    )
+
+    if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { return "" }
+
+    $stream = $null
+    $reader = $null
+    try {
+        $stream = New-Object System.IO.FileStream($FilePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+        return $reader.ReadToEnd()
+    }
+    finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+        elseif ($null -ne $stream) { $stream.Dispose() }
     }
 }
 
 function Read-LiteDeployStateFile {
     <#
     .SYNOPSIS
-        Reads and parses a state JSON file with shared read access (the Engine may be writing).
-        Returns $null for a missing or empty file; throws on invalid JSON.
+        Reads and parses a state JSON file with shared read access and automatic .bak recovery.
+        Returns $null when neither primary nor backup file exists.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $backupPath = "$Path.bak"
+    $primaryExists = (Test-Path -LiteralPath $Path -PathType Leaf)
+    $backupExists = (Test-Path -LiteralPath $backupPath -PathType Leaf)
 
-    $stream = $null
-    $reader = $null
-    $raw = ""
-    try {
-        $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
-        $raw = $reader.ReadToEnd()
-    }
-    finally {
-        if ($null -ne $reader) { $reader.Dispose() }
-        elseif ($null -ne $stream) { $stream.Dispose() }
+    if (-not $primaryExists -and -not $backupExists) {
+        return $null
     }
 
-    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-    return ($raw | ConvertFrom-Json -ErrorAction Stop)
+    $primaryError = $null
+    if ($primaryExists) {
+        try {
+            $raw = Read-LiteDeployStateRawFile -FilePath $Path
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                return ($raw | ConvertFrom-Json -ErrorAction Stop)
+            }
+        }
+        catch {
+            $primaryError = $_
+        }
+    }
+
+    if ($backupExists) {
+        try {
+            $bakRaw = Read-LiteDeployStateRawFile -FilePath $backupPath
+            if (-not [string]::IsNullOrWhiteSpace($bakRaw)) {
+                $recovered = ($bakRaw | ConvertFrom-Json -ErrorAction Stop)
+                Write-LiteDeployStateLog -Message "Recovered deployment state from backup '$backupPath' after primary state read failure." -Level "WARNING" -NoConsole
+                return $recovered
+            }
+        }
+        catch {
+            if ($null -eq $primaryError) { $primaryError = $_ }
+        }
+    }
+
+    if ($null -ne $primaryError) {
+        throw $primaryError
+    }
+    return $null
+}
+
+function Read-LiteDeployStateFromDisk {
+    <#
+    .SYNOPSIS
+        Alias wrapper for Read-LiteDeployStateFile with automatic .bak fallback recovery.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return Read-LiteDeployStateFile -Path $Path
+}
+
+function Test-LiteDeployLocalDatabasePath {
+    <#
+    .SYNOPSIS
+        Enforces ADR-0001 boundary: SQLite / PSLocalBase WAL databases MUST reside on a local volume
+        and MUST NEVER be placed on an SMB UNC path or mapped network drive.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DatabasePath,
+
+        [switch]$ThrowOnViolation
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DatabasePath)) {
+        if ($ThrowOnViolation) { throw "DatabasePath cannot be empty." }
+        return $false
+    }
+
+    $trimmed = $DatabasePath.Trim()
+    if ($trimmed.StartsWith('\\')) {
+        if ($ThrowOnViolation) {
+            throw "ADR-0001 boundary violation: PSLocalBase / SQLite WAL databases cannot be hosted on UNC/SMB network paths ('$trimmed')."
+        }
+        return $false
+    }
+
+    $qualifier = Split-Path -Path $trimmed -Qualifier -ErrorAction SilentlyContinue
+    if ($qualifier -and $qualifier -match '^([A-Za-z]):$') {
+        $driveLetter = $Matches[1]
+        try {
+            $driveInfo = New-Object System.IO.DriveInfo($driveLetter)
+            if ($driveInfo.DriveType -eq [System.IO.DriveType]::Network) {
+                if ($ThrowOnViolation) {
+                    throw "ADR-0001 boundary violation: PSLocalBase / SQLite WAL databases cannot be hosted on mapped network drives ('$qualifier')."
+                }
+                return $false
+            }
+        }
+        catch {
+            if ($_.Exception.Message -like 'ADR-0001*') { throw $_ }
+        }
+    }
+
+    return $true
+}
+
+if (-not (Get-Variable -Name LiteDeployStateStorageProviders -Scope Global -ErrorAction SilentlyContinue)) {
+    $global:LiteDeployStateStorageProviders = @{
+        Json = [PSCustomObject]@{
+            Name           = 'Json'
+            SupportsRemote = $true
+            Read           = { param([string]$Path) Read-LiteDeployStateFile -Path $Path }
+            Write          = { param([string]$Path, [string]$Content) Write-LiteDeployStateFile -Path $Path -Content $Content }
+        }
+        PSLocalBase = [PSCustomObject]@{
+            Name           = 'PSLocalBase'
+            SupportsRemote = $false
+            ValidatePath   = { param([string]$Path) Test-LiteDeployLocalDatabasePath -DatabasePath $Path -ThrowOnViolation }
+        }
+    }
+}
+
+function Register-LiteDeployStateStorageProvider {
+    <#
+    .SYNOPSIS
+        Registers or updates a state storage provider in LiteDeploy.State (ADR-0001).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [psobject]$Provider
+    )
+
+    $global:LiteDeployStateStorageProviders[$Name] = $Provider
+    return $Provider
+}
+
+function Get-LiteDeployStateStorageProvider {
+    <#
+    .SYNOPSIS
+        Retrieves a registered state storage provider ('Json' default or local-only 'PSLocalBase').
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Name = 'Json'
+    )
+
+    if ($global:LiteDeployStateStorageProviders -and $global:LiteDeployStateStorageProviders.ContainsKey($Name)) {
+        return $global:LiteDeployStateStorageProviders[$Name]
+    }
+    throw "State storage provider '$Name' is not registered."
 }
 
 function Get-LiteDeployStateNextPhase {

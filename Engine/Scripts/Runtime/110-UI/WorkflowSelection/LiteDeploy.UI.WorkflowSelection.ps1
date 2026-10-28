@@ -385,26 +385,38 @@ function New-LiteDeployWorkflowSelectionResult {
         [object]$WorkflowTag = $null,
         [object]$TargetDiskIndex = $null,
         [string]$TargetDiskModel = $null,
+        [string]$TargetDiskUniqueId = $null,
+        [string]$TargetDiskSerialNumber = $null,
+        [string]$TargetDiskBusType = $null,
+        [object]$TargetDiskSizeBytes = $null,
+        [bool]$TargetDiskIsBoot = $false,
+        [bool]$TargetDiskIsSystem = $false,
         [string]$DriverFolderPath = $null,
         [bool]$AutoDetectDrivers = $false
     )
 
     return [PSCustomObject]@{
-        Passed              = [bool]$Passed
-        Status              = $Status
-        SelectionJsonPath   = $SelectionJsonPath
-        BootConfig          = $script:bootConfig
-        BootConfigPath      = $script:BootConfigPath
-        DeploymentSharePath = $script:DeploymentSharePath
-        DeploymentUid       = $script:DeploymentUid
-        ComputerName        = $ComputerName
-        ComputerDescription = $ComputerDescription
-        WorkflowName        = $WorkflowName
-        WorkflowTag         = $WorkflowTag
-        TargetDiskIndex     = $TargetDiskIndex
-        TargetDiskModel     = $TargetDiskModel
-        DriverFolderPath    = $DriverFolderPath
-        AutoDetectDrivers   = [bool]$AutoDetectDrivers
+        Passed                 = [bool]$Passed
+        Status                 = $Status
+        SelectionJsonPath      = $SelectionJsonPath
+        BootConfig             = $script:bootConfig
+        BootConfigPath         = $script:BootConfigPath
+        DeploymentSharePath    = $script:DeploymentSharePath
+        DeploymentUid          = $script:DeploymentUid
+        ComputerName           = $ComputerName
+        ComputerDescription    = $ComputerDescription
+        WorkflowName           = $WorkflowName
+        WorkflowTag            = $WorkflowTag
+        TargetDiskIndex        = $TargetDiskIndex
+        TargetDiskModel        = $TargetDiskModel
+        TargetDiskUniqueId     = $TargetDiskUniqueId
+        TargetDiskSerialNumber = $TargetDiskSerialNumber
+        TargetDiskBusType      = $TargetDiskBusType
+        TargetDiskSizeBytes    = $TargetDiskSizeBytes
+        TargetDiskIsBoot       = [bool]$TargetDiskIsBoot
+        TargetDiskIsSystem     = [bool]$TargetDiskIsSystem
+        DriverFolderPath       = $DriverFolderPath
+        AutoDetectDrivers      = [bool]$AutoDetectDrivers
     }
 }
 
@@ -635,12 +647,15 @@ function Get-LiteDeployComputerNameValidationError {
     if ($value.Length -gt $MaxLength) {
         return "Computer name must not exceed $MaxLength characters."
     }
-    # MDT / NetBIOS: letters, digits, hyphen only; no leading/trailing hyphen.
+    # MDT / NetBIOS: letters, digits, hyphen only; no leading/trailing hyphen; not all-numeric.
     if ($value -notmatch '^[A-Za-z0-9-]+$') {
         return "Use only letters, numbers, and hyphens (A-Z, 0-9, -)."
     }
     if ($value.StartsWith('-') -or $value.EndsWith('-')) {
         return "Computer name cannot start or end with a hyphen."
+    }
+    if ($value -match '^\d+$') {
+        return "Computer name cannot consist solely of numbers."
     }
     return $null
 }
@@ -651,6 +666,15 @@ function Get-LiteDeployComputerDescriptionValidationError {
     $value = if ($null -eq $Description) { "" } else { $Description.Trim() }
     if ([string]::IsNullOrWhiteSpace($value)) {
         return "Computer description cannot be empty."
+    }
+    if ($value.Length -gt 127) {
+        return "Computer description must not exceed 127 characters."
+    }
+    if ($Description -match '[\x00-\x1F\x7F]') {
+        return "Computer description cannot contain control characters."
+    }
+    if ($Description -match '[&|<>^%"`]') {
+        return "Computer description cannot contain command or shell metacharacters (& | < > ^ % `" `)."
     }
     return $null
 }
@@ -1009,9 +1033,23 @@ function Set-LiteDeployAutoSelectedDisk {
 
     $script:SelectedDiskIndex = $null
     $script:SelectedDiskModel = ""
+    $script:SelectedDiskUniqueId = ""
+    $script:SelectedDiskSerialNumber = ""
+    $script:SelectedDiskBusType = ""
+    $script:SelectedDiskSizeBytes = $null
+    $script:SelectedDiskIsBoot = $false
+    $script:SelectedDiskIsSystem = $false
     if ($null -eq $Disks -or @($Disks).Length -eq 0) { return $false }
 
-    $first = $Disks | Where-Object {
+    $eligibleDisks = @($Disks | Where-Object {
+        $bus = if ($_.PSObject.Properties['BusType'] -and $_.BusType) { [string]$_.BusType } else { "" }
+        $isBoot = [bool]($_.PSObject.Properties['IsBoot'] -and $_.IsBoot)
+        $isSys = [bool]($_.PSObject.Properties['IsSystem'] -and $_.IsSystem)
+        ($bus -ne 'USB') -and (-not $isBoot) -and (-not $isSys)
+    })
+    if (@($eligibleDisks).Length -eq 0) { return $false }
+
+    $first = $eligibleDisks | Where-Object {
         if ($_.PSObject.Properties['DiskNumber'] -and $null -ne $_.DiskNumber) { [string]$_.DiskNumber -eq '0' }
         elseif ($_.PSObject.Properties['Index']) { [string]$_.Index -match '^(?:Disk\s+)?0$' }
         else { $false }
@@ -1028,6 +1066,12 @@ function Set-LiteDeployAutoSelectedDisk {
         0
     }
     $script:SelectedDiskModel = if ($first.PSObject.Properties['Model']) { [string]$first.Model } else { "" }
+    $script:SelectedDiskUniqueId = if ($first.PSObject.Properties['UniqueId'] -and $first.UniqueId) { [string]$first.UniqueId } else { "" }
+    $script:SelectedDiskSerialNumber = if ($first.PSObject.Properties['SerialNumber'] -and $first.SerialNumber) { [string]$first.SerialNumber } else { "" }
+    $script:SelectedDiskBusType = if ($first.PSObject.Properties['BusType'] -and $first.BusType) { [string]$first.BusType } else { "" }
+    $script:SelectedDiskSizeBytes = if ($first.PSObject.Properties['TotalBytes'] -and $null -ne $first.TotalBytes) { [int64]$first.TotalBytes } else { $null }
+    $script:SelectedDiskIsBoot = [bool]($first.PSObject.Properties['IsBoot'] -and $first.IsBoot)
+    $script:SelectedDiskIsSystem = [bool]($first.PSObject.Properties['IsSystem'] -and $first.IsSystem)
     return $true
 }
 
@@ -1425,6 +1469,12 @@ if ($null -ne $btnNext) {
                     0
                 }
                 $script:SelectedDiskModel = $selectedDisk.Model
+                $script:SelectedDiskUniqueId = if ($selectedDisk.PSObject.Properties['UniqueId'] -and $selectedDisk.UniqueId) { [string]$selectedDisk.UniqueId } else { "" }
+                $script:SelectedDiskSerialNumber = if ($selectedDisk.PSObject.Properties['SerialNumber'] -and $selectedDisk.SerialNumber) { [string]$selectedDisk.SerialNumber } else { "" }
+                $script:SelectedDiskBusType = if ($selectedDisk.PSObject.Properties['BusType'] -and $selectedDisk.BusType) { [string]$selectedDisk.BusType } else { "" }
+                $script:SelectedDiskSizeBytes = if ($selectedDisk.PSObject.Properties['TotalBytes'] -and $null -ne $selectedDisk.TotalBytes) { [int64]$selectedDisk.TotalBytes } else { $null }
+                $script:SelectedDiskIsBoot = [bool]($selectedDisk.PSObject.Properties['IsBoot'] -and $selectedDisk.IsBoot)
+                $script:SelectedDiskIsSystem = [bool]($selectedDisk.PSObject.Properties['IsSystem'] -and $selectedDisk.IsSystem)
             }
         }
         else {
@@ -1750,6 +1800,12 @@ $result = New-LiteDeployWorkflowSelectionResult `
     -WorkflowTag $script:SelectedWorkflowTag `
     -TargetDiskIndex $script:SelectedDiskIndex `
     -TargetDiskModel $script:SelectedDiskModel `
+    -TargetDiskUniqueId $script:SelectedDiskUniqueId `
+    -TargetDiskSerialNumber $script:SelectedDiskSerialNumber `
+    -TargetDiskBusType $script:SelectedDiskBusType `
+    -TargetDiskSizeBytes $script:SelectedDiskSizeBytes `
+    -TargetDiskIsBoot $script:SelectedDiskIsBoot `
+    -TargetDiskIsSystem $script:SelectedDiskIsSystem `
     -DriverFolderPath $script:SelectedDriverFolderPath `
     -AutoDetectDrivers $script:AutoDetectDrivers
 

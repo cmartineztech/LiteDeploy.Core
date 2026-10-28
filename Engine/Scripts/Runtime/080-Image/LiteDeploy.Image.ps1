@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Applies a Windows operating system image using the Windows Setup (setup.exe) or DISM (dism.exe) engine with automated unattended answer file generation.
 
@@ -116,7 +116,10 @@ param(
     [switch]$ExecuteSetup,
 
     [Parameter(Mandatory = $false)]
-    [switch]$ValidateEngineOnly
+    [switch]$ValidateEngineOnly,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AllowUnsafeLabUnattend
 )
 
 Set-StrictMode -Version 2.0
@@ -591,7 +594,313 @@ function Resolve-UnattendTemplate {
 # REGION 4: UNATTENDED ANSWER FILE GENERATION & SUBSTITUTION
 # ==============================================================================
 
+function Format-LiteDeployXmlCommentText {
+    <#
+    .SYNOPSIS
+        Sanitizes text for safe inclusion inside an XML comment (<!-- ... -->).
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Text = ""
+    )
+
+    if ([string]::IsNullOrEmpty($Text)) {
+        return ""
+    }
+
+    $sanitized = [regex]::Replace($Text, '[\x00-\x1F\x7F]', ' ')
+    while ($sanitized.Contains('--')) {
+        $sanitized = $sanitized.Replace('--', '-')
+    }
+    return $sanitized.Trim().Trim('-')
+}
+
+function Test-LiteDeployComputerDescription {
+    <#
+    .SYNOPSIS
+        Validates ComputerDescription against length, control-character, and shell metacharacter constraints.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$ComputerDescription = "",
+
+        [switch]$ThrowOnInvalid
+    )
+
+    if ([string]::IsNullOrEmpty($ComputerDescription)) {
+        return $true
+    }
+
+    $trimmed = $ComputerDescription.Trim()
+    if ($trimmed.Length -gt 127) {
+        if ($ThrowOnInvalid) {
+            throw "ComputerDescription exceeds the maximum length of 127 characters."
+        }
+        return $false
+    }
+
+    if ($ComputerDescription -match '[\x00-\x1F\x7F]') {
+        if ($ThrowOnInvalid) {
+            throw "ComputerDescription contains prohibited control characters."
+        }
+        return $false
+    }
+
+    if ($ComputerDescription -match '[&|<>^%"`]') {
+        if ($ThrowOnInvalid) {
+            throw "ComputerDescription contains prohibited command or shell metacharacters (& | < > ^ % `" `)."
+        }
+        return $false
+    }
+
+    return $true
+}
+
+function Test-LiteDeployUnattendDocument {
+    <#
+    .SYNOPSIS
+        Validates an unattended XML template or generated answer file against schema, placeholder,
+        ComputerName, RunSynchronous ordering, and credential/AutoLogon security policies.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$XmlContent = "",
+
+        [Parameter(Mandatory = $false)]
+        [xml]$XmlDocument = $null,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Path = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowUnsafeLabUnattend,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IsTemplate,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$PassThru
+    )
+
+    $rawXml = $XmlContent
+    if ([string]::IsNullOrWhiteSpace($rawXml) -and (-not [string]::IsNullOrWhiteSpace($Path))) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Unattended XML file not found at '$Path'."
+        }
+        $rawXml = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    }
+
+    $doc = $XmlDocument
+    if ($null -eq $doc) {
+        if ([string]::IsNullOrWhiteSpace($rawXml)) {
+            throw "Unattended XML content is empty."
+        }
+        try {
+            $doc = [xml]$rawXml
+        }
+        catch {
+            throw "Malformed unattended XML document: $($_.Exception.Message)"
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace($rawXml)) {
+        $rawXml = $doc.OuterXml
+    }
+
+    if ($null -eq $doc.DocumentElement -or $doc.DocumentElement.LocalName -ne 'unattend') {
+        throw "Invalid unattended XML root element. Expected '<unattend>'."
+    }
+
+    if (-not $IsTemplate) {
+        $prohibitedPlaceholders = @(
+            '<!--WorkflowInfo-->',
+            '<!--DiskID-->',
+            '<!--PartitionID-->',
+            '<!--SetupUILanguage-->',
+            '<!--UILanguage-->',
+            '<!--InputLocale-->',
+            '<!--SystemLocale-->',
+            '<!--UserLocale-->',
+            '<!--ComputerName-->',
+            '<!--TimeZone-->',
+            '<!--Timezone-->',
+            '<!--RegisteredOwner-->',
+            '<!--RegisteredOrganization-->',
+            '<!--JoinWorkGroup-->',
+            '<!--JoinWorkgroup-->',
+            '<!--JoinDomain-->',
+            '<!--MachineObjectOU-->',
+            '<!--ComputerDescription-->',
+            '<!--LiteDeployFullOSRun-->',
+            '<!--DisableUacForFullOS-->',
+            '<!--AuditMode-->',
+            '<!--Architecture-->',
+            '<!--Arch-->',
+            '<!--ImageIndex-->'
+        )
+        foreach ($placeholder in $prohibitedPlaceholders) {
+            if ($rawXml.IndexOf($placeholder, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "Generated unattended XML still contains unreplaced template placeholder '$placeholder'."
+            }
+        }
+    }
+
+    $computerNameNodes = $doc.SelectNodes("//*[local-name()='ComputerName']")
+    if ($null -ne $computerNameNodes) {
+        foreach ($cnNode in $computerNameNodes) {
+            $cnText = ([string]$cnNode.InnerText).Trim()
+            if ([string]::IsNullOrEmpty($cnText) -or $cnText -eq '*') {
+                continue
+            }
+            if ($cnText.Length -gt 15 -or
+                $cnText.StartsWith('-') -or
+                $cnText.EndsWith('-') -or
+                ($cnText -notmatch '^[A-Za-z0-9-]+$') -or
+                ($cnText -match '^\d+$')) {
+                throw "Invalid ComputerName '$cnText' in unattended XML. ComputerName must be 1-15 NetBIOS characters (letters, digits, hyphens) and not all-numeric."
+            }
+        }
+    }
+
+    $runSyncBlocks = $doc.SelectNodes("//*[local-name()='RunSynchronous']")
+    if ($null -ne $runSyncBlocks) {
+        foreach ($runSync in $runSyncBlocks) {
+            $seenOrders = @{}
+            $cmdNodes = $runSync.SelectNodes("*[local-name()='RunSynchronousCommand']")
+            if ($null -eq $cmdNodes) { continue }
+            foreach ($cmdNode in $cmdNodes) {
+                $orderNode = $cmdNode.SelectSingleNode("*[local-name()='Order']")
+                $orderText = if ($null -ne $orderNode) { ([string]$orderNode.InnerText).Trim() } else { "" }
+                $orderInt = 0
+                if ([string]::IsNullOrWhiteSpace($orderText) -or (-not [int]::TryParse($orderText, [ref]$orderInt)) -or $orderInt -lt 1) {
+                    throw "Invalid or missing <Order> '$orderText' in <RunSynchronousCommand>. Orders must be positive integers (>= 1)."
+                }
+                if ($seenOrders.ContainsKey($orderInt)) {
+                    throw "Duplicate <RunSynchronousCommand> Order '$orderInt' detected within <RunSynchronous>."
+                }
+                $seenOrders[$orderInt] = $true
+
+                $pathNode = $cmdNode.SelectSingleNode("*[local-name()='Path']")
+                $cmdPathText = if ($null -ne $pathNode) { [string]$pathNode.InnerText } else { "" }
+                if ($cmdPathText -match '(?i)\bsrvcomment\b') {
+                    throw "Prohibited shell interpolation of ComputerDescription (srvcomment) detected in <RunSynchronousCommand>."
+                }
+            }
+        }
+    }
+
+    if (-not $AllowUnsafeLabUnattend) {
+        $localAccounts = $doc.SelectNodes("//*[local-name()='UserAccounts']/*[local-name()='LocalAccounts']/*[local-name()='LocalAccount']")
+        if ($null -ne $localAccounts -and $localAccounts.Count -gt 0) {
+            throw "Policy violation: Static <LocalAccount> definitions in unattended XML are prohibited in production builds unless -AllowUnsafeLabUnattend is explicitly set."
+        }
+
+        $autoLogonNodes = $doc.SelectNodes("//*[local-name()='AutoLogon']")
+        if ($null -ne $autoLogonNodes -and $autoLogonNodes.Count -gt 0) {
+            foreach ($autoNode in $autoLogonNodes) {
+                $enabledNode = $autoNode.SelectSingleNode("*[local-name()='Enabled']")
+                $enabledVal = if ($null -ne $enabledNode) { ([string]$enabledNode.InnerText).Trim() } else { "" }
+                $pwValNode = $autoNode.SelectSingleNode("*[local-name()='Password']/*[local-name()='Value']")
+                $pwVal = if ($null -ne $pwValNode) { ([string]$pwValNode.InnerText).Trim() } else { "" }
+                $countNode = $autoNode.SelectSingleNode("*[local-name()='LogonCount']")
+                $countText = if ($null -ne $countNode) { ([string]$countNode.InnerText).Trim() } else { "" }
+                $countInt = 0
+                [void][int]::TryParse($countText, [ref]$countInt)
+
+                if ($enabledVal -ieq 'true' -or (-not [string]::IsNullOrEmpty($pwVal)) -or $countInt -gt 0) {
+                    throw "Policy violation: <AutoLogon> credentials or enabled AutoLogon blocks in unattended XML are prohibited in production builds unless -AllowUnsafeLabUnattend is explicitly set."
+                }
+            }
+        }
+    }
+
+    if ($PassThru) {
+        return [PSCustomObject]@{
+            Passed                 = $true
+            IsTemplate             = [bool]$IsTemplate
+            AllowUnsafeLabUnattend = [bool]$AllowUnsafeLabUnattend
+        }
+    }
+
+    return $true
+}
+
+function Set-LiteDeployOfflineComputerDescription {
+    <#
+    .SYNOPSIS
+        Writes ComputerDescription (srvcomment) directly into the offline Windows SYSTEM registry hive without shell interpolation.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationRoot,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$ComputerDescription = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ComputerDescription)) {
+        return $false
+    }
+
+    [void](Test-LiteDeployComputerDescription -ComputerDescription $ComputerDescription -ThrowOnInvalid)
+
+    $cleanDest = $DestinationRoot.TrimEnd('\')
+    $systemHivePath = Join-Path $cleanDest 'Windows\System32\config\SYSTEM'
+    if (-not (Test-Path -LiteralPath $systemHivePath -PathType Leaf)) {
+        Write-ComponentLog "Offline SYSTEM registry hive not found at '$systemHivePath'; ComputerDescription will be applied during FullOS phase." -Level "INFO"
+        return $false
+    }
+
+    $mountKeyName = "HKLM\LiteDeployOfflineSystem_$PID"
+    $mountPsPath = "Registry::$mountKeyName"
+    $regExe = Join-Path $env:SystemRoot 'System32\reg.exe'
+    if (-not (Test-Path -LiteralPath $regExe -PathType Leaf)) {
+        $regExe = 'reg.exe'
+    }
+
+    $loaded = $false
+    try {
+        & $regExe load $mountKeyName $systemHivePath *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-ComponentLog "Could not mount offline SYSTEM hive ($LASTEXITCODE); ComputerDescription will be applied during FullOS phase." -Level "WARNING"
+            return $false
+        }
+        $loaded = $true
+
+        $selectPath = Join-Path $mountPsPath 'Select'
+        $controlSetNum = 1
+        if (Test-Path -LiteralPath $selectPath) {
+            $currentProp = Get-ItemProperty -LiteralPath $selectPath -Name 'Current' -ErrorAction SilentlyContinue
+            if ($null -ne $currentProp -and $null -ne $currentProp.Current) {
+                $controlSetNum = [int]$currentProp.Current
+            }
+        }
+        $controlSetName = ('ControlSet{0:D3}' -f $controlSetNum)
+        $lanmanParamsPath = Join-Path $mountPsPath "$controlSetName\Services\LanmanServer\Parameters"
+        if (-not (Test-Path -LiteralPath $lanmanParamsPath)) {
+            $null = New-Item -Path $lanmanParamsPath -Force -ErrorAction Stop
+        }
+        Set-ItemProperty -LiteralPath $lanmanParamsPath -Name 'srvcomment' -Value $ComputerDescription.Trim() -Type String -Force -ErrorAction Stop
+        Write-ComponentLog "Applied ComputerDescription (srvcomment) to offline SYSTEM registry hive ($controlSetName)." -Level "SUCCESS" -ForegroundColor Green
+        return $true
+    }
+    finally {
+        if ($loaded) {
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+            & $regExe unload $mountKeyName *> $null
+        }
+    }
+}
+
 function New-LiteDeployUnattendXml {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$TemplateFile,
@@ -600,10 +909,15 @@ function New-LiteDeployUnattendXml {
         [psobject]$ConfigObj = $null,
         [psobject]$WorkflowData = $null,
         [psobject]$DiskData = $null,
-        [psobject]$BootCtx = $null
+        [psobject]$BootCtx = $null,
+        [switch]$AllowUnsafeLabUnattend
     )
 
     Write-ComponentLog "Generating unattended answer file from template: $TemplateFile" -Level "INIT" -ForegroundColor Cyan
+
+    if (-not (Test-Path -LiteralPath $TemplateFile -PathType Leaf)) {
+        throw "Unattended template file not found at '$TemplateFile'."
+    }
 
     $effectiveConfig = if ($ConfigObj) { $ConfigObj } elseif ($BootCtx -and $BootCtx.PSObject.Properties['Config']) { $BootCtx.Config } elseif ($BootCtx) { $BootCtx } else { $null }
 
@@ -622,6 +936,24 @@ function New-LiteDeployUnattendXml {
     }
     elseif ($effectiveConfig -and $effectiveConfig.PSObject.Properties['ComputerDescription'] -and $effectiveConfig.ComputerDescription) {
         $compDesc = [string]$effectiveConfig.ComputerDescription
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($compName)) {
+        $compName = $compName.Trim()
+        if ($compName -ne '*') {
+            if ($compName.Length -gt 15 -or
+                $compName.StartsWith('-') -or
+                $compName.EndsWith('-') -or
+                ($compName -notmatch '^[A-Za-z0-9-]+$') -or
+                ($compName -match '^\d+$')) {
+                throw "Invalid ComputerName '$compName'. ComputerName must be 1-15 NetBIOS characters (letters, digits, hyphens), cannot start or end with a hyphen, and cannot be all-numeric."
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($compDesc)) {
+        [void](Test-LiteDeployComputerDescription -ComputerDescription $compDesc -ThrowOnInvalid)
+        $compDesc = $compDesc.Trim()
     }
 
     $diskId = 0
@@ -777,7 +1109,11 @@ function New-LiteDeployUnattendXml {
         }
     }
 
-    # Perform string key substitutions
+    # Perform string key substitutions using XML escaping and literal replacement
+    $escapedArch = [Security.SecurityElement]::Escape($arch)
+    $escapedLang = [Security.SecurityElement]::Escape($lang)
+    $escapedKeyboard = [Security.SecurityElement]::Escape($keyboard)
+    $escapedTimeZone = [Security.SecurityElement]::Escape($timeZone)
     $ownerXml = if (-not [string]::IsNullOrWhiteSpace($regOwner)) { '<RegisteredOwner>' + [Security.SecurityElement]::Escape($regOwner) + '</RegisteredOwner>' } else { '' }
     $orgXml = if (-not [string]::IsNullOrWhiteSpace($regOrg)) { '<RegisteredOrganization>' + [Security.SecurityElement]::Escape($regOrg) + '</RegisteredOrganization>' } else { '' }
     $computerNameXml = if ($compName) { '<ComputerName>' + [Security.SecurityElement]::Escape($compName) + '</ComputerName>' } else { '' }
@@ -785,28 +1121,25 @@ function New-LiteDeployUnattendXml {
     $domainXml = if (-not [string]::IsNullOrWhiteSpace($domain)) { '<JoinDomain>' + [Security.SecurityElement]::Escape($domain.Trim()) + '</JoinDomain>' } else { '' }
     $machineOUXml = if (-not [string]::IsNullOrWhiteSpace($machineOU)) { '<MachineObjectOU>' + [Security.SecurityElement]::Escape($machineOU.Trim()) + '</MachineObjectOU>' } else { '' }
 
-    $generatedContent = $templateContent `
-        -replace '(?i)processorArchitecture="[^"]*"', "processorArchitecture=`"$arch`"" `
-        -replace '<!--Architecture-->', $arch `
-        -replace '<!--Arch-->', $arch `
-        -replace '<!--DiskID-->', "<DiskID>$diskId</DiskID>" `
-        -replace '<!--PartitionID-->', "<PartitionID>$partitionId</PartitionID>" `
-        -replace '<!--SetupUILanguage-->', "<UILanguage>$lang</UILanguage>" `
-        -replace '<!--UILanguage-->', "<UILanguage>$lang</UILanguage>" `
-        -replace '<!--InputLocale-->', "<InputLocale>$keyboard</InputLocale>" `
-        -replace '<!--SystemLocale-->', "<SystemLocale>$lang</SystemLocale>" `
-        -replace '<!--UserLocale-->', "<UserLocale>$lang</UserLocale>" `
-        -replace '<!--TimeZone-->', "<TimeZone>$timeZone</TimeZone>" `
-        -replace '<!--Timezone-->', "<TimeZone>$timeZone</TimeZone>"
+    $generatedContent = [regex]::Replace($generatedContent, '(?i)processorArchitecture="[^"]*"', ('processorArchitecture="{0}"' -f $escapedArch.Replace('$', '$$')))
+    $generatedContent = $generatedContent.Replace('<!--Architecture-->', $escapedArch).Replace('<!--Arch-->', $escapedArch)
+    $generatedContent = $generatedContent.Replace('<!--DiskID-->', "<DiskID>$diskId</DiskID>")
+    $generatedContent = $generatedContent.Replace('<!--PartitionID-->', "<PartitionID>$partitionId</PartitionID>")
+    $generatedContent = $generatedContent.Replace('<!--SetupUILanguage-->', "<UILanguage>$escapedLang</UILanguage>")
+    $generatedContent = $generatedContent.Replace('<!--UILanguage-->', "<UILanguage>$escapedLang</UILanguage>")
+    $generatedContent = $generatedContent.Replace('<!--InputLocale-->', "<InputLocale>$escapedKeyboard</InputLocale>")
+    $generatedContent = $generatedContent.Replace('<!--SystemLocale-->', "<SystemLocale>$escapedLang</SystemLocale>")
+    $generatedContent = $generatedContent.Replace('<!--UserLocale-->', "<UserLocale>$escapedLang</UserLocale>")
+    $generatedContent = $generatedContent.Replace('<!--TimeZone-->', "<TimeZone>$escapedTimeZone</TimeZone>").Replace('<!--Timezone-->', "<TimeZone>$escapedTimeZone</TimeZone>")
 
-    # Literal replacement preserves dollar signs in registration text as well as XML escaping.
+    # Literal replacement preserves dollar signs in registration, naming, and domain values as well as XML escaping.
     $generatedContent = $generatedContent.Replace('<!--RegisteredOwner-->', $ownerXml).Replace('<!--RegisteredOrganization-->', $orgXml)
     $generatedContent = $generatedContent.Replace('<!--ComputerName-->', $computerNameXml)
     $generatedContent = $generatedContent.Replace('<!--JoinWorkGroup-->', $workgroupXml).Replace('<!--JoinWorkgroup-->', $workgroupXml)
     $generatedContent = $generatedContent.Replace('<!--JoinDomain-->', $domainXml)
     $generatedContent = $generatedContent.Replace('<!--MachineObjectOU-->', $machineOUXml)
 
-    # Resolve Workflow provenance comment for header
+    # Resolve Workflow provenance comment for header with comment-safe sanitization
     $wfTag = if ($WorkflowData -and $WorkflowData.PSObject.Properties['WorkflowTag'] -and $WorkflowData.WorkflowTag -and ($WorkflowData.WorkflowTag -isnot [string])) {
         $WorkflowData.WorkflowTag
     } else { $WorkflowData }
@@ -823,15 +1156,21 @@ function New-LiteDeployUnattendXml {
     elseif ($WorkflowData -and $WorkflowData.PSObject.Properties['Id'] -and $WorkflowData.Id) { [string]$WorkflowData.Id }
     else { "direct-catalog" }
 
-    $templateLeaf = Split-Path -Path $TemplateFile -Leaf
+    $safeWfName = Format-LiteDeployXmlCommentText -Text $wfName
+    $safeWfId = Format-LiteDeployXmlCommentText -Text $wfId
+    $safeTemplateLeaf = Format-LiteDeployXmlCommentText -Text (Split-Path -Path $TemplateFile -Leaf)
     $genTimestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $workflowHeaderComment = "<!-- Generated by LiteDeploy Engine | Workflow: $wfName ($wfId) | Template: $templateLeaf | Date: $genTimestamp -->"
+    $workflowHeaderComment = "<!-- Generated by LiteDeploy Engine | Workflow: $safeWfName ($safeWfId) | Template: $safeTemplateLeaf | Date: $genTimestamp -->"
 
-    if ($generatedContent -match '<!--WorkflowInfo-->') {
+    if ($generatedContent.IndexOf('<!--WorkflowInfo-->', [System.StringComparison]::Ordinal) -ge 0) {
         $generatedContent = $generatedContent.Replace('<!--WorkflowInfo-->', $workflowHeaderComment)
     }
     elseif ($generatedContent -match '<\?xml[^\>]*\>') {
-        $generatedContent = $generatedContent -replace '(\<\?xml[^\>]*\>\r?\n?)', "`$1$workflowHeaderComment`r`n"
+        $xmlDeclMatch = [regex]::Match($generatedContent, '<\?xml[^\>]*\>\r?\n?')
+        if ($xmlDeclMatch.Success) {
+            $insertPos = $xmlDeclMatch.Index + $xmlDeclMatch.Length
+            $generatedContent = $generatedContent.Substring(0, $insertPos) + $workflowHeaderComment + "`r`n" + $generatedContent.Substring($insertPos)
+        }
     }
 
     # Workflow actions gate FullOS Run + Audit reseal (when their placeholders exist).
@@ -857,86 +1196,73 @@ function New-LiteDeployUnattendXml {
     Write-ComponentLog ("Workflow actions count={0}; FullOS Run / AuditMode placeholders will {1}." -f `
             $workflowActionCount, $(if ($hasFullOsActions) { 'be filled when present' } else { 'be cleared' })) -Level "INFO"
 
-    # Specialize Order 1: always inject computer description into <!--ComputerDescription-->.
-    if ([string]::IsNullOrWhiteSpace($compDesc)) {
-        $compDesc = 'No Description'
-    }
-    $escapedCompDesc = [Security.SecurityElement]::Escape($compDesc)
-    $computerDescriptionCommand = @"
-        <RunSynchronousCommand wcm:action="add">
-          <Order>1</Order>
-          <Description>Set Computer Description</Description>
-          <Path>cmd.exe /c reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v srvcomment /t REG_SZ /d "$escapedCompDesc" /f</Path>
-        </RunSynchronousCommand>
-"@
-    if ($generatedContent -match '<!--ComputerDescription-->') {
-        $generatedContent = $generatedContent -replace '<!--ComputerDescription-->', $computerDescriptionCommand
-    }
-    else {
-        Write-ComponentLog "Unattend template missing <!--ComputerDescription--> placeholder; computer description was not staged." -Level "WARNING" -ForegroundColor Yellow
+    # ComputerDescription is persisted in DeploymentState.json and applied directly to the registry hive
+    # (offline SYSTEM hive and/or FullOS Set-ItemProperty) without cmd.exe /c shell interpolation.
+    if ($generatedContent.IndexOf('<!--ComputerDescription-->', [System.StringComparison]::Ordinal) -ge 0) {
+        $generatedContent = $generatedContent.Replace('<!--ComputerDescription-->', '')
     }
 
-    # Specialize Order 2: HKLM Run FullOS — short powershell.exe (no full System32 path; no nested \").
+    # Specialize Order 1: HKLM Run FullOS — short powershell.exe (no full System32 path; no nested \").
     # Gate: workflow actions > 0 + <!--LiteDeployFullOSRun--> (no hard kill-switch).
     $fullOsRunCommand = @"
         <RunSynchronousCommand wcm:action="add">
-          <Order>2</Order>
+          <Order>1</Order>
           <Description>LiteDeploy stage HKLM Run FullOS</Description>
           <Path>cmd.exe /c reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v LiteDeployFullOS /t REG_SZ /d "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File %SystemDrive%\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1" /f</Path>
         </RunSynchronousCommand>
 "@
-    if ($generatedContent -match '<!--LiteDeployFullOSRun-->') {
+    if ($generatedContent.IndexOf('<!--LiteDeployFullOSRun-->', [System.StringComparison]::Ordinal) -ge 0) {
         if ($hasFullOsActions) {
-            $generatedContent = $generatedContent -replace '<!--LiteDeployFullOSRun-->', $fullOsRunCommand
+            $generatedContent = $generatedContent.Replace('<!--LiteDeployFullOSRun-->', $fullOsRunCommand)
             Write-ComponentLog "Staged HKLM Run\LiteDeployFullOS (short powershell.exe; workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
         }
         else {
-            $generatedContent = $generatedContent -replace '<!--LiteDeployFullOSRun-->', ''
+            $generatedContent = $generatedContent.Replace('<!--LiteDeployFullOSRun-->', '')
             Write-ComponentLog "Cleared <!--LiteDeployFullOSRun--> (workflow actions count is 0)." -Level "INFO"
         }
     }
 
-    # Specialize Order 3–4: temporary EnableLUA=0 only for non-Audit templates (no <!--AuditMode--> => Domain Join path).
-    # FullOS restores EnableLUA=1 on cleanup (Clear-LiteDeployFullOSRunKey).
-    $isNonAuditTemplate = $generatedContent -notmatch '<!--AuditMode-->'
+    # Specialize Order 2–3: temporary EnableLUA=0 only for non-Audit templates (no <!--AuditMode--> => Domain Join path).
+    # FullOS restores EnableLUA=1 on cleanup (Complete-LiteDeployFullOSFinalization / Restore-LiteDeployFullOSUacBypass).
+    $isNonAuditTemplate = $generatedContent.IndexOf('<!--AuditMode-->', [System.StringComparison]::Ordinal) -lt 0
     $disableUacCommand = @"
         <RunSynchronousCommand wcm:action="add">
-          <Order>3</Order>
+          <Order>2</Order>
           <Description>LiteDeploy disable UAC for FullOS (temporary)</Description>
           <Path>cmd.exe /c reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f</Path>
         </RunSynchronousCommand>
         <RunSynchronousCommand wcm:action="add">
-          <Order>4</Order>
+          <Order>3</Order>
           <Description>LiteDeploy mark UAC bypass for FullOS cleanup</Description>
           <Path>cmd.exe /c reg add "HKLM\SOFTWARE\LiteDeploy\FullOS" /v UacBypassed /t REG_DWORD /d 1 /f</Path>
         </RunSynchronousCommand>
 "@
-    if ($generatedContent -match '<!--DisableUacForFullOS-->') {
+    if ($generatedContent.IndexOf('<!--DisableUacForFullOS-->', [System.StringComparison]::Ordinal) -ge 0) {
         if ($hasFullOsActions -and $isNonAuditTemplate) {
-            $generatedContent = $generatedContent -replace '<!--DisableUacForFullOS-->', $disableUacCommand
+            $generatedContent = $generatedContent.Replace('<!--DisableUacForFullOS-->', $disableUacCommand)
             Write-ComponentLog "Staged temporary EnableLUA=0 (non-Audit template + actions > 0)." -Level "SUCCESS" -ForegroundColor Green
         }
         else {
-            $generatedContent = $generatedContent -replace '<!--DisableUacForFullOS-->', ''
+            $generatedContent = $generatedContent.Replace('<!--DisableUacForFullOS-->', '')
             Write-ComponentLog ("Cleared <!--DisableUacForFullOS--> (nonAudit={0}; actions={1})." -f $isNonAuditTemplate, $workflowActionCount) -Level "INFO"
         }
     }
 
     # oobeSystem Audit reseal — only when <!--AuditMode--> exists (and only with FullOS actions).
     $auditModeComponent = @"
-    <component name="Microsoft-Windows-Deployment" processorArchitecture="$arch" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="$escapedArch" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <Reseal>
         <Mode>Audit</Mode>
       </Reseal>
     </component>
 "@
-    if ($generatedContent -match '<!--AuditMode-->') {
+    if ($generatedContent.IndexOf('<!--AuditMode-->', [System.StringComparison]::Ordinal) -ge 0) {
         if ($hasFullOsActions) {
-            $generatedContent = $generatedContent -replace '<!--AuditMode-->', $auditModeComponent
+            $generatedContent = $generatedContent.Replace('<!--AuditMode-->', $auditModeComponent)
             Write-ComponentLog "Staged Audit Mode reseal (<!--AuditMode--> + workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
         }
         else {
-            $generatedContent = $generatedContent -replace '<!--AuditMode-->', ''
+            $generatedContent = $generatedContent.Replace('<!--AuditMode-->', '')
             Write-ComponentLog "Cleared <!--AuditMode--> (workflow actions count is 0; OOBE will proceed)." -Level "INFO"
         }
     }
@@ -977,6 +1303,9 @@ function New-LiteDeployUnattendXml {
             Write-ComponentLog 'ComputerSetup.ProductKey has an invalid format; the configured key was not added.' -Level WARNING
         }
     }
+
+    # Validate generated document against security policy and schema invariants before persisting
+    [void](Test-LiteDeployUnattendDocument -XmlContent $generatedContent -AllowUnsafeLabUnattend:$AllowUnsafeLabUnattend)
 
     # Determine effective target path (fallback to TEMP if target drive does not exist in testing)
     $effectiveOutputPath = $TargetOutputFile
@@ -1262,11 +1591,14 @@ function Invoke-DismEngine {
     if (-not [string]::IsNullOrWhiteSpace($EffectiveUnattendPath) -and (Test-Path -LiteralPath $EffectiveUnattendPath -PathType Leaf)) {
         $pantherDir = Join-Path $windowsDir "Panther"
         if (-not (Test-Path -LiteralPath $pantherDir -PathType Container)) {
-            $null = New-Item -Path $pantherDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+            $null = New-Item -Path $pantherDir -ItemType Directory -Force -ErrorAction Stop
         }
         $targetUnattend = Join-Path $pantherDir "unattend.xml"
         Write-ComponentLog "Staging unattended answer file to '$targetUnattend'..." -Level "INFO"
-        Copy-Item -LiteralPath $EffectiveUnattendPath -Destination $targetUnattend -Force -ErrorAction SilentlyContinue
+        Copy-Item -LiteralPath $EffectiveUnattendPath -Destination $targetUnattend -Force -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $targetUnattend -PathType Leaf)) {
+            throw "Failed to stage unattended answer file to '$targetUnattend'."
+        }
     }
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -1420,6 +1752,47 @@ function Select-LiteDeployImage {
     }
 }
 
+function New-LiteDeployUnattendFile {
+    <#
+    .SYNOPSIS
+        Generates and validates an unattended answer file from a template.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [Alias('TemplatePath')]
+        [string]$TemplateFile = "",
+        [Parameter(Mandatory = $false)]
+        [Alias('OutputPath')]
+        [string]$TargetOutputFile = "X:\unattended.xml",
+        [Alias('BootConfig')]
+        [psobject]$ConfigObj = $null,
+        [Alias('WorkflowSelection')]
+        [psobject]$WorkflowData = $null,
+        [Alias('DiskResult')]
+        [psobject]$DiskData = $null,
+        [psobject]$BootCtx = $null,
+        [switch]$AllowUnsafeLabUnattend
+    )
+
+    $resolvedTemplate = $TemplateFile
+    if ([string]::IsNullOrWhiteSpace($resolvedTemplate) -or (-not (Test-Path -LiteralPath $resolvedTemplate -PathType Leaf))) {
+        $resolvedTemplate = Resolve-UnattendTemplate -ExplicitTemplatePath $TemplateFile -BootCtx $BootCtx -WorkflowSelection $WorkflowData
+    }
+    if (-not $resolvedTemplate) {
+        throw "Could not resolve an unattended template (e.g. DomainJoin.xml). Pass -TemplateFile."
+    }
+
+    return New-LiteDeployUnattendXml `
+        -TemplateFile $resolvedTemplate `
+        -TargetOutputFile $TargetOutputFile `
+        -ConfigObj $ConfigObj `
+        -WorkflowData $WorkflowData `
+        -DiskData $DiskData `
+        -BootCtx $BootCtx `
+        -AllowUnsafeLabUnattend:$AllowUnsafeLabUnattend
+}
+
 function New-LiteDeployUnattend {
     <#
     .SYNOPSIS
@@ -1432,14 +1805,15 @@ function New-LiteDeployUnattend {
         [psobject]$BootConfig = $null,
         [psobject]$WorkflowSelection = $null,
         [psobject]$DiskResult = $null,
-        [psobject]$BootCtx = $null
+        [psobject]$BootCtx = $null,
+        [switch]$AllowUnsafeLabUnattend
     )
 
     $template = Resolve-UnattendTemplate -ExplicitTemplatePath $TemplatePath -BootCtx $BootCtx -WorkflowSelection $WorkflowSelection
     if (-not $template) {
         throw "Could not resolve an unattended template (e.g. DomainJoin.xml). Pass -TemplatePath."
     }
-    return New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $OutputPath -ConfigObj $BootConfig -WorkflowData $WorkflowSelection -DiskData $DiskResult -BootCtx $BootCtx
+    return New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $OutputPath -ConfigObj $BootConfig -WorkflowData $WorkflowSelection -DiskData $DiskResult -BootCtx $BootCtx -AllowUnsafeLabUnattend:$AllowUnsafeLabUnattend
 }
 
 function Start-LiteDeployImage {
@@ -1573,6 +1947,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $finalUnattendPath = ""
     if (-not [string]::IsNullOrWhiteSpace($UnattendPath) -and (Test-Path -LiteralPath $UnattendPath)) {
         $finalUnattendPath = (Resolve-Path -LiteralPath $UnattendPath).Path
+        [void](Test-LiteDeployUnattendDocument -Path $finalUnattendPath -AllowUnsafeLabUnattend:$AllowUnsafeLabUnattend)
         Write-ComponentLog "Using existing unattended answer file: $finalUnattendPath" -Level "INFO"
     }
     else {
@@ -1584,8 +1959,17 @@ if ($MyInvocation.InvocationName -ne '.') {
                 -ConfigObj $BootConfig `
                 -WorkflowData $WorkflowSelection `
                 -DiskData $DiskResult `
-                -BootCtx $BootObject
+                -BootCtx $BootObject `
+                -AllowUnsafeLabUnattend:$AllowUnsafeLabUnattend
         }
+    }
+
+    $effectiveComputerDescription = ""
+    if ($WorkflowSelection -and $WorkflowSelection.PSObject.Properties['ComputerDescription'] -and $WorkflowSelection.ComputerDescription) {
+        $effectiveComputerDescription = [string]$WorkflowSelection.ComputerDescription
+    }
+    elseif ($imageConfiguration -and $imageConfiguration.PSObject.Properties['ComputerDescription'] -and $imageConfiguration.ComputerDescription) {
+        $effectiveComputerDescription = [string]$imageConfiguration.ComputerDescription
     }
 
     switch ($selectedImageEngine) {
@@ -1628,6 +2012,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                     -DriverFolder $DriverPath `
                     -ExtraArgs $AdditionalArguments
 
+                if (-not [string]::IsNullOrWhiteSpace($effectiveComputerDescription)) {
+                    $null = Set-LiteDeployOfflineComputerDescription -DestinationRoot $normalizedDest -ComputerDescription $effectiveComputerDescription
+                }
+
                 return $result
             }
             catch {
@@ -1669,6 +2057,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                     -DiskData $DiskResult `
                     -DriverFolder $DriverPath `
                     -ExtraArgs $AdditionalArguments
+
+                if (-not [string]::IsNullOrWhiteSpace($effectiveComputerDescription)) {
+                    $null = Set-LiteDeployOfflineComputerDescription -DestinationRoot $normalizedDest -ComputerDescription $effectiveComputerDescription
+                }
 
                 return $result
             }
