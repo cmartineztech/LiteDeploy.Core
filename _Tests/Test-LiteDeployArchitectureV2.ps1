@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Non-destructive architecture v2 smoke tests for LiteDeploy Core.
 #>
@@ -226,22 +226,19 @@ foreach ($engineTarget in $engineTargets) {
                 foreach ($descriptionEnabled in @($false, $true)) {
                     $settings.PromptForComputerName = $nameEnabled
                     $settings.PromptForComputerDescription = $descriptionEnabled
-                    $null = New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $answer -ConfigObj $config -WorkflowData ([pscustomobject]@{ ComputerName = 'TEST-PC'; ComputerDescription = 'Test workstation' })
+                    $null = New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $answer -ConfigObj $config -WorkflowData ([pscustomobject]@{ ComputerName = 'TEST-PC'; ComputerDescription = 'Test workstation'; actions = @(@{ id = 'pkg-01' }) })
                     [xml]$identityXml = Get-Content $answer -Raw
                     $nameNode = $identityXml.SelectSingleNode("//*[local-name()='ComputerName']")
-                    # Order 1 RunSynchronous is always present (description slot); prompt flag only controls the value.
                     $descriptionCommand = $identityXml.SelectSingleNode("//*[local-name()='RunSynchronousCommand'][*[local-name()='Description'][text()='Set Computer Description']]")
-                    if ([bool]$nameNode -ne $nameEnabled -or $null -eq $descriptionCommand) { $identityPolicies = $false }
-                    $expectedDesc = if ($descriptionEnabled) { 'Test workstation' } else { 'No Description' }
-                    $descPath = if ($descriptionCommand) { $descriptionCommand.SelectSingleNode("*[local-name()='Path']") } else { $null }
-                    if ($null -eq $descPath -or $descPath.InnerText -notlike "*$expectedDesc*") { $identityPolicies = $false }
+                    $stageCommandOrder = $identityXml.SelectSingleNode("//*[local-name()='RunSynchronousCommand'][*[local-name()='Description'][text()='LiteDeploy stage HKLM Run FullOS']]/*[local-name()='Order']")
+                    if ([bool]$nameNode -ne $nameEnabled -or $null -ne $descriptionCommand -or $null -eq $stageCommandOrder -or $stageCommandOrder.InnerText -ne '1') { $identityPolicies = $false }
                 }
             }
             $null = New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $answer -ConfigObj $config
             [xml]$emptyIdentity = Get-Content $answer -Raw
             if ($emptyIdentity.SelectSingleNode("//*[local-name()='ComputerName']")) { $identityPolicies = $false }
-            # Order 1 description command remains even with no WorkflowData (default "No Description").
-            if (-not $emptyIdentity.SelectSingleNode("//*[local-name()='RunSynchronousCommand']/*[local-name()='Description'][text()='Set Computer Description']")) { $identityPolicies = $false }
+            if ($emptyIdentity.SelectSingleNode("//*[local-name()='RunSynchronousCommand']/*[local-name()='Description'][text()='Set Computer Description']")) { $identityPolicies = $false }
+            if ($emptyIdentity.SelectSingleNode("//*[local-name()='RunSynchronousCommand']/*[local-name()='Description'][text()='LiteDeploy stage HKLM Run FullOS']")) { $identityPolicies = $false }
             $null = New-LiteDeployUnattendXml -TemplateFile $template -TargetOutputFile $answer -ConfigObj $config -WorkflowData ([pscustomobject]@{ ComputerName = 'TEST-PC' })
             [xml]$xml = Get-Content $answer -Raw
             $mapped = $true
@@ -273,7 +270,7 @@ foreach ($engineTarget in $engineTargets) {
         Assert-True $registrationChecks.Omitted "Blank registration omitted from state and answer file ($($engineTarget.Mode))"
         Assert-True $registrationChecks.Preserved "ComputerSetup fields including false/null remain correctly mapped in state ($($engineTarget.Mode))"
         Assert-True $registrationChecks.Mapped "Regional and registration settings map safely into XML ($($engineTarget.Mode))"
-        Assert-True $registrationChecks.IdentityPolicies "Name honors prompt flag; description Order 1 always present with prompt-gated value ($($engineTarget.Mode))"
+        Assert-True $registrationChecks.IdentityPolicies "Name honors prompt flag; ComputerDescription is omitted from RunSynchronous and FullOS staging is Order 1 ($($engineTarget.Mode))"
         $bypassChecks = & {
             . $imagePathForTest
             $cfgTrue = @{ ComputerSetup = @{ SkipSetupHardwareRequirements = $true } }

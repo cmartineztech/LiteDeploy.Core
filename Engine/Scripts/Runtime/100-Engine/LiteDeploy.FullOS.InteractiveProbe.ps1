@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 .SYNOPSIS
     Temporary FullOS interactive logon probe (Audit Mode / Administrator).
@@ -15,10 +15,20 @@ Set-StrictMode -Version 2.0
 $isFirstInstance = $false
 $probeMutex = $null
 try {
-    $probeMutex = New-Object System.Threading.Mutex($true, "Global\LiteDeploy_InteractiveProbe_Mutex", [ref]$isFirstInstance)
+    $mutexSecurity = New-Object System.Security.AccessControl.MutexSecurity
+    $systemSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $mutexSecurity.AddAccessRule((New-Object System.Security.AccessControl.MutexAccessRule($systemSid, [System.Security.AccessControl.MutexRights]::FullControl, [System.Security.AccessControl.AccessControlType]::Allow)))
+    $mutexSecurity.AddAccessRule((New-Object System.Security.AccessControl.MutexAccessRule($adminsSid, [System.Security.AccessControl.MutexRights]::FullControl, [System.Security.AccessControl.AccessControlType]::Allow)))
+    $probeMutex = New-Object System.Threading.Mutex($true, "Global\LiteDeploy_InteractiveProbe_Mutex", [ref]$isFirstInstance, $mutexSecurity)
 }
 catch {
-    $isFirstInstance = $true
+    try {
+        $probeMutex = New-Object System.Threading.Mutex($true, "Global\LiteDeploy_InteractiveProbe_Mutex", [ref]$isFirstInstance)
+    }
+    catch {
+        $isFirstInstance = $true
+    }
 }
 
 if (-not $isFirstInstance) {
@@ -54,12 +64,40 @@ function Write-ProbeLine {
 function Stop-LiteDeployAuditModeSysprep {
     <#
     .SYNOPSIS
-        Ends Audit Mode System Preparation Tool UI (sysprep.exe) in this logon session.
+        Ends Audit Mode System Preparation Tool UI (sysprep.exe) in this logon session when in Audit Mode.
     #>
     $stopped = New-Object System.Collections.Generic.List[string]
+    $inAuditMode = $false
+    try {
+        $setupStatus = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\Setup\Status' -Name 'AuditBoot' -ErrorAction SilentlyContinue
+        if ($null -ne $setupStatus -and [int]$setupStatus.AuditBoot -gt 0) {
+            $inAuditMode = $true
+        }
+        if (-not $inAuditMode) {
+            $sysSetup = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
+            if ($null -ne $sysSetup -and $sysSetup.PSObject.Properties['SystemSetupInProgress'] -and [int]$sysSetup.SystemSetupInProgress -eq 1) {
+                $inAuditMode = $true
+            }
+        }
+    }
+    catch {}
+
+    if (-not $inAuditMode) {
+        return @($stopped.ToArray())
+    }
+
+    $expectedSysprepDir = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\Sysprep' } else { 'C:\Windows\System32\Sysprep' }
     foreach ($proc in @(Get-Process -Name 'sysprep' -ErrorAction SilentlyContinue)) {
         try {
-            $info = 'PID={0} SessionId={1} Path={2}' -f $proc.Id, $proc.SessionId, $(if ($proc.Path) { $proc.Path } else { '(unknown)' })
+            $procPath = $null
+            try { $procPath = $proc.Path } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($procPath)) {
+                $procDir = Split-Path -Parent $procPath
+                if (-not $procDir.Equals($expectedSysprepDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    continue
+                }
+            }
+            $info = 'PID={0} SessionId={1} Path={2}' -f $proc.Id, $proc.SessionId, $(if ($procPath) { $procPath } else { '(unknown)' })
             Stop-Process -Id $proc.Id -Force -ErrorAction Stop
             $stopped.Add($info)
             Write-ProbeLine "Stopped Audit Mode sysprep.exe ($info)" 'SUCCESS'
@@ -75,12 +113,6 @@ function Stop-LiteDeployAuditModeSysprep {
             }
         }
     }
-
-    # Proactive sweep with taskkill across process tree
-    try {
-        $null = & taskkill.exe /F /IM sysprep.exe /T 2>$null
-    }
-    catch {}
 
     return @($stopped.ToArray())
 }

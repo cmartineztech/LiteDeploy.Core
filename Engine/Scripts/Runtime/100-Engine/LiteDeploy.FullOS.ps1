@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy FullOS Engine — First-boot and reboot resume orchestrator (architecture v2).
 
@@ -231,14 +231,46 @@ function Start-LiteDeployFullOSInteractiveProbe {
 function Stop-LiteDeployAuditModeSysprep {
     <#
     .SYNOPSIS
-        Terminates Audit Mode System Preparation Tool UI (sysprep.exe) across all sessions.
+        Terminates Audit Mode System Preparation Tool UI (sysprep.exe) when running in Audit Mode.
     #>
     [CmdletBinding()]
-    param()
+    param(
+        [switch]$Force
+    )
 
+    $inAuditMode = $Force.IsPresent
+    if (-not $inAuditMode) {
+        try {
+            $setupStatus = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\Setup\Status' -Name 'AuditBoot' -ErrorAction SilentlyContinue
+            if ($null -ne $setupStatus -and [int]$setupStatus.AuditBoot -gt 0) {
+                $inAuditMode = $true
+            }
+            if (-not $inAuditMode) {
+                $sysSetup = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
+                if ($null -ne $sysSetup -and $sysSetup.PSObject.Properties['SystemSetupInProgress'] -and [int]$sysSetup.SystemSetupInProgress -eq 1) {
+                    $inAuditMode = $true
+                }
+            }
+        }
+        catch {}
+    }
+
+    if (-not $inAuditMode) {
+        return 0
+    }
+
+    $expectedSysprepDir = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\Sysprep' } else { 'C:\Windows\System32\Sysprep' }
     $killed = 0
     foreach ($proc in @(Get-Process -Name 'sysprep' -ErrorAction SilentlyContinue)) {
         try {
+            $procPath = $null
+            try { $procPath = $proc.Path } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($procPath)) {
+                $procDir = Split-Path -Parent $procPath
+                if (-not $procDir.Equals($expectedSysprepDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    continue
+                }
+            }
             Stop-Process -Id $proc.Id -Force -ErrorAction Stop
             $killed++
         }
@@ -250,11 +282,6 @@ function Stop-LiteDeployAuditModeSysprep {
             catch {}
         }
     }
-
-    try {
-        $null = & taskkill.exe /F /IM sysprep.exe /T 2>$null
-    }
-    catch {}
 
     return $killed
 }
@@ -485,13 +512,14 @@ function Get-LiteDeployFullOSSecret {
                 $subKeys = @('LiteDeploy\CredentialTransfer', 'WinPECredentialTransfer\Bootstrap')
                 $lastReadError = $null
                 foreach ($subKey in $subKeys) {
+                    $read = $null
                     try {
                         $read = Read-WPCTCredentialTransfer `
                             -SecretFilePath $packagePath `
                             -RegistrySubKey $subKey `
                             -ErrorAction Stop
                         if ($read -and $read.Success -and $read.Payload) {
-                            $found = @($read.Payload.Secrets) | Where-Object { $_.Id -eq $SecretId }
+                            $found = @($read.Payload.Secrets) | Where-Object { $_.Id -eq $SecretId } | Select-Object -First 1
                             if ($found) {
                                 $user = [string]$found.Username
                                 $sec = ConvertTo-SecureString ([string]$found.Password) -AsPlainText -Force
@@ -507,6 +535,16 @@ function Get-LiteDeployFullOSSecret {
                     }
                     catch {
                         $lastReadError = $_.Exception.Message
+                    }
+                    finally {
+                        if ($null -ne $read -and $read.PSObject.Properties['Payload'] -and $null -ne $read.Payload -and $read.Payload.PSObject.Properties['Secrets'] -and $null -ne $read.Payload.Secrets) {
+                            foreach ($secretEntry in @($read.Payload.Secrets)) {
+                                if ($null -ne $secretEntry -and $secretEntry.PSObject.Properties['Password']) {
+                                    $secretEntry.Password = $null
+                                }
+                            }
+                        }
+                        $read = $null
                     }
                 }
             }
@@ -567,15 +605,6 @@ function Connect-LiteDeployFullOSDeploymentShare {
     $userName = $secretResult.UserName
 
     try {
-        # Ensure EnableLinkedConnections so Explorer and elevated admin share drive Z:
-        try {
-            $policiesKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
-            if (Test-Path -LiteralPath $policiesKey) {
-                Set-ItemProperty -Path $policiesKey -Name 'EnableLinkedConnections' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            }
-        }
-        catch {}
-
         # Clean up any existing mapping on the drive letter
         if (Get-Command Remove-SmbMapping -ErrorAction SilentlyContinue) {
             try { Remove-SmbMapping -LocalPath $cleanDrive -Force -UpdateProfile -ErrorAction SilentlyContinue } catch {}
@@ -587,14 +616,14 @@ function Connect-LiteDeployFullOSDeploymentShare {
         $mapped = $false
         $lastError = ''
 
-        # 1) Method A: Native New-SmbMapping with in-memory PSCredential
+        # 1) Method A: Native New-SmbMapping with in-memory PSCredential (non-persistent session mapping)
         if (Get-Command New-SmbMapping -ErrorAction SilentlyContinue) {
             try {
                 $null = New-SmbMapping `
                     -LocalPath $cleanDrive `
                     -RemotePath $NetworkPath `
                     -Credential $credential `
-                    -Persistent $true `
+                    -Persistent $false `
                     -ErrorAction Stop
                 if (Test-Path -LiteralPath "$cleanDrive\" -PathType Container) {
                     $mapped = $true
@@ -611,7 +640,7 @@ function Connect-LiteDeployFullOSDeploymentShare {
             }
         }
 
-        # 2) Method B: Native New-PSDrive with -Persist and in-memory PSCredential
+        # 2) Method B: Native New-PSDrive with in-memory PSCredential (session-scoped, non-persistent)
         if (-not $mapped) {
             try {
                 if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
@@ -622,7 +651,6 @@ function Connect-LiteDeployFullOSDeploymentShare {
                     -PSProvider FileSystem `
                     -Root $NetworkPath `
                     -Credential $credential `
-                    -Persist `
                     -Scope Global `
                     -ErrorAction Stop
                 if (Test-Path -LiteralPath "$cleanDrive\" -PathType Container) {
@@ -748,7 +776,177 @@ function Get-LiteDeployFullOSContextFromState {
 }
 
 # ==============================================================================
-# 6. FULLOS RESUME ORCHESTRATOR
+# 6. FULLOS FINALIZATION & FAIL-SAFE CLEANUP
+# ==============================================================================
+
+function Set-LiteDeployFullOSComputerDescription {
+    <#
+    .SYNOPSIS
+        Applies ComputerDescription (srvcomment) directly to HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+        without shell interpolation.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$ComputerDescription = '',
+
+        [Parameter(Mandatory = $false)]
+        [string]$RegistryPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ComputerDescription)) {
+        return [pscustomobject]@{ Success = $true; Applied = $false; Message = 'No ComputerDescription specified.' }
+    }
+
+    $trimmed = $ComputerDescription.Trim()
+    if ($trimmed.Length -gt 127 -or $ComputerDescription -match '[\x00-\x1F\x7F]' -or $ComputerDescription -match '[&|<>^%"`]') {
+        throw "Invalid ComputerDescription for srvcomment registry configuration."
+    }
+
+    if (-not (Test-Path -LiteralPath $RegistryPath)) {
+        $null = New-Item -Path $RegistryPath -Force -ErrorAction Stop
+    }
+    Set-ItemProperty -LiteralPath $RegistryPath -Name 'srvcomment' -Value $trimmed -Type String -Force -ErrorAction Stop
+
+    return [pscustomobject]@{
+        Success             = $true
+        Applied             = $true
+        RegistryPath        = $RegistryPath
+        ComputerDescription = $trimmed
+    }
+}
+
+function Complete-LiteDeployFullOSFinalization {
+    <#
+    .SYNOPSIS
+        Executes deterministic terminal FullOS finalization: destroys WinPECT bootstrap keys and encrypted
+        credential packages, restores EnableLUA=1 and removes HKLM Run auto-launch, disconnects temporary
+        SMB share mappings, and updates DeploymentState.json.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$LocalRootName = '~LiteDeploy',
+        [string]$OsDriveLetter = $env:SystemDrive,
+        [string]$StatePath = '',
+        [string]$ShareDriveLetter = 'Z:',
+        [psobject]$DeploymentState = $null,
+        [ValidateSet('Completed', 'Failed')]
+        [string]$FinalStatus = 'Completed'
+    )
+
+    $drive = ($OsDriveLetter -replace '[\\/]+$', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($drive)) { $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' } }
+    if ($drive.Length -eq 1) { $drive += ':' }
+    $localRoot = Join-Path "$drive\" $LocalRootName
+
+    if ([string]::IsNullOrWhiteSpace($StatePath)) {
+        $StatePath = Join-Path $localRoot 'DeploymentState.json'
+    }
+
+    # 1. Destroy WinPECT credential transfer artifacts and registry bootstrap keys
+    $credDir = Join-Path $localRoot 'Content\Credentials'
+    $packagePath = Join-Path $credDir 'CredentialTransfer.bin'
+    $credentialsRemoved = $false
+    try {
+        $winpectEngine = Join-Path $localRoot 'Engine\Tools\WinPECT\WinPECredentialTransfer.ps1'
+        if (-not (Test-Path -LiteralPath $winpectEngine -PathType Leaf)) {
+            $winpectEngine = Join-Path $localRoot 'Tools\WinPECT\WinPECredentialTransfer.ps1'
+        }
+        if ((Test-Path -LiteralPath $winpectEngine -PathType Leaf) -and (-not (Get-Command Remove-WPCTCredentialTransfer -ErrorAction SilentlyContinue))) {
+            . $winpectEngine
+        }
+        if (Get-Command Remove-WPCTCredentialTransfer -ErrorAction SilentlyContinue) {
+            foreach ($subKey in @('LiteDeploy\CredentialTransfer', 'WinPECredentialTransfer\Bootstrap')) {
+                try {
+                    $null = Remove-WPCTCredentialTransfer -SecretFilePath $packagePath -RegistrySubKey $subKey -ErrorAction SilentlyContinue
+                }
+                catch {}
+            }
+        }
+        if (Test-Path -LiteralPath $packagePath -PathType Leaf) {
+            Remove-Item -LiteralPath $packagePath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $credDir -PathType Container) {
+            Get-ChildItem -LiteralPath $credDir -Filter '*.xml' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+        foreach ($regKey in @('HKLM:\SOFTWARE\LiteDeploy\CredentialTransfer', 'HKLM:\SOFTWARE\WinPECredentialTransfer\Bootstrap')) {
+            if (Test-Path -LiteralPath $regKey) {
+                Remove-Item -LiteralPath $regKey -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $credentialsRemoved = (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) -and (-not (Test-Path -LiteralPath 'HKLM:\SOFTWARE\LiteDeploy\CredentialTransfer'))
+    }
+    catch {
+        $credentialsRemoved = $false
+    }
+
+    # 2. Restore UAC (EnableLUA=1) and remove HKLM Run auto-launch value
+    $runCleanup = Clear-LiteDeployFullOSRunKey
+    $uacRestore = if ($runCleanup -and $runCleanup.PSObject.Properties['UacRestore']) { $runCleanup.UacRestore } else { Restore-LiteDeployFullOSUacBypass }
+
+    # 3. Disconnect temporary session SMB share mapping
+    $shareDisconnected = $false
+    if (-not [string]::IsNullOrWhiteSpace($ShareDriveLetter)) {
+        $cleanDrive = $ShareDriveLetter.TrimEnd('\').TrimEnd(':') + ':'
+        $driveName = $cleanDrive.TrimEnd(':')
+        try {
+            if (Get-Command Remove-SmbMapping -ErrorAction SilentlyContinue) {
+                Remove-SmbMapping -LocalPath $cleanDrive -Force -ErrorAction SilentlyContinue
+            }
+            if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
+                Remove-PSDrive -Name $driveName -Force -ErrorAction SilentlyContinue
+            }
+            $shareDisconnected = $true
+        }
+        catch {}
+    }
+
+    # 4. Update and persist DeploymentState.json
+    $stateObj = $DeploymentState
+    if ($null -eq $stateObj -and (Test-Path -LiteralPath $StatePath -PathType Leaf) -and (Get-Command Read-LiteDeployStateFile -ErrorAction SilentlyContinue)) {
+        try { $stateObj = Read-LiteDeployStateFile -Path $StatePath } catch {}
+    }
+
+    if ($null -ne $stateObj) {
+        $nowIso = [DateTime]::UtcNow.ToString('o')
+        $stateObj | Add-Member -NotePropertyName Status -NotePropertyValue $FinalStatus -Force
+        $stateObj | Add-Member -NotePropertyName EndTime -NotePropertyValue $nowIso -Force
+        $execNode = if ($stateObj.PSObject.Properties['Execution']) { $stateObj.Execution } else { $null }
+        if ($null -ne $execNode) {
+            $execNode | Add-Member -NotePropertyName CurrentStep -NotePropertyValue "FullOS$FinalStatus" -Force
+            $execNode | Add-Member -NotePropertyName FullOSFinalized -NotePropertyValue $true -Force
+            $execNode | Add-Member -NotePropertyName FinalizedTimeUtc -NotePropertyValue $nowIso -Force
+            $execNode | Add-Member -NotePropertyName CredentialsCleaned -NotePropertyValue ([bool]$credentialsRemoved) -Force
+            $execNode | Add-Member -NotePropertyName UacRestored -NotePropertyValue ([bool]($uacRestore -and $uacRestore.Success)) -Force
+            $execNode | Add-Member -NotePropertyName RebootRequiredForUac -NotePropertyValue ([bool]($uacRestore -and $uacRestore.Restored)) -Force
+        }
+        $credHandoffNode = if ($null -ne $execNode -and $execNode.PSObject.Properties['CredentialHandoff']) { $execNode.CredentialHandoff } else { $null }
+        if ($null -ne $credHandoffNode) {
+            $credHandoffNode | Add-Member -NotePropertyName Staged -NotePropertyValue $false -Force
+            $credHandoffNode | Add-Member -NotePropertyName CleanedTimeUtc -NotePropertyValue $nowIso -Force
+        }
+        if (Get-Command Write-LiteDeployStateFile -ErrorAction SilentlyContinue) {
+            try { $null = Write-LiteDeployStateFile -Path $StatePath -StateObject $stateObj } catch {}
+        }
+    }
+
+    return [pscustomobject]@{
+        Success              = $true
+        FinalStatus          = $FinalStatus
+        StatePath            = $StatePath
+        CredentialsRemoved   = [bool]$credentialsRemoved
+        RunKeyCleared        = [bool]($runCleanup -and $runCleanup.Success)
+        UacRestored          = [bool]($uacRestore -and $uacRestore.Success)
+        RebootRequiredForUac = [bool]($uacRestore -and $uacRestore.Restored)
+        ShareDisconnected    = [bool]$shareDisconnected
+    }
+}
+
+# ==============================================================================
+# 7. FULLOS RESUME ORCHESTRATOR
 # ==============================================================================
 
 function Start-LiteDeployFullOSResume {
@@ -761,7 +959,8 @@ function Start-LiteDeployFullOSResume {
         [string]$OsDriveLetter = $env:SystemDrive,
         [string]$StatePath = '',
         [string]$RuntimeRoot = $PSScriptRoot,
-        [switch]$ForceDirect
+        [switch]$ForceDirect,
+        [switch]$CompleteDeployment
     )
 
     $drive = ($OsDriveLetter -replace '[\\/]+$', '').Trim()
@@ -996,6 +1195,24 @@ function Start-LiteDeployFullOSResume {
         }
     }
 
+    # Apply ComputerDescription (srvcomment) directly via registry API if present in state
+    try {
+        $wfSelectionData = Get-LiteDeployStateProperty -InputObject $ctx.Workflow -Name 'SelectionData' -Default $null
+        $stateCompDesc = [string](Get-LiteDeployStateProperty -InputObject $wfSelectionData -Name 'ComputerDescription' -Default '')
+        if ([string]::IsNullOrWhiteSpace($stateCompDesc)) {
+            $stateCompDesc = [string](Get-LiteDeployStateProperty -InputObject $ctx.Workflow -Name 'ComputerDescription' -Default '')
+        }
+        if (-not [string]::IsNullOrWhiteSpace($stateCompDesc)) {
+            $descResult = Set-LiteDeployFullOSComputerDescription -ComputerDescription $stateCompDesc
+            if ($descResult.Applied) {
+                Write-FullOSLog "Applied ComputerDescription (srvcomment) via native registry API." -Level 'SUCCESS'
+            }
+        }
+    }
+    catch {
+        Write-FullOSLog "Failed to apply ComputerDescription (srvcomment): $_" -Level 'WARNING'
+    }
+
     if (Get-Command Get-LiteDeployPackages -ErrorAction SilentlyContinue) {
         Write-FullOSLog 'Packages component loaded (orchestration pending; use state Workflow / future action list).'
     }
@@ -1041,10 +1258,22 @@ function Start-LiteDeployFullOSResume {
         Save-LiteDeployDeploymentState -DeploymentState $deployment
     }
 
+    $finalizationResult = $null
+    if ($CompleteDeployment) {
+        $finalizationResult = Complete-LiteDeployFullOSFinalization `
+            -LocalRootName $LocalRootName `
+            -OsDriveLetter $drive `
+            -StatePath $StatePath `
+            -ShareDriveLetter $shareDrive `
+            -DeploymentState $deployment `
+            -FinalStatus 'Completed'
+        Write-FullOSLog "FullOS finalization completed (CredentialsRemoved=$($finalizationResult.CredentialsRemoved), UacRestored=$($finalizationResult.UacRestored))." -Level 'SUCCESS'
+    }
+
     # Final sweep against Audit Mode sysprep GUI
     $null = Stop-LiteDeployAuditModeSysprep
 
-    Write-FullOSLog 'FullOS resume complete (state-driven). HKLM Run remains armed for mid-deploy reboots; call Clear-LiteDeployFullOSRunKey on final success.' -Level 'SUCCESS'
+    Write-FullOSLog 'FullOS resume complete (state-driven). HKLM Run remains armed for mid-deploy reboots; call Complete-LiteDeployFullOSFinalization on final success.' -Level 'SUCCESS'
     return [pscustomobject]@{
         Success          = $true
         Context          = $ctx
@@ -1064,6 +1293,7 @@ function Start-LiteDeployFullOSResume {
         DeploymentUid    = $ctx.DeploymentUid
         ResumeCount      = $resumeCount
         WinpectReady     = $hasWinpectPackage
+        Finalization     = $finalizationResult
         DeploymentState  = $deployment
     }
 }
@@ -1085,6 +1315,16 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     try {
         Start-LiteDeployFullOSResume -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -RuntimeRoot $PSScriptRoot -ForceDirect:$ForceDirect
+    }
+    catch {
+        # Fail-safe UAC and credential cleanup on unrecoverable FullOS error
+        try {
+            $null = Complete-LiteDeployFullOSFinalization -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -FinalStatus 'Failed'
+        }
+        catch {
+            try { $null = Restore-LiteDeployFullOSUacBypass } catch {}
+        }
+        throw $_
     }
     finally {
         # Only strip a LiteDeploy-owned Setup CmdLine hijack — never wipe stock sysprep.

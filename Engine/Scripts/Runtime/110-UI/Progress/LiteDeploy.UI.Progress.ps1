@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Unified Pure-WPF Progress Host & Real-Time Deployment State Renderer for LiteDeploy.
 

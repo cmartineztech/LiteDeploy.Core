@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy WinPE Initialization & BootConfig Discovery Engine.
 

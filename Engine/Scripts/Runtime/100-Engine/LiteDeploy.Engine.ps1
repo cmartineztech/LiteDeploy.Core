@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Engine — WinPE install pipeline (architecture v2).
 
@@ -228,13 +228,88 @@ $global:LiteDeployRuntimeRoot = $RuntimePaths.RuntimeRoot
 function Get-LiteDeployUid {
     <#
     .SYNOPSIS
-        Generates a short, collision-resistant deployment UID (e.g., 260806-A3F1).
+        Generates a 48-bit collision-resistant deployment UID (e.g., 260806-A3F19B0C4D2E).
     #>
-    $bytes = [Byte[]]::new(2)
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $bytes = New-Object byte[] 6
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        if ($null -ne $rng) { $rng.Dispose() }
+    }
     $hex = [System.BitConverter]::ToString($bytes) -replace '-'
 
     return "$((Get-Date).ToString('yyMMdd'))-$hex"
+}
+
+function Test-LiteDeployReleaseManifest {
+    <#
+    .SYNOPSIS
+        Verifies runtime script integrity against ReleaseManifest.json (SHA-256) when present.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$RuntimeRoot = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ScriptPath = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$RequireAuthenticode
+    )
+
+    $effectiveRoot = $RuntimeRoot
+    if ([string]::IsNullOrWhiteSpace($effectiveRoot) -and (-not [string]::IsNullOrWhiteSpace($ScriptPath))) {
+        $effectiveRoot = Split-Path -Parent $ScriptPath
+    }
+    if ([string]::IsNullOrWhiteSpace($effectiveRoot)) {
+        return $true
+    }
+
+    $manifestPath = Join-Path $effectiveRoot 'ReleaseManifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        return $true
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if ($null -eq $manifest -or (-not $manifest.PSObject.Properties['Files']) -or $null -eq $manifest.Files) {
+        throw "Invalid ReleaseManifest.json structure at '$manifestPath'."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ScriptPath)) {
+        $leaf = Split-Path -Leaf $ScriptPath
+        $entry = @($manifest.Files | Where-Object { $_.RelativePath -ieq $leaf -or (Split-Path -Leaf $_.RelativePath) -ieq $leaf } | Select-Object -First 1)
+        if ($entry.Count -gt 0) {
+            $expectedHash = ([string]$entry[0].SHA256).Trim()
+            $actualHash = (Get-FileHash -LiteralPath $ScriptPath -Algorithm SHA256 -ErrorAction Stop).Hash.Trim()
+            if (-not $actualHash.Equals($expectedHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Integrity verification failed for '$ScriptPath': SHA-256 mismatch against ReleaseManifest.json (expected $expectedHash, actual $actualHash)."
+            }
+        }
+        if ($RequireAuthenticode -and (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $ScriptPath -ErrorAction Stop
+            if ($sig.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+                throw "Authenticode signature verification failed for '$ScriptPath': status is '$($sig.Status)'."
+            }
+        }
+        return $true
+    }
+
+    foreach ($fileEntry in @($manifest.Files)) {
+        $rel = [string]$fileEntry.RelativePath
+        $candidate = Join-Path $effectiveRoot $rel
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $expectedHash = ([string]$fileEntry.SHA256).Trim()
+            $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256 -ErrorAction Stop).Hash.Trim()
+            if (-not $actualHash.Equals($expectedHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Integrity verification failed for '$candidate': SHA-256 mismatch against ReleaseManifest.json."
+            }
+        }
+    }
+
+    return $true
 }
 
 # Progress host (separate STA process) — topmost while Disk/Image run; polls DeploymentState.json.
@@ -342,6 +417,8 @@ function Invoke-LiteDeployEngineScript {
     if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
         throw "$PhaseName script was not found: $ScriptPath"
     }
+
+    [void](Test-LiteDeployReleaseManifest -ScriptPath $ScriptPath)
 
     if ($RequireProgressHost) {
         $null = Test-LiteDeployProgressHost -WarnIfDead
@@ -534,7 +611,12 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
     $destRuntime = Join-Path $targetRoot 'Engine\Scripts\Runtime'
     $destTools = Join-Path $targetRoot 'Engine\Tools'
 
+    [void](Test-LiteDeployReleaseManifest -RuntimeRoot $srcRuntime)
+
     $null = New-Item -Path $destRuntime -ItemType Directory -Force -ErrorAction Stop
+    if (Get-Command Set-LiteDeployProtectedDirectoryAcl -ErrorAction SilentlyContinue) {
+        $null = Set-LiteDeployProtectedDirectoryAcl -LiteralPath $targetRoot
+    }
 
     # Runtime only (flat published scripts + UI). Never Admin.
     Copy-Item -Path (Join-Path $srcRuntime '*') -Destination $destRuntime -Recurse -Force -ErrorAction Stop
@@ -1100,11 +1182,23 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
 
         $diskResult = $null
         try {
+            $expectedDiskUniqueId = if ($workflowResult.PSObject.Properties['TargetDiskUniqueId'] -and $workflowResult.TargetDiskUniqueId) { [string]$workflowResult.TargetDiskUniqueId } else { "" }
+            $expectedDiskSerial = if ($workflowResult.PSObject.Properties['TargetDiskSerialNumber'] -and $workflowResult.TargetDiskSerialNumber) { [string]$workflowResult.TargetDiskSerialNumber } else { "" }
+            $expectedDiskModel = if ($workflowResult.PSObject.Properties['TargetDiskModel'] -and $workflowResult.TargetDiskModel) { [string]$workflowResult.TargetDiskModel } else { "" }
+            $expectedDiskBus = if ($workflowResult.PSObject.Properties['TargetDiskBusType'] -and $workflowResult.TargetDiskBusType) { [string]$workflowResult.TargetDiskBusType } else { "" }
+            $expectedDiskSize = if ($workflowResult.PSObject.Properties['TargetDiskSizeBytes'] -and $null -ne $workflowResult.TargetDiskSizeBytes) { [int64]$workflowResult.TargetDiskSizeBytes } else { [int64]0 }
+
             $diskResult = Invoke-LiteDeployEngineScript -ScriptPath $diskScript -PhaseName "Disk" -ArgumentTable @{
-                DiskNumber         = $targetDiskIndex
-                BootMode           = $detectedBootMode
-                OSTempDriveLetter  = $osStagingDriveLetter
-                ConfirmDestroy     = $true
+                DiskNumber           = $targetDiskIndex
+                BootMode             = $detectedBootMode
+                OSTempDriveLetter    = $osStagingDriveLetter
+                ExpectedUniqueId     = $expectedDiskUniqueId
+                ExpectedSerialNumber = $expectedDiskSerial
+                ExpectedModel        = $expectedDiskModel
+                ExpectedSizeBytes    = $expectedDiskSize
+                ExpectedBusType      = $expectedDiskBus
+                DeploymentRootPath   = $RuntimePaths.DeploymentRoot
+                ConfirmDestroy       = $true
             }
         }
         catch {
@@ -1178,6 +1272,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
                 if (-not $isAutoDetected -and -not [string]::IsNullOrWhiteSpace($driverSelection) -and (Test-Path -LiteralPath $driverSelection)) {
                     $resolvedSel = (Resolve-Path -LiteralPath $driverSelection).Path
                     $isContainer = Test-Path -LiteralPath $resolvedSel -PathType Container
+                    $customArchiveHash = if (-not $isContainer) { (Get-FileHash -LiteralPath $resolvedSel -Algorithm SHA256 -ErrorAction Stop).Hash } else { $null }
                     $driverDetection = [PSCustomObject]@{
                         IsDetected      = $true
                         SourceKind      = if ($isContainer) { "Content" } else { "Archive" }
@@ -1186,7 +1281,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
                         Model           = "Custom"
                         Manufacturer    = "Custom"
                         ManufacturerKey = "Custom"
-                        SHA256          = $null
+                        SHA256          = $customArchiveHash
                     }
                 }
 

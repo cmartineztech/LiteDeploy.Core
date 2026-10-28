@@ -51,7 +51,7 @@
         <!--OfflineDomainJoinBlob-->
       </Identification>
     </component>
-    <!-- Order 1: ComputerDescription. Order 2: LiteDeployFullOSRun. Order 3: DisableUacForFullOS (Domain Join / non-Audit only; FullOS restores). -->
+    <!-- Order 1: LiteDeployFullOSRun. Order 2-3: DisableUacForFullOS (Domain Join / non-Audit only; FullOS restores). -->
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
         <!--ComputerDescription-->
@@ -62,7 +62,7 @@
     <!--ProvisioningPackage-->
   </settings>
 
-  <!-- 3. OOBESYSTEM PASS (Regional settings, Suppress OOBE & Local Accounts) -->
+  <!-- 3. OOBESYSTEM PASS (Regional settings & Suppress OOBE) -->
   <settings pass="oobeSystem">
     <!--ProvisioningPackage-->
     <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -80,30 +80,7 @@
         <HideLocalAccountScreen>true</HideLocalAccountScreen>
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
-      <UserAccounts>
-        <LocalAccounts>
-          <LocalAccount wcm:action="add">
-            <Name>user</Name>
-            <DisplayName>user</DisplayName>
-            <Group>Administrators</Group>
-            <Password>
-              <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
-              <PlainText>false</PlainText>
-            </Password>
-          </LocalAccount>
-        </LocalAccounts>
-      </UserAccounts>
       <!--UserAccounts-->
-      <!-- AutoLogon: local test admin "user". HKLM Run FullOS (if actions>0) starts for whatever interactive account signs in (this user, built-in Admin, etc.). No AuditMode on Domain Join. -->
-      <AutoLogon>
-        <Enabled>true</Enabled>
-        <Username>user</Username>
-        <LogonCount>999</LogonCount>
-        <Password>
-          <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
-          <PlainText>false</PlainText>
-        </Password>
-      </AutoLogon>
     </component>
   </settings>
 </unattend>

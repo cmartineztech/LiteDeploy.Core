@@ -20,7 +20,7 @@
     "PromptForComputerDescription": true,
     "DriveSelection": true,
     "ImageEngine": "Setup.exe",
-    "SkipSetupHardwareRequirements": true,
+    "SkipSetupHardwareRequirements": false,
     "Language": "en-US",
     "KeyboardLocale": "0409:00000409",
     "TimeZone": "Eastern Standard Time",
@@ -33,7 +33,7 @@
     "AutoOnlineDownloadOnMedia": true
   },
   "Ui": {
-    "Theme": "Ligth"
+    "Theme": "Light"
   },
   "_Comments": "DeploymentShare Testing"
 }

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Packages - package catalog, validation, staging, and execution (architecture v2).
 
@@ -748,15 +748,35 @@ function ConvertTo-LiteDeployPackageEnvironment {
     <#
     .SYNOPSIS
         Builds the child-process environment: LITEDEPLOY_* context plus LITEDEPLOY_PARAM_<NAME> parameters.
-        PSCredential -> _USERNAME / _PASSWORD; SecureString -> plain value. Never logged.
+        By default, PSCredential / SecureString secrets are NOT unwrapped into plaintext environment variables
+        unless -AllowPlaintextPasswordEnv or package manifest allowPlaintextSecretEnv=true is explicitly set.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         $Package,
         [Parameter(Mandatory = $true)]
         [string]$PayloadPath,
-        [hashtable]$Parameters = @{}
+        [hashtable]$Parameters = @{},
+        [switch]$AllowPlaintextPasswordEnv
     )
+
+    $allowPlaintext = [bool]$AllowPlaintextPasswordEnv
+    if (-not $allowPlaintext -and $null -ne $Package) {
+        if ($Package.PSObject.Properties['AllowPlaintextSecretEnv'] -and $Package.AllowPlaintextSecretEnv -eq $true) {
+            $allowPlaintext = $true
+        }
+        elseif ($Package.PSObject.Properties['allowPlaintextSecretEnv'] -and $Package.allowPlaintextSecretEnv -eq $true) {
+            $allowPlaintext = $true
+        }
+        elseif ($Package.PSObject.Properties['Manifest'] -and $null -ne $Package.Manifest) {
+            $m = $Package.Manifest
+            if (($m.PSObject.Properties['allowPlaintextSecretEnv'] -and $m.allowPlaintextSecretEnv -eq $true) -or
+                ($m.PSObject.Properties['AllowPlaintextSecretEnv'] -and $m.AllowPlaintextSecretEnv -eq $true)) {
+                $allowPlaintext = $true
+            }
+        }
+    }
 
     $environment = @{
         LITEDEPLOY_PACKAGE_ID   = [string]$Package.PackageId
@@ -774,12 +794,16 @@ function ConvertTo-LiteDeployPackageEnvironment {
 
         if ($value -is [System.Management.Automation.PSCredential]) {
             $environment["${envName}_USERNAME"] = [string]$value.UserName
-            $environment["${envName}_PASSWORD"] = [string]$value.GetNetworkCredential().Password
+            if ($allowPlaintext) {
+                $environment["${envName}_PASSWORD"] = [string]$value.GetNetworkCredential().Password
+            }
         }
         elseif ($value -is [System.Security.SecureString]) {
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($value)
-            try { $environment[$envName] = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            if ($allowPlaintext) {
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($value)
+                try { $environment[$envName] = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
         }
         else {
             $environment[$envName] = [string]$value
@@ -787,6 +811,55 @@ function ConvertTo-LiteDeployPackageEnvironment {
     }
 
     return $environment
+}
+
+function Stop-LiteDeployProcessTree {
+    <#
+    .SYNOPSIS
+        Terminates a process and its entire descendant process tree (/T /F) on timeout.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [System.Diagnostics.Process]$Process = $null,
+
+        [Parameter(Mandatory = $false)]
+        [int]$ProcessId = 0
+    )
+
+    $targetPid = $ProcessId
+    if ($targetPid -le 0 -and $null -ne $Process) {
+        try { $targetPid = [int]$Process.Id } catch { $targetPid = 0 }
+    }
+
+    if ($targetPid -gt 0) {
+        try {
+            $taskKillExe = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\taskkill.exe' } else { 'taskkill.exe' }
+            if (-not (Test-Path -LiteralPath $taskKillExe -PathType Leaf)) { $taskKillExe = 'taskkill.exe' }
+            $tkPsi = New-Object System.Diagnostics.ProcessStartInfo
+            $tkPsi.FileName = $taskKillExe
+            $tkPsi.Arguments = "/PID $targetPid /T /F"
+            $tkPsi.UseShellExecute = $false
+            $tkPsi.CreateNoWindow = $true
+            $tkPsi.RedirectStandardOutput = $true
+            $tkPsi.RedirectStandardError = $true
+            $tkProc = [System.Diagnostics.Process]::Start($tkPsi)
+            if ($null -ne $tkProc) {
+                [void]$tkProc.WaitForExit(5000)
+                $tkProc.Dispose()
+            }
+        }
+        catch {}
+    }
+
+    if ($null -ne $Process) {
+        try {
+            if (-not $Process.HasExited) {
+                $Process.Kill()
+            }
+        }
+        catch {}
+    }
 }
 
 function Invoke-LiteDeployPackageProcess {
@@ -846,7 +919,7 @@ function Invoke-LiteDeployPackageProcess {
         }
         else {
             $outcome.TimedOut = $true
-            try { $process.Kill() } catch { }
+            Stop-LiteDeployProcessTree -Process $process
             [void]$process.WaitForExit(5000)
             $outcome.ExitCode = -1
         }
@@ -910,7 +983,10 @@ function Invoke-LiteDeployPackage {
         [int]$TimeoutSeconds = 0,
 
         [Parameter(Mandatory = $false)]
-        [switch]$IncludeDisabled
+        [switch]$IncludeDisabled,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowPlaintextPasswordEnv
     )
 
     $pkg = $Package
@@ -973,7 +1049,7 @@ function Invoke-LiteDeployPackage {
         return $result
     }
 
-    $environment = ConvertTo-LiteDeployPackageEnvironment -Package $pkg -PayloadPath $effectivePayload -Parameters $Parameters
+    $environment = ConvertTo-LiteDeployPackageEnvironment -Package $pkg -PayloadPath $effectivePayload -Parameters $Parameters -AllowPlaintextPasswordEnv:$AllowPlaintextPasswordEnv
     $timeout = if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } else { $pkg.TimeoutSeconds }
 
     $runs = New-Object System.Collections.Generic.List[object]

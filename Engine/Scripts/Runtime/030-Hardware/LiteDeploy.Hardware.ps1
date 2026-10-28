@@ -124,7 +124,6 @@ function Test-HardwareIdentityJunk {
 }
 
 function Get-HardwareVendorRaw {
-    return "Dell Inc."
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     if ($cs -and $cs.Manufacturer) { return $cs.Manufacturer.Trim() }
     return $null
@@ -158,7 +157,6 @@ function Get-HardwareModel {
         Returns the computer model. Lenovo uses the marketing name from
         Win32_ComputerSystemProduct.Version when available (matches DynamicDriverDownload).
     #>
-    return "Latitude 7450"
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     $csModel = if ($cs -and $cs.Model) { [string]$cs.Model.Trim() } else { $null }
 
@@ -184,7 +182,6 @@ function Get-HardwareComputerSku {
         - HP: Win32_BaseBoard.Product (platform ID)
         - Others: SystemSKUNumber, then BIOS registry, then baseboard product
     #>
-    return "0CC1"
     $vendor = Get-HardwareVendor
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     $csModel = if ($cs -and $cs.Model) { [string]$cs.Model.Trim() } else { $null }
@@ -808,7 +805,12 @@ function New-HardwareDiskSelectionRow {
         [int]$DiskNumber,
         [string]$Model,
         [double]$TotalBytes,
-        $AvailableBytes
+        $AvailableBytes,
+        [string]$UniqueId = "",
+        [string]$SerialNumber = "",
+        [string]$BusType = "",
+        [bool]$IsBoot = $false,
+        [bool]$IsSystem = $false
     )
 
     # Unknown space is handled conservatively: all capacity is considered used.
@@ -825,13 +827,18 @@ function New-HardwareDiskSelectionRow {
     $usedGB = [math]::Max(0.0, [math]::Round($totalGB - $availableGB, 1))
 
     return [PSCustomObject]@{
-        Index      = "Disk $DiskNumber"
-        Model      = $Model
-        Capacity   = "$totalGB GB"
-        UsedSpace  = "$usedGB GB"
-        FreeSpace  = "$availableGB GB"
-        DiskNumber = $DiskNumber
-        TotalBytes = $TotalBytes
+        Index        = "Disk $DiskNumber"
+        Model        = $Model
+        Capacity     = "$totalGB GB"
+        UsedSpace    = "$usedGB GB"
+        FreeSpace    = "$availableGB GB"
+        DiskNumber   = $DiskNumber
+        TotalBytes   = $TotalBytes
+        UniqueId     = $(if ($UniqueId) { $UniqueId.Trim() } else { "" })
+        SerialNumber = $(if ($SerialNumber) { $SerialNumber.Trim() } else { "" })
+        BusType      = $(if ($BusType) { $BusType.Trim() } else { "" })
+        IsBoot       = [bool]$IsBoot
+        IsSystem     = [bool]$IsSystem
     }
 }
 
@@ -909,7 +916,22 @@ function Get-HardwarePhysicalDisks {
                     $availableBytes = 0.0
                 }
 
-                $diskList += New-HardwareDiskSelectionRow -DiskNumber $disk.Number -Model $model -TotalBytes $totalBytes -AvailableBytes $availableBytes
+                $uniqueId = if ($disk.PSObject.Properties['UniqueId'] -and $disk.UniqueId) { [string]$disk.UniqueId } else { "" }
+                $serialNum = if ($disk.PSObject.Properties['SerialNumber'] -and $disk.SerialNumber) { [string]$disk.SerialNumber } else { "" }
+                $busType = if ($disk.PSObject.Properties['BusType'] -and $disk.BusType) { [string]$disk.BusType } else { "" }
+                $isBoot = [bool]($disk.PSObject.Properties['IsBoot'] -and $disk.IsBoot)
+                $isSystem = [bool]($disk.PSObject.Properties['IsSystem'] -and $disk.IsSystem)
+
+                $diskList += New-HardwareDiskSelectionRow `
+                    -DiskNumber $disk.Number `
+                    -Model $model `
+                    -TotalBytes $totalBytes `
+                    -AvailableBytes $availableBytes `
+                    -UniqueId $uniqueId `
+                    -SerialNumber $serialNum `
+                    -BusType $busType `
+                    -IsBoot $isBoot `
+                    -IsSystem $isSystem
             }
         }
     }
@@ -932,7 +954,20 @@ function Get-HardwarePhysicalDisks {
                 else {
                     0.0
                 }
-                $diskList += New-HardwareDiskSelectionRow -DiskNumber $disk.Index -Model $model -TotalBytes $totalBytes -AvailableBytes $availableBytes
+                $uniqueId = if ($disk.PSObject.Properties['PNPDeviceID'] -and $disk.PNPDeviceID) { [string]$disk.PNPDeviceID } else { "" }
+                $serialNum = if ($disk.PSObject.Properties['SerialNumber'] -and $disk.SerialNumber) { [string]$disk.SerialNumber } else { "" }
+                $busType = if ($disk.PSObject.Properties['InterfaceType'] -and $disk.InterfaceType) { [string]$disk.InterfaceType } else { "" }
+
+                $diskList += New-HardwareDiskSelectionRow `
+                    -DiskNumber $disk.Index `
+                    -Model $model `
+                    -TotalBytes $totalBytes `
+                    -AvailableBytes $availableBytes `
+                    -UniqueId $uniqueId `
+                    -SerialNumber $serialNum `
+                    -BusType $busType `
+                    -IsBoot $false `
+                    -IsSystem $false
             }
         }
         catch {

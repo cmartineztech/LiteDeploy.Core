@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Logs - unified console + CMTrace logging component (architecture v2).
 
@@ -354,20 +354,68 @@ function Clear-LiteDeployLog {
 # LOG SYNCHRONIZATION AND OS HANDOFF
 # ==============================================================================
 
+function Set-LiteDeployProtectedDirectoryAcl {
+    <#
+    .SYNOPSIS
+        Restricts an OS-volume staging directory (e.g. C:\~LiteDeploy) to SYSTEM (S-1-5-18)
+        and Built-in Administrators (S-1-5-32-544) FullControl with inheritance disabled.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath
+    )
+
+    if (-not (Test-Path -LiteralPath $LiteralPath -PathType Container)) {
+        return $false
+    }
+
+    try {
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+
+        $inheritFlags = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+        $propFlags = [System.Security.AccessControl.PropagationFlags]::None
+        $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
+        $allow = [System.Security.AccessControl.AccessControlType]::Allow
+
+        $systemSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+        $adminsSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($systemSid, $rights, $inheritFlags, $propFlags, $allow)))
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($adminsSid, $rights, $inheritFlags, $propFlags, $allow)))
+
+        Set-Acl -LiteralPath $LiteralPath -AclObject $acl -ErrorAction Stop
+        return $true
+    }
+    catch {
+        Write-LiteDeployLog "Could not apply restrictive ACL to '$LiteralPath': $($_.Exception.Message)" -Level WARNING -Component Logs
+        return $false
+    }
+}
+
 function Initialize-LiteDeployDeploymentShareLogDir {
     param(
         [Parameter(Mandatory = $true)][psobject]$RuntimePaths,
-        [Parameter(Mandatory = $true)][string]$DeploymentUid)
+        [Parameter(Mandatory = $true)][string]$DeploymentUid,
+        [switch]$AllowExisting
+    )
 
     # One declared destination. Read-only media may reject it; keep local logs and report why.
     $deploymentLogDirectory = Join-Path $RuntimePaths.DeploymentLogRoot $DeploymentUid
     try {
+        if ((Test-Path -LiteralPath $deploymentLogDirectory -PathType Container) -and (-not $AllowExisting)) {
+            throw "Deployment log directory '$deploymentLogDirectory' already exists (UID collision detected)."
+        }
         $null = New-Item -Path $deploymentLogDirectory -ItemType Directory -Force -ErrorAction Stop
         Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $deploymentLogDirectory
         Write-LiteDeployLog "Deployment logs: $deploymentLogDirectory" -Level SUCCESS -Component Engine
         return $deploymentLogDirectory
     }
     catch {
+        if ($_.Exception.Message -like '*UID collision detected*') {
+            throw $_
+        }
         Write-LiteDeployLog "Cannot write deployment logs to '$deploymentLogDirectory': $_. Local logs remain at '$($RuntimePaths.LocalLogDirectory)'." -Level WARNING -Component Engine
         return $null
     }
@@ -422,6 +470,7 @@ function Sync-LiteDeployArtifactsToOsVolume {
         $stateDest = Join-Path $targetRoot 'DeploymentState.json'
         $result.TargetRoot = $targetRoot
         $null = New-Item -Path $targetLogs -ItemType Directory -Force -ErrorAction Stop
+        $null = Set-LiteDeployProtectedDirectoryAcl -LiteralPath $targetRoot
 
         $localLogDir = $RuntimePaths.LocalLogDirectory
         $executionLog = Join-Path $localLogDir 'LiteDeploy.Execution.log'
@@ -451,7 +500,28 @@ function Sync-LiteDeployArtifactsToOsVolume {
         }
         $expected = $stateJson | ConvertFrom-Json -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace([string]$expected.DeploymentUid)) { throw 'State has no deployment ID.' }
-        Set-Content -LiteralPath $stateDest -Value $stateJson -Encoding UTF8 -Force -ErrorAction Stop
+        if (Get-Command Write-LiteDeployStateFile -ErrorAction SilentlyContinue) {
+            Write-LiteDeployStateFile -Path $stateDest -Content $stateJson
+        }
+        else {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            $bytes = $utf8NoBom.GetBytes($stateJson)
+            $tmpDest = "$stateDest.$PID.tmp"
+            $fs = New-Object System.IO.FileStream($tmpDest, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            try {
+                $fs.Write($bytes, 0, $bytes.Length)
+                $fs.Flush($true)
+            }
+            finally {
+                $fs.Dispose()
+            }
+            if (Test-Path -LiteralPath $stateDest -PathType Leaf) {
+                [System.IO.File]::Replace($tmpDest, $stateDest, "$stateDest.bak", $true)
+            }
+            else {
+                [System.IO.File]::Move($tmpDest, $stateDest)
+            }
+        }
         $storedJson = Get-Content -LiteralPath $stateDest -Raw -ErrorAction Stop
         $null = $storedJson | ConvertFrom-Json -ErrorAction Stop
         if ($storedJson.TrimEnd() -cne $stateJson.TrimEnd()) { throw 'OS-volume state verification failed.' }

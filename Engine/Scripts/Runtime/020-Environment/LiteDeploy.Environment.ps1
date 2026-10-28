@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Environment - explicit path settings, runtime detection, share connectivity, and process execution.
 
@@ -557,9 +557,29 @@ function Invoke-LiteDeployProcess {
         }
         else {
             $result.TimedOut = $true
-            try { $proc.Kill() } catch {}
+            try {
+                $tkExe = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\taskkill.exe' } else { 'taskkill.exe' }
+                if (-not (Test-Path -LiteralPath $tkExe -PathType Leaf)) { $tkExe = 'taskkill.exe' }
+                $tkPsi = New-Object System.Diagnostics.ProcessStartInfo
+                $tkPsi.FileName = $tkExe
+                $tkPsi.Arguments = "/PID $($proc.Id) /T /F"
+                $tkPsi.UseShellExecute = $false
+                $tkPsi.CreateNoWindow = $true
+                $tkPsi.RedirectStandardOutput = $true
+                $tkPsi.RedirectStandardError = $true
+                $tkProc = [System.Diagnostics.Process]::Start($tkPsi)
+                if ($null -ne $tkProc) {
+                    [void]$tkProc.WaitForExit(5000)
+                    $tkProc.Dispose()
+                }
+            }
+            catch {}
+            try {
+                if (-not $proc.HasExited) { $proc.Kill() }
+            }
+            catch {}
             $null = $proc.WaitForExit(5000)
-            Write-LiteDeployEnvironmentLog -Message "Process '$logName' exceeded $TimeoutSeconds second(s) and was terminated." -Level "ERROR"
+            Write-LiteDeployEnvironmentLog -Message "Process '$logName' exceeded $TimeoutSeconds second(s) and its process tree was terminated." -Level "ERROR"
         }
 
         if ($CaptureOutput) {
