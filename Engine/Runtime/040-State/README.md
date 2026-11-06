@@ -2,7 +2,7 @@
 
 **ComponentId:** `State`  
 **Dev folder:** `Runtime/040-State`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.State.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.State.ps1`
 
 ## Purpose
 
@@ -56,8 +56,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\040-State\LiteDeploy.State.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\040-State\LiteDeploy.State.ps1'
 . $component
 $state = Get-LiteDeployState -Path 'C:\LiteDeploy-Staging\DeploymentState.json' -FromFile
 Test-LiteDeployState -State $state -Detailed

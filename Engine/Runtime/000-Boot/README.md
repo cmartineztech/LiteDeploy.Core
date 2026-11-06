@@ -2,7 +2,7 @@
 
 **ComponentId:** `Boot`  
 **Dev folder:** `Runtime/000-Boot` (repo organization only)  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Boot.ps1` (also WinPE `~\LiteDeploy\Boot\`)
+**Published:** `Engine\Runtime\LiteDeploy.Boot.ps1` (also WinPE `~\LiteDeploy\Boot\`)
 
 ## Purpose
 
@@ -54,8 +54,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\000-Boot\LiteDeploy.Boot.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\000-Boot\LiteDeploy.Boot.ps1'
 . $component # Helpers only.
 ~~~
 

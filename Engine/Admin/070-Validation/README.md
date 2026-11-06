@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Validation`  
 **Dev:** `Admin/070-Validation`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Validation.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Validation.ps1`
 
 Share / content validation helpers before production use.
 
@@ -39,7 +39,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\070-Validation\LiteDeploy.Admin.Validation.ps1'
+$component = '.\Engine\Admin\070-Validation\LiteDeploy.Admin.Validation.ps1'
 . $component
 $report = Test-LiteDeployEnvironment -ShareRoot 'C:\LiteDeploy-Staging'
 $report.Results | Format-List

@@ -58,7 +58,7 @@ Component metadata inventory (also repo-only tooling under `_Templates\`):
 To inspect the detected environment:
 
 ```powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
 Get-LiteDeployEnvironment
 ```
 
@@ -67,16 +67,16 @@ Get-LiteDeployEnvironment
 Use a dedicated staging directory:
 
 ```powershell
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare 'C:\LiteDeploy-Staging'
 
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1' `
-  -PublishedRuntimeRoot 'C:\LiteDeploy-Staging\Engine\Scripts\Runtime'
+  -PublishedRuntimeRoot 'C:\LiteDeploy-Staging\Engine\Runtime'
 ```
 
-Admin.Build copies runtime scripts to `Engine\Scripts\Runtime`, UI assets to its `UI`
-subfolder, and admin tools to `Engine\Scripts\Admin`. Optional `-Clean` removes existing
+Admin.Build copies runtime scripts to `Engine\Runtime`, UI assets to its `UI`
+subfolder, and admin tools to `Engine\Admin`. Optional `-Clean` removes existing
 files from target script directories before copying; use it only for intentionally
 replaceable targets. Publishing does not rebuild boot.wim.
 

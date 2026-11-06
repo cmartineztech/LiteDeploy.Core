@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Content`  
 **Dev:** `Admin/010-Content`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Content.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Content.ps1`
 
 Share layout provisioning and ACL helpers (successor to SetDeploymentShareAcl concerns). Numbered folder is repo organization only.
 
@@ -43,6 +43,6 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\010-Content\LiteDeploy.Admin.Content.ps1'
+$component = '.\Engine\Admin\010-Content\LiteDeploy.Admin.Content.ps1'
 & $component -SharePath 'C:\DeploymentShare' -ShareName 'DeploymentShare$' -LocalUser 'deployer' # Changes account/share/ACLs.
 ~~~

@@ -11,7 +11,7 @@
       - Process execution       Invoke-LiteDeployProcess
 
     Dot-source to load the functions:
-        . "Z:\Engine\Scripts\Runtime\LiteDeploy.Environment.ps1"
+        . "Z:\Engine\Runtime\LiteDeploy.Environment.ps1"
 
     Run directly (no dot-source) to print Get-LiteDeployEnvironment. -Metadata returns the component record.
 
@@ -66,17 +66,21 @@ if ($RuntimeRoot -and $RuntimeRoot -notmatch '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\
 
 # PATH SETTINGS: change layout here, never in Engine or a consumer component.
 # Development uses the source root beside this Environment folder.
-# Production uses <deployment source>\Engine\Scripts\Runtime unless RuntimeRoot is supplied.
+# Production uses <deployment source>\Engine\Runtime unless RuntimeRoot is supplied.
 $global:LiteDeployPathSettings = [pscustomobject]@{
     Mode = $Mode
     ComponentRoot = if ($RuntimeRoot) { $RuntimeRoot } elseif ($Mode -eq 'Development') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
     RuntimeRootOverride = $RuntimeRoot
-    ProductionRuntimePath = 'Engine\Scripts\Runtime'
+    ProductionRuntimePath = 'Engine\Runtime'
     ProductionFiles = [ordered]@{
         Environment = 'LiteDeploy.Environment.ps1'
-        Boot = 'LiteDeploy.Boot.ps1'
-        Engine = 'LiteDeploy.Engine.ps1'
-        FullOS = 'LiteDeploy.FullOS.ps1'
+        Boot = 'LiteDeploy.PE.Boot.ps1'
+        'PE.Boot' = 'LiteDeploy.PE.Boot.ps1'
+        Engine = 'LiteDeploy.PE.Engine.ps1'
+        'PE.Engine' = 'LiteDeploy.PE.Engine.ps1'
+        FullOS = 'LiteDeploy.OS.Engine.ps1'
+        'OS.Engine' = 'LiteDeploy.OS.Engine.ps1'
+        'OS.InteractiveProbe' = 'LiteDeploy.OS.InteractiveProbe.ps1'
         Logs = 'LiteDeploy.Logs.ps1'
         Hardware = 'LiteDeploy.Hardware.ps1'
         State = 'LiteDeploy.State.ps1'
@@ -96,7 +100,7 @@ $global:LiteDeployPathSettings = [pscustomobject]@{
         AdminDrivers = '..\Admin\LiteDeploy.Admin.Drivers.ps1'
     }
     DevelopmentFolders = @{
-        Environment = '020-Environment'; Boot = '000-Boot'; Engine = '100-Engine'; FullOS = '100-Engine'
+        Environment = '020-Environment'; Boot = '000-Boot'; 'PE.Boot' = '000-Boot'; Engine = '100-Engine'; 'PE.Engine' = '100-Engine'; FullOS = '100-Engine'; 'OS.Engine' = '100-Engine'; 'OS.InteractiveProbe' = '100-Engine'
         Logs = '010-Logs'; Hardware = '030-Hardware'; State = '040-State'
         Workflow = '050-Workflow'; Drivers = '070-Drivers'; Disk = '060-Disk'
         Image = '080-Image'; Packages = '090-Packages'; HostShell = '110-UI\HostShell'
@@ -186,7 +190,7 @@ function Get-LiteDeployRuntimePaths {
         Join-Path $deploymentRoot $settings.ProductionRuntimePath
     }
     if ($RequiredComponents.Count -eq 0) {
-        $RequiredComponents = @('BootConfig') + @($settings.ProductionFiles.Keys | Where-Object { $_ -notin @('Boot', 'Engine', 'Workflow', 'Packages', 'AdminDrivers') })
+        $RequiredComponents = @('BootConfig') + @($settings.ProductionFiles.Keys | Where-Object { $_ -notin @('Boot', 'Engine', 'FullOS', 'PE.Boot', 'PE.Engine', 'OS.Engine', 'OS.InteractiveProbe', 'Workflow', 'Packages', 'AdminDrivers') })
     }
     $requiredFiles = [ordered]@{}
     foreach ($name in $RequiredComponents) {
@@ -265,22 +269,12 @@ function Get-LiteDeployComponentPath {
 }
 
 function Resolve-LiteDeployEnginePath {
-    # Boot has already discovered the source. Prefer LiteDeploy.Engine.ps1; fall back to the
-    # BootInitializer compat alias LiteDeploy.DeploymentEngine.ps1 (same published content).
     param([string]$RootPath, [string]$LocalRootName = '~LiteDeploy', [ValidateSet('Network', 'Media')][string]$DeploymentType = 'Media')
     $sourceRoot = if ($RootPath -match '^[A-Za-z]:$') { $RootPath + '\' } else { $RootPath }
     $deploymentRoot = if ($DeploymentType -eq 'Media') { Join-Path $sourceRoot $LocalRootName } else { $sourceRoot }
     $settings = $global:LiteDeployPathSettings
     $runtimeRoot = if ($settings.RuntimeRootOverride) { $settings.RuntimeRootOverride } elseif ($settings.Mode -eq 'Development') { $settings.ComponentRoot } else { Join-Path $deploymentRoot $settings.ProductionRuntimePath }
-    $enginePath = Get-LiteDeployComponentPath -Name Engine -RuntimeRoot $runtimeRoot
-    if (Test-Path -LiteralPath $enginePath -PathType Leaf) {
-        return $enginePath
-    }
-    $compatPath = Join-Path (Split-Path -Parent $enginePath) 'LiteDeploy.DeploymentEngine.ps1'
-    if (Test-Path -LiteralPath $compatPath -PathType Leaf) {
-        return $compatPath
-    }
-    return $enginePath
+    return Get-LiteDeployComponentPath -Name Engine -RuntimeRoot $runtimeRoot
 }
 
 function Get-LiteDeployUiTheme {

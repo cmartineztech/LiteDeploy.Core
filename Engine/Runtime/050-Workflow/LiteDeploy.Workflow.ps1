@@ -30,7 +30,7 @@
     Only credential IDs (names) appear in workflows and plans; no secret values are read, stored, or logged.
 
     Usage:
-        . "Z:\Engine\Scripts\Runtime\LiteDeploy.Workflow.ps1"   # load the API
+        . "Z:\Engine\Runtime\LiteDeploy.Workflow.ps1"   # load the API
         .\LiteDeploy.Workflow.ps1                               # list workflows from Z:
         .\LiteDeploy.Workflow.ps1 -ShareRoot \\Server\DeploymentShare$
         .\LiteDeploy.Workflow.ps1 -Metadata                     # component metadata only

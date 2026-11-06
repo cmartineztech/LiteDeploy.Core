@@ -6,7 +6,7 @@ controller; it builds its active markup internally.
 
 **ComponentId:** `UI.Progress`  
 **Dev:** `110-UI/Progress`  
-**Published:** `Engine\Scripts\Runtime\UI\LiteDeploy.UI.Progress.ps1`
+**Published:** `Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1`
 
 ## Purpose
 
@@ -70,8 +70,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\110-UI\Progress\LiteDeploy.UI.Progress.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\110-UI\Progress\LiteDeploy.UI.Progress.ps1'
 & $component -StatePath 'C:\LiteDeploy-Staging\DeploymentState.json' -Environment FullOS -Theme Light -KeepOpen
 ~~~
 

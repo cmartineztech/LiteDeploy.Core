@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.UI.Images`  
 **Dev:** `Admin/090-UI/Images`  
-**Published:** `Engine\Scripts\Admin\UI\LiteDeploy.Admin.UI.Images.ps1`
+**Published:** `Engine\Admin\UI\LiteDeploy.Admin.UI.Images.ps1`
 
 Desktop WPF media-import and OS catalog editor. Prefer calling Admin.Images directly until legacy ImportOSMedia backend lookup is fixed.
 
@@ -42,6 +42,6 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\090-UI\Images\LiteDeploy.Admin.UI.Images.ps1'
+$component = '.\Engine\Admin\090-UI\Images\LiteDeploy.Admin.UI.Images.ps1'
 & $component -DefaultDeploymentShare 'C:\LiteDeploy-Staging' -Theme Light # Backend limitation above applies.
 ~~~

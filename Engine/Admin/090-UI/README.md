@@ -4,9 +4,9 @@ See the individual [Drivers guide](Drivers/README.md) and [Images guide](Images/
 for requirements, parameters, changes made by each action, and current backend limitations.
 
 **Dev:** `Admin/090-UI\...`  
-**Published:** `Engine\Scripts\Admin\UI\LiteDeploy.Admin.UI.*.ps1`
+**Published:** `Engine\Admin\UI\LiteDeploy.Admin.UI.*.ps1`
 
-Admin graphical tools. Folder numbers are repo organization only; publish is flat under `Engine\Scripts\Admin\UI\`.
+Admin graphical tools. Folder numbers are repo organization only; publish is flat under `Engine\Admin\UI\`.
 
 | UI | ComponentId | File |
 | :--- | :--- | :--- |

@@ -1,4 +1,4 @@
-# Engine Scripts (Architecture v2)
+# Engine (Architecture v2)
 
 ## Dev vs production
 
@@ -6,18 +6,18 @@
 
 | Location | Role |
 | :--- | :--- |
-| `Engine\Scripts\Runtime\<NNN-*>\` | Dev source (this repo) |
-| `Engine\Scripts\Runtime\110-UI\` | Dev Runtime UI source |
-| `Engine\Scripts\Admin\<NNN-*>\` | Dev Admin source |
-| **Published share** `Engine\Scripts\Runtime\*.ps1` | Flat domain scripts |
-| **Published share** `Engine\Scripts\Runtime\UI\` | Runtime UI |
-| **Published share** `Engine\Scripts\Admin\*.ps1` | Flat Admin tools |
-| **Published share** `Engine\Scripts\Admin\UI\` | Admin UI |
+| `Engine\Runtime\<NNN-*>\` | Dev source (this repo) |
+| `Engine\Runtime\110-UI\` | Dev Runtime UI source |
+| `Engine\Admin\<NNN-*>\` | Dev Admin source |
+| **Published share** `Engine\Runtime\*.ps1` | Flat domain scripts |
+| **Published share** `Engine\Runtime\UI\` | Runtime UI |
+| **Published share** `Engine\Admin\*.ps1` | Flat Admin tools |
+| **Published share** `Engine\Admin\UI\` | Admin UI |
 
 Publish with:
 
 ```powershell
-.\Admin\000-Build\LiteDeploy.Admin.Build.ps1 -DeploymentShare "C:\DeploymentShare" -Clean
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 -DeploymentShare "C:\DeploymentShare" -Clean
 ```
 
 Environment owns the explicit layout, selected once when it is loaded:
@@ -31,7 +31,7 @@ component **names**; Environment maps them to exact files. Domain/UI consumers u
 not guess sibling `DeploymentShare` trees, invent layouts when a file is missing, or create
 content directories unsolicited. Environment builds the required-file list once; Engine does
 not fall back to another layout.
-See [Understand and control Engine](../../_Docs/guides/ENGINE_READING_GUIDE.md) for the file map,
+See [Understand and control Engine](../_Docs/guides/ENGINE_READING_GUIDE.md) for the file map,
 visible imports, result contracts, and `-ValidateOnly` inspection.
 
 ## Runtime (dev folders)
@@ -50,7 +50,7 @@ visible imports, result contracts, and `-ValidateOnly` inspection.
 | `090-Packages` | Packages | `LiteDeploy.Packages.ps1` |
 | `100-Engine` | Engine | `LiteDeploy.Engine.ps1` |
 | `100-Engine` | FullOS | `LiteDeploy.FullOS.ps1` |
-| `110-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Scripts\Runtime\UI\` |
+| `110-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Runtime\UI\` |
 
 ### Execution
 
@@ -66,7 +66,7 @@ startnet → Boot → Engine
 
 BootConfig hardware-related flags: `Startup.SkipHardwarePreCheck` (Precheck UI) vs
 `ComputerSetup.SkipSetupHardwareRequirements` (Setup.exe WinPE registry bypass). See
-[_Docs/guides/COMPUTER_SETUP_MAPPING.md](../../_Docs/guides/COMPUTER_SETUP_MAPPING.md).
+[_Docs/guides/COMPUTER_SETUP_MAPPING.md](../_Docs/guides/COMPUTER_SETUP_MAPPING.md).
 
 ## Admin (dev folders)
 
@@ -93,13 +93,13 @@ Admin may reuse Runtime helpers. Runtime never depends on Admin.
 4. Credentials: `_Docs/integrations/Credentials/`
 5. Architecture: `_Docs/architecture/LITEDEPLOY_COMPONENT_REFACTOR_V2.md`
 
-See [operation and maintenance](../../_Docs/guides/MAINTENANCE.md) for current support limits
+See [operation and maintenance](../_Docs/guides/MAINTENANCE.md) for current support limits
 and the Windows PowerShell 5.1 smoke-test command. The architecture suite lives at
-[`_Tests\`](../../_Tests/README.md) (not under `Engine\Scripts`). Component authoring
-blueprints and inventory live at [`_Templates\`](../../_Templates/README.md). Dot-sourcing
+[`_Tests\`](../_Tests/README.md). Component authoring
+blueprints and inventory live at [`_Templates\`](../_Templates/README.md). Dot-sourcing
 Engine loads its helpers without running the deployment pipeline; executing it starts
 deployment.
 
 ## Current behavior and agreed follow-up
 
-See [the detailed guide](../../_Docs/guides/WINPE_BOOTSTRAP.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.
+See [the detailed guide](../_Docs/guides/WINPE_BOOTSTRAP.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.

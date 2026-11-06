@@ -9,7 +9,7 @@ display layout and does not prove compatibility inside WinPE.
 
 The harness launches the active controller:
 
-`LiteDeploy.UI.Progress.ps1` (same folder; published as `Engine\Scripts\Runtime\UI\LiteDeploy.UI.Progress.ps1`).
+`LiteDeploy.UI.Progress.ps1` (same folder; published as `Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1`).
 
 You can also start the controller directly with an explicit `-StatePath` as documented in [README.md](README.md).
 

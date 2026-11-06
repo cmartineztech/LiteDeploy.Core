@@ -2,7 +2,7 @@
 
 **ComponentId:** `DriverPicker`  
 **Dev:** `Runtime/110-UI/WorkflowSelection`  
-**Published:** `Engine\Scripts\Runtime\UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1`
+**Published:** `Engine\Runtime\UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1`
 
 Folder picker used by WorkflowSelection for custom/OEM driver paths; blocks system/root locations.
 
@@ -38,8 +38,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
 . $component
 $folder = Show-DriverPathDialog -ViewPath (Get-LiteDeployComponentPath -Name DriverPickerView)
 ~~~

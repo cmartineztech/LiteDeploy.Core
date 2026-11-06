@@ -2,7 +2,7 @@
 
 **ComponentId:** `Hardware`  
 **Dev folder:** `Runtime/030-Hardware`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Hardware.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.Hardware.ps1`
 
 ## Purpose
 
@@ -43,8 +43,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\030-Hardware\LiteDeploy.Hardware.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\030-Hardware\LiteDeploy.Hardware.ps1'
 $inventory = & $component -PassThru
 $inventory | Select-Object Vendor, Model, MemoryGB, DiskCount
 ~~~

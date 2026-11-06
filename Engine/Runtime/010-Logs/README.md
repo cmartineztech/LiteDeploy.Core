@@ -2,7 +2,7 @@
 
 **ComponentId:** `Logs`  
 **Dev folder:** `Runtime/010-Logs`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Logs.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.Logs.ps1`
 
 ## Purpose
 
@@ -63,8 +63,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\010-Logs\LiteDeploy.Logs.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\010-Logs\LiteDeploy.Logs.ps1'
 . $component
 Write-LiteDeployLog -Message 'Example entry' -Component Documentation -LogPath 'C:\LiteDeploy-Staging\WorkLogs'
 ~~~

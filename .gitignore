@@ -25,9 +25,12 @@ Secrets.bin
 
 # Repo DeploymentShare\Engine is a folder skeleton. Admin.Build publishes the flat
 # scripts and Tools onto the live share (C:\DeploymentShare), not into this tree.
-DeploymentShare/Engine/Scripts/**/*.ps1
-DeploymentShare/Engine/Scripts/**/*.xaml
-DeploymentShare/Engine/Scripts/**/*.cmd
+DeploymentShare/Engine/Runtime/**/*.ps1
+DeploymentShare/Engine/Runtime/**/*.xaml
+DeploymentShare/Engine/Runtime/**/*.cmd
+DeploymentShare/Engine/Admin/**/*.ps1
+DeploymentShare/Engine/Admin/**/*.xaml
+DeploymentShare/Engine/Admin/**/*.cmd
 DeploymentShare/Engine/Tools/**/*.ps1
 DeploymentShare/Engine/Tools/**/*.md
 DeploymentShare/Engine/Tools/**/LICENSE
@@ -35,12 +38,12 @@ DeploymentShare/Engine/Tools/**/LICENSE
 # Accidental Admin.Build / Production-layout mirrors inside the git source tree.
 # Editable source is numbered folders only (Runtime\000-Boot\, Admin\000-Build\, …).
 # Flat LiteDeploy.*.ps1 (+ UI\) belong on DeploymentShare (or another publish root), not here.
-/Engine/Scripts/Runtime/LiteDeploy.*.ps1
-/Engine/Scripts/Runtime/LiteDeploy.DeploymentEngine.ps1
-/Engine/Scripts/Runtime/SetupComplete.cmd
-/Engine/Scripts/Runtime/UI/
-/Engine/Scripts/Admin/LiteDeploy.Admin.*.ps1
-/Engine/Scripts/Admin/UI/
+/Engine/Runtime/LiteDeploy.*.ps1
+/Engine/Runtime/LiteDeploy.DeploymentEngine.ps1
+/Engine/Runtime/SetupComplete.cmd
+/Engine/Runtime/UI/
+/Engine/Admin/LiteDeploy.Admin.*.ps1
+/Engine/Admin/UI/
 
 # Bun WinPE experiment binaries staged on the share (rebuild via Publish-ToDeploymentShare.ps1)
 DeploymentShare/Tools/BunWinPeSuite/**/*.exe

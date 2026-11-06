@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Images`  
 **Dev:** `Admin/020-Images`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Images.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Images.ps1`
 
 OS media import / catalog helpers. GUI lives under `Admin/090-UI` → `LiteDeploy.Admin.UI.Images.ps1`.
 
@@ -48,6 +48,6 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\020-Images\LiteDeploy.Admin.Images.ps1'
+$component = '.\Engine\Admin\020-Images\LiteDeploy.Admin.Images.ps1'
 & $component -DeploymentShare 'C:\LiteDeploy-Staging' -SourcePath 'D:\' -OSName 'Windows Example' -SelectAllEditions -PassThru
 ~~~

@@ -1,8 +1,8 @@
 # LiteDeploy Architecture and Execution Diagrams
 
 Updated 2026-10-13. LiteDeploy Core v2 Architecture:
-- **WinPE Engine** ([`100-Engine/LiteDeploy.Engine.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.Engine.ps1); publish alias [`DeploymentEngine.ps1`](../../DeploymentShare/Engine/Scripts/Runtime/LiteDeploy.DeploymentEngine.ps1))
-- **FullOS Engine** ([`100-Engine/LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.ps1))
+- **WinPE Engine** ([`100-Engine/LiteDeploy.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.Engine.ps1); publish alias [`DeploymentEngine.ps1`](../../DeploymentShare/Engine/Runtime/LiteDeploy.DeploymentEngine.ps1))
+- **FullOS Engine** ([`100-Engine/LiteDeploy.FullOS.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.FullOS.ps1))
 - **Actions gating** — `WorkflowTag.Actions`; FullOS Run (+ Audit reseal / Domain Join UAC bypass) only when `actions.Count > 0` (e.g. Intune Ready with 0 actions → OOBE only, no Run)
 - **First FullOS entry** — unattend **specialize** stages `HKLM\...\Run\LiteDeployFullOS` when actions > 0 (short `powershell.exe -File` / `REG_EXPAND_SZ`; no `auditUser`); keep **HKLM Run** as primary resume (not Startup / Task Scheduler)
 - **Logon models** — Standard = Audit Admin (elevated); Domain Join = AutoLogon local admin + temporary `EnableLUA=0` / `UacBypassed` when no `<!--AuditMode-->` and actions > 0; FullOS cleanup restores `EnableLUA=1`
@@ -128,10 +128,10 @@ graph TD
 ```mermaid
 flowchart TD
     subgraph BootPhase["Phase 0: WinPE Bootstrap"]
-        StartNet["startnet.cmd"] --> BootInit["LiteDeploy.Boot.ps1<br/>or legacy BootInitializer"]
+        StartNet["startnet.cmd"] --> BootInit["LiteDeploy.PE.Boot.ps1"]
         BootInit --> NetConn["Network / DHCP / SMB Connect"]
         NetConn --> MountShare["Mount Deployment Share (Z:)"]
-        MountShare --> HandEngine["LiteDeploy.Engine.ps1<br/>alias: DeploymentEngine.ps1"]
+        MountShare --> HandEngine["LiteDeploy.PE.Engine.ps1"]
     end
 
     subgraph EnginePhase["Phases 1-4: Precheck through Image"]
@@ -157,10 +157,10 @@ flowchart TD
 
 | Component | Execution Context | Trigger | Key Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`LiteDeploy.Engine.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.Engine.ps1) | WinPE (SYSTEM) | [`LiteDeploy.Boot.ps1`](../../Engine/Scripts/Runtime/000-Boot/LiteDeploy.Boot.ps1) | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
-| [`LiteDeploy.FullOS.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | On load, HKCU console handoff for later windows; state progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
-| [`LiteDeploy.FullOS.InteractiveProbe.ps1`](../../Engine/Scripts/Runtime/100-Engine/LiteDeploy.FullOS.InteractiveProbe.ps1) | Session 1 | `Start-Process` from FullOS | Temporary Progress dry-run in a second window; monitors state / `Z:`. |
-| [`LiteDeploy.Image.ps1`](../../Engine/Scripts/Runtime/080-Image/LiteDeploy.Image.ps1) | WinPE | Engine Image phase | Unattend: Order 1 description; Order 2 FullOS Run when `WorkflowTag.Actions` > 0; Orders 3–4 `EnableLUA=0` + marker when Domain Join (no Audit) + actions; Audit reseal when `<!--AuditMode-->` + actions. |
+| [`LiteDeploy.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.Engine.ps1) | WinPE (SYSTEM) | [`LiteDeploy.Boot.ps1`](../../Engine/Runtime/000-Boot/LiteDeploy.Boot.ps1) | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
+| [`LiteDeploy.FullOS.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.FullOS.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | On load, HKCU console handoff for later windows; state progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
+| [`LiteDeploy.OS.InteractiveProbe.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.OS.InteractiveProbe.ps1) | Session 1 | `Start-Process` from FullOS | Temporary Progress dry-run in a second window; monitors state / `Z:`. |
+| [`LiteDeploy.Image.ps1`](../../Engine/Runtime/080-Image/LiteDeploy.Image.ps1) | WinPE | Engine Image phase | Unattend: Order 1 description; Order 2 FullOS Run when `WorkflowTag.Actions` > 0; Orders 3–4 `EnableLUA=0` + marker when Domain Join (no Audit) + actions; Audit reseal when `<!--AuditMode-->` + actions. |
 | **HKLM Run** | Interactive admin | specialize first arm; logon thereafter | Primary FullOS entry + mid-deploy reboot survival (`LiteDeployFullOS`). Kept for now (not MDT Startup / Task Scheduler). |
 | **Setup CmdLine (sysprep)** | Windows Setup / Audit | stock Audit continue | Left intact; FullOS kills the `sysprep.exe` process instead of rewriting Setup. |
 
@@ -204,8 +204,8 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph DevelopmentRepo["Development Repository"]
-        AdminSrc["Engine/Scripts/Admin/000-090"]
-        RuntimeSrc["Engine/Scripts/Runtime/000-110"]
+        AdminSrc["Engine/Admin/000-090"]
+        RuntimeSrc["Engine/Runtime/000-110"]
         UISrc["Runtime/110-UI"]
         ToolsSrc["Engine/Tools/WinPECT/"]
     end
@@ -218,12 +218,12 @@ flowchart LR
     end
 
     subgraph PublishedShare["Production share layout"]
-        BuildProc --> FlatRuntime["Engine/Scripts/Runtime/LiteDeploy.Engine.ps1"]
-        BuildProc --> FlatFullOS["Engine/Scripts/Runtime/LiteDeploy.FullOS.ps1"]
+        BuildProc --> FlatRuntime["Engine/Runtime/LiteDeploy.Engine.ps1"]
+        BuildProc --> FlatFullOS["Engine/Runtime/LiteDeploy.FullOS.ps1"]
         BuildProc --> CompatAlias["LiteDeploy.DeploymentEngine.ps1<br/>byte-identical alias"]
         FlatRuntime -.->|copy| CompatAlias
         BuildProc --> FlatUI["Runtime/UI/"]
-        BuildProc --> FlatAdmin["Engine/Scripts/Admin/"]
+        BuildProc --> FlatAdmin["Engine/Admin/"]
         BuildProc --> FlatTools["Engine/Tools/WinPECT/"]
         FlatTools --> StageOS["WinPE handoff to OS volume"]
         FlatRuntime --> StageOS

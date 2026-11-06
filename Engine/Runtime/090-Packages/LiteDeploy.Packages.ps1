@@ -34,7 +34,7 @@
     Captured output and error text are redacted (password / secret / token pairs) before being returned.
 
     Usage:
-        . "Z:\Engine\Scripts\Runtime\LiteDeploy.Packages.ps1"   # load the API
+        . "Z:\Engine\Runtime\LiteDeploy.Packages.ps1"   # load the API
         .\LiteDeploy.Packages.ps1                               # list packages from Z:
         .\LiteDeploy.Packages.ps1 -ShareRoot \\Server\DeploymentShare$
         .\LiteDeploy.Packages.ps1 -Metadata                     # component metadata only

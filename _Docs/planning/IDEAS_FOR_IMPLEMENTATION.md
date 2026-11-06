@@ -100,7 +100,7 @@ flowchart TD
 ### Key Technical Implementation
 1. **Persistent Startup Task (SYSTEM)**:
    ```powershell
-   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.FullOS.Engine.ps1'"
+   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\LiteDeploy.FullOS.Engine.ps1'"
    $trigger   = New-ScheduledTaskTrigger -AtStartup
    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_SystemEngine" -Action $action -Trigger $trigger -Principal $principal -Force
@@ -109,7 +109,7 @@ flowchart TD
 2. **SYSTEM-to-User Interactive UI Dispatch (Session 1)**:
    ```powershell
    # SYSTEM launches the WPF Progress UI inside LD_<UID>'s active desktop session
-   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Scripts\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
+   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
    $uiPrincipal = New-ScheduledTaskPrincipal -UserId "LD_$shortUid" -LogonType InteractiveToken -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_UI_Host" -Action $uiAction -Principal $uiPrincipal -Force
    Start-ScheduledTask -TaskName "LiteDeploy_UI_Host"

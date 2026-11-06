@@ -2,7 +2,7 @@
 
 Source: [controller](../LiteDeploy.UI.HardwarePrecheck.ps1) and
 [view](../LiteDeploy.UI.HardwarePrecheck.xaml).
-Published location: `Engine\Scripts\Runtime\UI`.
+Published location: `Engine\Runtime\UI`.
 
 ```mermaid
 flowchart TD

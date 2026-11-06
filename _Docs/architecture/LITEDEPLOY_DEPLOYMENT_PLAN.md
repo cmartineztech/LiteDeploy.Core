@@ -16,7 +16,7 @@ Bare-metal Windows deployment from WinPE with a thin Boot parent, domain Runtime
 ## Execution sequence
 
 ```text
-1. startnet.cmd → powershell -STA LiteDeploy.Boot.ps1
+1. startnet.cmd → powershell -STA LiteDeploy.PE.Boot.ps1
 2. Boot discovers BootConfig.json (media or local), optional network share map to Z:
 3. Boot builds BootObject (paths, mode, credential, Config) and launches Engine
 4. Engine creates provisional local state without an ID; resolves Ui.Theme
@@ -31,15 +31,15 @@ Bare-metal Windows deployment from WinPE with a thin Boot parent, domain Runtime
 ## Publish
 
 ```powershell
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare "C:\DeploymentShare" -Clean
 ```
 
 Produces:
 
-- `Engine\Scripts\Runtime\` — flat domain scripts
-- `Engine\Scripts\Runtime\UI\` — flat UI
-- `Engine\Scripts\Admin\` — flat admin
+- `Engine\Runtime\` — flat domain scripts
+- `Engine\Runtime\UI\` — flat UI
+- `Engine\Admin\` — flat admin
 
 ## WinPE inject (minimal)
 

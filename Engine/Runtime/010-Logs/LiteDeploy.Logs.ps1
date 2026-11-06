@@ -19,7 +19,7 @@
     and continuation lines). An empty Message prints a blank spacer line and is not written to the log.
 
     Usage:
-        . "Z:\Engine\Scripts\Runtime\LiteDeploy.Logs.ps1"     # load Write-LiteDeployLog
+        . "Z:\Engine\Runtime\LiteDeploy.Logs.ps1"     # load Write-LiteDeployLog
         .\LiteDeploy.Logs.ps1 -Message "Hello" -Level SUCCESS  # write one entry
         .\LiteDeploy.Logs.ps1                                  # show log path + metadata (non-destructive)
         .\LiteDeploy.Logs.ps1 -Metadata                        # component metadata only

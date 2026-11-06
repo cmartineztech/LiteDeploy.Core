@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Packages`  
 **Dev:** `Admin/040-Packages`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Packages.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Packages.ps1`
 
 Admin-side package content helpers for the deployment share.
 
@@ -39,7 +39,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\040-Packages\LiteDeploy.Admin.Packages.ps1'
+$component = '.\Engine\Admin\040-Packages\LiteDeploy.Admin.Packages.ps1'
 . $component
 Test-LiteDeployAdminPackages -ShareRoot 'C:\LiteDeploy-Staging'
 ~~~

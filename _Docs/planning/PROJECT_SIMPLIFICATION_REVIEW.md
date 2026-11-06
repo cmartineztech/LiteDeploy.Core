@@ -31,7 +31,7 @@ Separate temporary fixtures reproduced malformed-JSON validation and overwrite b
 
 Many components exist in numbered source folders, flat Engine/Scripts folders, and DeploymentShare. Comparing text after normalizing line endings found **10 divergent copies**: nine flat Engine copies (Boot, Disk, Drivers, Workflow, HostShell, and the HardwarePrecheck/WorkflowSelection scripts and XAML) and the published DeploymentShare Engine.
 
-Admin.Build discovers numbered sources at `Engine/Scripts/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1` (SetupComplete is not staged; no `auditUser`).
+Admin.Build discovers numbered sources at `Engine/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1` (SetupComplete is not staged; no `auditUser`).
 
 Keep numbered folders as the editable source for the first cleanup. Generate flat deployment output into a clearly identified staging/output folder. Add a publish manifest or content comparison so a tested release can be tied to its source. Before retiring existing flat copies, preserve and compare their differences and inspect external launchers. Do not indiscriminately delete DeploymentShare: it also contains configuration and deployment content.
 

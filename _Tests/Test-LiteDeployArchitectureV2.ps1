@@ -18,7 +18,7 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
 
-$scriptsRoot = Join-Path $RepoRoot "Engine\Scripts"
+$scriptsRoot = Join-Path $RepoRoot "Engine"
 $failures = [System.Collections.Generic.List[string]]::new()
 $passes = 0
 
@@ -56,7 +56,7 @@ foreach ($source in Get-ChildItem -LiteralPath $scriptsRoot -Filter '*.ps1' -Rec
 }
 
 $requiredRuntime = @(
-    "Runtime\000-Boot\LiteDeploy.Boot.ps1",
+    "Runtime\000-Boot\LiteDeploy.PE.Boot.ps1",
     "Runtime\010-Logs\LiteDeploy.Logs.ps1",
     "Runtime\020-Environment\LiteDeploy.Environment.ps1",
     "Runtime\030-Hardware\LiteDeploy.Hardware.ps1",
@@ -66,7 +66,8 @@ $requiredRuntime = @(
     "Runtime\070-Drivers\LiteDeploy.Drivers.ps1",
     "Runtime\080-Image\LiteDeploy.Image.ps1",
     "Runtime\090-Packages\LiteDeploy.Packages.ps1",
-    "Runtime\100-Engine\LiteDeploy.Engine.ps1",
+    "Runtime\100-Engine\LiteDeploy.PE.Engine.ps1",
+    "Runtime\100-Engine\LiteDeploy.OS.Engine.ps1",
     "Runtime\110-UI\HostShell\LiteDeploy.UI.HostShell.ps1",
     "Runtime\110-UI\Theme\LiteDeploy.UI.Theme.xaml",
     "Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1",
@@ -152,8 +153,8 @@ $sourceRuntimeRoot = Join-Path $scriptsRoot 'Runtime'
 
 # Loading Engine must retain in-memory configuration and never start its pipeline.
 # Child scope contains dot-sourced parameter names and helper functions.
-$engineTargets = @(@{ Path = (Join-Path $sourceRuntimeRoot '100-Engine\LiteDeploy.Engine.ps1'); Mode = 'Development'; EnvironmentPath = (Join-Path $sourceRuntimeRoot '020-Environment\LiteDeploy.Environment.ps1'); ComponentRoot = $sourceRuntimeRoot })
-if ($PublishedRuntimeRoot) { $engineTargets += @{ Path = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.Engine.ps1'); Mode = 'Production'; EnvironmentPath = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.Environment.ps1'); ComponentRoot = $PublishedRuntimeRoot } }
+$engineTargets = @(@{ Path = (Join-Path $sourceRuntimeRoot '100-Engine\LiteDeploy.PE.Engine.ps1'); Mode = 'Development'; EnvironmentPath = (Join-Path $sourceRuntimeRoot '020-Environment\LiteDeploy.Environment.ps1'); ComponentRoot = $sourceRuntimeRoot })
+if ($PublishedRuntimeRoot) { $engineTargets += @{ Path = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.PE.Engine.ps1'); Mode = 'Production'; EnvironmentPath = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.Environment.ps1'); ComponentRoot = $PublishedRuntimeRoot } }
 foreach ($engineTarget in $engineTargets) {
     try {
         $imagePathForTest = if ($engineTarget.Mode -eq 'Development') { Join-Path $engineTarget.ComponentRoot '080-Image\LiteDeploy.Image.ps1' } else { Join-Path $engineTarget.ComponentRoot 'LiteDeploy.Image.ps1' }
@@ -483,7 +484,7 @@ try {
     foreach ($scenario in @('PrecheckCancelled', 'SelectionCancelled', 'SelectionException', 'InvalidTarget', 'Confirmed', 'ReloadedTrue', 'ReloadedFalse', 'DiskMismatch', 'MissingConfig')) {
         $result = & {
             $events = [System.Collections.Generic.List[string]]::new()
-            $enginePath = Join-Path $scriptsRoot 'Runtime\100-Engine\LiteDeploy.Engine.ps1'
+            $enginePath = Join-Path $scriptsRoot 'Runtime\100-Engine\LiteDeploy.PE.Engine.ps1'
             $tree = [System.Management.Automation.Language.Parser]::ParseFile($enginePath, [ref]$null, [ref]$null)
             foreach ($name in @('Start-LiteDeployPipeline', 'Get-LiteDeploySelectedDiskNumber')) {
                 $node = $tree.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)

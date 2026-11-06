@@ -2,7 +2,7 @@
 
 **ComponentId:** `Drivers`  
 **Dev folder:** `Runtime/070-Drivers`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Drivers.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.Drivers.ps1`
 
 ## Purpose
 
@@ -48,8 +48,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\070-Drivers\LiteDeploy.Drivers.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\070-Drivers\LiteDeploy.Drivers.ps1'
 . $component
 Test-LiteDeployDrivers -ShareRoot 'C:\LiteDeploy-Staging'
 ~~~

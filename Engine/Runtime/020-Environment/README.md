@@ -24,11 +24,11 @@ live pipeline, or parallel path maps. See
 Load Environment once before source components:
 
 ```powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
 $enginePath = Get-LiteDeployComponentPath -Name Engine
 ```
 
-Production is the default mode. Published scripts are flat beneath `Engine\Scripts\Runtime`,
+Production is the default mode. Published scripts are flat beneath `Engine\Runtime`,
 with UI scripts in `UI`. Change composition in the path settings at the top of Environment.
 `DevelopmentFolders` is the only runtime map of numbered repository folders.
 An optional absolute `-RuntimeRoot` overrides the component root for staging or custom layouts.
@@ -80,7 +80,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
 $enginePath = Get-LiteDeployComponentPath -Name Engine
 ~~~
 

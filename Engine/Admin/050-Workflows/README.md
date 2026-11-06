@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Workflows`  
 **Dev:** `Admin/050-Workflows`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Workflows.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Workflows.ps1`
 
 Workflow definition helpers under `WorkFlows\` on the share.
 
@@ -39,7 +39,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\050-Workflows\LiteDeploy.Admin.Workflows.ps1'
+$component = '.\Engine\Admin\050-Workflows\LiteDeploy.Admin.Workflows.ps1'
 . $component
 Test-LiteDeployAdminWorkflows -ShareRoot 'C:\LiteDeploy-Staging'
 ~~~

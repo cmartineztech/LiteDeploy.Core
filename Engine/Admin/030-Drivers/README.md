@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Drivers`  
 **Dev:** `Admin/030-Drivers`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Drivers.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Drivers.ps1`
 
 OEM driver pack management for the deployment share (Dell, Lenovo, HP experimental, Custom). Adapted from DynamicDriverDownload with LiteDeploy share layout.
 
@@ -80,7 +80,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\030-Drivers\LiteDeploy.Admin.Drivers.ps1'
+$component = '.\Engine\Admin\030-Drivers\LiteDeploy.Admin.Drivers.ps1'
 powershell.exe -NoProfile -File $component -Action Status -DeploymentShare 'C:\LiteDeploy-Staging'
 ~~~
 

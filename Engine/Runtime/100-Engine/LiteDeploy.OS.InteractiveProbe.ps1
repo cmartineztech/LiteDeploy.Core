@@ -27,7 +27,7 @@ if (-not $isFirstInstance) {
 }
 
 $runtimeDir = $PSScriptRoot
-# …\~LiteDeploy\Engine\Scripts\Runtime  →  …\~LiteDeploy
+# …\~LiteDeploy\Engine\Runtime  →  …\~LiteDeploy
 $localRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $runtimeDir))
 if ((Split-Path -Leaf $localRoot) -ne '~LiteDeploy') {
     $localRoot = Join-Path $env:SystemDrive '~LiteDeploy'

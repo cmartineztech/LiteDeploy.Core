@@ -7,22 +7,22 @@
       Precheck → WorkflowSelection → Disk → Image → Driver/Unattend staging → Handoff
 
     FullOS post-imaging tasks (credential unseal, Z: mapping, log mirroring, packages)
-    are handled by LiteDeploy.FullOS.ps1. If invoked with -ResumeFullOS for backward
-    compatibility, this engine delegates directly to LiteDeploy.FullOS.ps1.
+    are handled by LiteDeploy.OS.Engine.ps1. If invoked with -ResumeFullOS for backward
+    compatibility, this engine delegates directly to LiteDeploy.OS.Engine.ps1.
 
 .PARAMETER BootObject
     WinPE: bootstrap object from Boot (network, Z: mount, in-memory credentials).
 
 .PARAMETER ResumeFullOS
-    FullOS backward compatibility: delegates directly to LiteDeploy.FullOS.ps1.
+    FullOS backward compatibility: delegates directly to LiteDeploy.OS.Engine.ps1.
 
 .EXAMPLE
     # WinPE
-    .\LiteDeploy.Engine.ps1 -BootObject $global:LiteDeployBootObject
+    .\LiteDeploy.PE.Engine.ps1 -BootObject $global:LiteDeployBootObject
 
 .EXAMPLE
     # FullOS backward compatibility
-    .\LiteDeploy.Engine.ps1 -ResumeFullOS -LocalRootName '~LiteDeploy'
+    .\LiteDeploy.PE.Engine.ps1 -ResumeFullOS -LocalRootName '~LiteDeploy'
 
 .NOTES
     LiteDeploy Core Component Standard v2.0
@@ -91,7 +91,7 @@ $script:EngineMetadata = Get-LiteDeployComponentMetadata
 
 # REQUIREMENTS BY ENVIRONMENT
 # Names belong here; Environment owns their file locations. Shared names are added to each list.
-# FullOS resume: Setup CmdLine -> LiteDeploy.FullOS.ps1 (Engine -ResumeFullOS remains for compat)
+# FullOS resume: Setup CmdLine -> LiteDeploy.OS.Engine.ps1 (Engine -ResumeFullOS remains for compat)
 $EngineRequirements = [pscustomobject]@{
     Shared = @(
         'Environment'                  # Path definitions and environment detection; loaded first.
@@ -151,12 +151,12 @@ if ($ResumeFullOS) {
     if ($MyInvocation.InvocationName -eq '.') {
         return
     }
-    $fullOsScript = Join-Path $PSScriptRoot 'LiteDeploy.FullOS.ps1'
-    if (Test-Path -LiteralPath $fullOsScript -PathType Leaf) {
-        & $fullOsScript -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath
+    $osEngineScript = Join-Path $PSScriptRoot 'LiteDeploy.OS.Engine.ps1'
+    if (Test-Path -LiteralPath $osEngineScript -PathType Leaf) {
+        & $osEngineScript -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath
         return
     }
-    throw "LiteDeploy.FullOS.ps1 not found beside Engine at '$fullOsScript'. FullOS resume cannot proceed without the FullOS engine."
+    throw "LiteDeploy.OS.Engine.ps1 not found beside Engine at '$osEngineScript'. FullOS resume cannot proceed without the FullOS engine."
 }
 
 # ==============================================================================
@@ -497,12 +497,12 @@ function Get-LiteDeploySelectedDiskNumber {
 function Sync-LiteDeployFullOSPayloadToOsVolume {
     <#
     .SYNOPSIS
-        Copies Engine\Scripts\Runtime and Tools onto the OS volume (no SetupComplete.cmd).
+        Copies Engine\Runtime and Tools onto the OS volume (no SetupComplete.cmd).
     .NOTES
-        Never copies Engine\Scripts\Admin. Tools\BunWinPeSuite heavy build artifacts are skipped.
+        Never copies Engine\Admin. Tools\BunWinPeSuite heavy build artifacts are skipped.
         FullOS first launch is HKLM Run (staged in unattend specialize when actions > 0); FullOS may re-arm Run for reboots.
         Layout:
-          <Os>:\~LiteDeploy\Engine\Scripts\Runtime\
+          <Os>:\~LiteDeploy\Engine\Runtime\
           <Os>:\~LiteDeploy\Engine\Tools\
           <Os>:\~LiteDeploy\Content\Credentials\   (WinPECT — see credential handoff)
     #>
@@ -525,13 +525,13 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
     }
 
     $shareRoot = $RuntimePaths.DeploymentRoot
-    $srcRuntime = Join-Path $shareRoot 'Engine\Scripts\Runtime'
+    $srcRuntime = Join-Path $shareRoot 'Engine\Runtime'
     if (-not (Test-Path -LiteralPath $srcRuntime -PathType Container)) {
         throw "Published Runtime folder missing on share: $srcRuntime"
     }
 
     $targetRoot = Join-Path "$drive\" $LocalRootName
-    $destRuntime = Join-Path $targetRoot 'Engine\Scripts\Runtime'
+    $destRuntime = Join-Path $targetRoot 'Engine\Runtime'
     $destTools = Join-Path $targetRoot 'Engine\Tools'
 
     $null = New-Item -Path $destRuntime -ItemType Directory -Force -ErrorAction Stop
@@ -567,13 +567,13 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         Remove-Item -LiteralPath $legacySetupComplete -Force -ErrorAction SilentlyContinue
     }
 
-    $engineDest = Join-Path $destRuntime 'LiteDeploy.Engine.ps1'
-    $fullOsDest = Join-Path $destRuntime 'LiteDeploy.FullOS.ps1'
+    $engineDest = Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1'
+    $fullOsDest = Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'
     if (-not (Test-Path -LiteralPath $engineDest -PathType Leaf)) {
-        throw "Engine missing after Runtime copy: $engineDest"
+        throw "PE Engine missing after Runtime copy: $engineDest"
     }
     if (-not (Test-Path -LiteralPath $fullOsDest -PathType Leaf)) {
-        throw "FullOS missing after Runtime copy: $fullOsDest"
+        throw "OS Engine missing after Runtime copy: $fullOsDest"
     }
 
     return [pscustomobject]@{
@@ -610,7 +610,7 @@ function Set-LiteDeployOfflineSetupCmdLine {
         throw "Offline SYSTEM hive not found: $hivePath"
     }
 
-    $cmdLine = ('cmd.exe /c %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%SystemDrive%\{0}\Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1" -LocalRootName "{0}" -OsDriveLetter %SystemDrive%' -f $LocalRootName)
+    $cmdLine = ('cmd.exe /c %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%SystemDrive%\{0}\Engine\Runtime\LiteDeploy.OS.Engine.ps1" -LocalRootName "{0}" -OsDriveLetter %SystemDrive%' -f $LocalRootName)
     $registryRoot = "HKLM:\$MountName\Setup"
     $loaded = $false
 

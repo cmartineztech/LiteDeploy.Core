@@ -3,7 +3,7 @@
 Source: [controller](../LiteDeploy.UI.WorkflowSelection.ps1),
 [view](../LiteDeploy.UI.WorkflowSelection.xaml), and
 [picker](../LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1).
-Published location: `Engine\Scripts\Runtime\UI`.
+Published location: `Engine\Runtime\UI`.
 
 ```mermaid
 flowchart TD

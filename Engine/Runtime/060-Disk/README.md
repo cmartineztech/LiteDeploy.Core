@@ -2,7 +2,7 @@
 
 **ComponentId:** `Disk`  
 **Dev folder:** `Runtime/060-Disk`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Disk.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.Disk.ps1`
 
 ## Purpose
 
@@ -48,8 +48,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\060-Disk\LiteDeploy.Disk.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\060-Disk\LiteDeploy.Disk.ps1'
 & $component -DiskNumber 0 -BootMode UEFI # Inspection: no ConfirmDestroy.
 ~~~
 

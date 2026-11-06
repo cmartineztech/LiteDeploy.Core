@@ -174,7 +174,7 @@ Filled only when the template has `<!--AuditMode-->` **and** workflow actions > 
 ## 6. Component Contract & Usage
 
 **Source File:** [LiteDeploy.Image.ps1](LiteDeploy.Image.ps1)  
-**Published Path:** `DeploymentShare\Engine\Scripts\Runtime\LiteDeploy.Image.ps1`  
+**Published Path:** `DeploymentShare\Engine\Runtime\LiteDeploy.Image.ps1`  
 **Component ID:** `Image`  
 **Dependencies:** `Logs`, `Workflow`, `Environment`  
 **Target Environment:** WinPE (PowerShell 5.1+, StrictMode 2.0)

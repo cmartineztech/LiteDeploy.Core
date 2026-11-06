@@ -1,7 +1,7 @@
 # UI Theme
 
 **Dev:** `110-UI/Theme/LiteDeploy.UI.Theme.xaml`  
-**Published:** `Engine\Scripts\Runtime\UI\LiteDeploy.UI.Theme.xaml`
+**Published:** `Engine\Runtime\UI\LiteDeploy.UI.Theme.xaml`
 
 Shared XAML token dictionary. Controllers may merge or inline palette tokens (`{{varName}}`) before `XamlReader.Load`. Runtime theme mode (`Light`|`Dark`) comes from `BootConfig.Ui.Theme`, not from this file alone.
 
@@ -24,7 +24,7 @@ does not guarantee any screen changes. Change and verify the resource actually u
 From the repository root, this reads XML without opening UI or resolving WPF colors:
 
 ```powershell
-$themePath = '.\Engine\Scripts\Runtime\110-UI\Theme\LiteDeploy.UI.Theme.xaml'
+$themePath = '.\Engine\Runtime\110-UI\Theme\LiteDeploy.UI.Theme.xaml'
 [xml]$themeXml = Get-Content -LiteralPath $themePath -Raw
 $themeXml.DocumentElement.LocalName # ResourceDictionary
 ```

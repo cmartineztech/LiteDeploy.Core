@@ -193,10 +193,10 @@ function Start-LiteDeployFullOSInteractiveProbe {
 
     if ([string]::IsNullOrWhiteSpace($ProbeScriptPath)) {
         if (-not [string]::IsNullOrWhiteSpace($RuntimeRoot)) {
-            $ProbeScriptPath = Join-Path $RuntimeRoot 'LiteDeploy.FullOS.InteractiveProbe.ps1'
+            $ProbeScriptPath = Join-Path $RuntimeRoot 'LiteDeploy.OS.InteractiveProbe.ps1'
         }
         else {
-            $ProbeScriptPath = Join-Path $localRoot 'Engine\Scripts\Runtime\LiteDeploy.FullOS.InteractiveProbe.ps1'
+            $ProbeScriptPath = Join-Path $localRoot 'Engine\Runtime\LiteDeploy.OS.InteractiveProbe.ps1'
         }
     }
     if (-not (Test-Path -LiteralPath $ProbeScriptPath -PathType Leaf)) {
@@ -279,7 +279,7 @@ function Get-LiteDeployFullOSRunCommand {
     $drive = ($OsDriveLetter -replace '[\\/]+$', '').Trim()
     if ([string]::IsNullOrWhiteSpace($drive)) { $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' } }
     if ($drive.Length -eq 1) { $drive += ':' }
-    $fullOsPath = Join-Path "$drive\" ($LocalRootName.TrimStart('\') + '\Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1')
+    $fullOsPath = Join-Path "$drive\" ($LocalRootName.TrimStart('\') + '\Engine\Runtime\LiteDeploy.OS.Engine.ps1')
     $powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     return ('"{0}" -NoProfile -STA -ExecutionPolicy Bypass -File "{1}" -LocalRootName "{2}" -OsDriveLetter "{3}"' -f `
             $powerShell, $fullOsPath, $LocalRootName, $drive)

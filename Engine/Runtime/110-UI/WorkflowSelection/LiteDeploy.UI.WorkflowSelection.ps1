@@ -128,7 +128,7 @@ if (-not (Get-Command Get-LiteDeployWorkflowPresentationGroups -ErrorAction Sile
         . $RuntimeFiles.Workflow
     }
     elseif ($DeploymentSharePath) {
-        $wfCandidate = Join-Path $DeploymentSharePath "Engine\Scripts\Runtime\LiteDeploy.Workflow.ps1"
+        $wfCandidate = Join-Path $DeploymentSharePath "Engine\Runtime\LiteDeploy.Workflow.ps1"
         if (Test-Path -LiteralPath $wfCandidate -PathType Leaf) {
             . $wfCandidate
         }

@@ -5,7 +5,7 @@
 .DESCRIPTION
     Owns the deployment state document (DeploymentState.json) used by the Engine and the Progress UI.
 
-    Extracted and adapted from LiteDeploy.DeploymentEngine.ps1 / LiteDeploy.Engine.ps1:
+    Extracted and adapted from LiteDeploy.PE.Engine.ps1 / LiteDeploy.PE.Engine.ps1:
       - New-LiteDeployDeploymentObject   Creates the deployment state object (same structure as Engine).
       - Save-LiteDeployDeploymentState   Writes DeploymentState.json locally and mirrors it to the share log dir.
 
@@ -24,7 +24,7 @@
     are passed through a redaction filter.
 
     Usage:
-        . "Z:\Engine\Scripts\Runtime\LiteDeploy.State.ps1"     # load the API
+        . "Z:\Engine\Runtime\LiteDeploy.State.ps1"     # load the API
         .\LiteDeploy.State.ps1                                 # show the local state file if present
         .\LiteDeploy.State.ps1 -StatePath Z:\WorkLogs\Deployments\260806-A3F1\DeploymentState.json
         .\LiteDeploy.State.ps1 -Metadata                       # component metadata only

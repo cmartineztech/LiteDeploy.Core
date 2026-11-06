@@ -2,7 +2,7 @@
 
 **ComponentId:** `UI.HardwarePrecheck`  
 **Dev:** `110-UI/HardwarePrecheck`  
-**Published:** `Engine\Scripts\Runtime\UI\LiteDeploy.UI.HardwarePrecheck.ps1` (+ `.xaml`)
+**Published:** `Engine\Runtime\UI\LiteDeploy.UI.HardwarePrecheck.ps1` (+ `.xaml`)
 
 Phase 1 readiness UI. Theme: `-Theme` or `BootConfig.Ui.Theme` (default Light). Diagram: `Docs/PRECHECK_DIAGRAM.md`.
 
@@ -62,8 +62,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1'
 $result = & $component -BootConfigPath 'C:\LiteDeploy-Staging\Config\BootConfig.json'
 $result.Passed
 ~~~

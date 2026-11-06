@@ -779,7 +779,7 @@ function Invoke-HardwarePreCheck {
 # ------------------------------------------------------------------------------
 $script:AllowClose = $false
 
-# Continue only closes PreCheck; DeploymentEngine calls WorkflowSelection next.
+# Continue only closes PreCheck; LiteDeploy.PE.Engine.ps1 calls WorkflowSelection next.
 
 if ($null -ne $btnContinue) {
     $btnContinue.Add_Click({

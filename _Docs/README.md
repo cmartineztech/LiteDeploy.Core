@@ -54,4 +54,4 @@ Repo tooling (not published to the share):
 | `planning/IDEAS_*` vs live guides | Future designs vs implemented baseline |
 
 Do **not** keep a second copy of architecture/guides outside `_Docs/`.
-Do **not** keep editable flat `Engine/Scripts/Runtime|Admin/*.ps1` mirrors beside numbered folders (gitignore); publish only via Admin.Build.
+Do **not** keep editable flat `Engine/Runtime|Admin/*.ps1` mirrors beside numbered folders (gitignore); publish only via Admin.Build.

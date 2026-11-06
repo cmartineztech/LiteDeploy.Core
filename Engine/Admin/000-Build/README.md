@@ -2,19 +2,19 @@
 
 **ComponentId:** `Admin.Build`  
 **Dev folder:** `Admin/000-Build` (repo organization only)  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Build.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Build.ps1`
 
 ## Purpose
 
 Publishes from numbered **dev** folders into the share layout:
 
 ```text
-Engine\Scripts\Runtime\          # flat LiteDeploy.Boot / Logs / … / Engine.ps1
-Engine\Scripts\Runtime\
+Engine\Runtime\          # flat LiteDeploy.Boot / Logs / … / Engine.ps1
+Engine\Runtime\
   LiteDeploy.DeploymentEngine.ps1   # byte-identical BootInitializer alias
-Engine\Scripts\Runtime\UI\       # LiteDeploy.UI.* + .xaml
-Engine\Scripts\Admin\            # flat LiteDeploy.Admin.*
-Engine\Scripts\Admin\UI\         # LiteDeploy.Admin.UI.*
+Engine\Runtime\UI\       # LiteDeploy.UI.* + .xaml
+Engine\Admin\            # flat LiteDeploy.Admin.*
+Engine\Admin\UI\         # LiteDeploy.Admin.UI.*
 Engine\Tools\                    # from repo Engine\Tools\ (WinPECT, …)
 ```
 
@@ -75,7 +75,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1'
+$component = '.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1'
 & $component -DeploymentShare 'C:\LiteDeploy-Staging'
 ~~~
 

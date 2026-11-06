@@ -1,7 +1,7 @@
 # Runtime UI
 
 **Dev folder:** `Runtime/110-UI\<Screen>\` (repo organization only)  
-**Published:** flat files under `Engine\Scripts\Runtime\UI\`
+**Published:** flat files under `Engine\Runtime\UI\`
 
 | Screen | Files |
 | :--- | :--- |

@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.UI.Drivers`  
 **Dev:** `Admin/090-UI/Drivers`  
-**Published:** `Engine\Scripts\Admin\UI\LiteDeploy.Admin.UI.Drivers.ps1`
+**Published:** `Engine\Admin\UI\LiteDeploy.Admin.UI.Drivers.ps1`
 
 Desktop WPF front end for driver catalog / model / download / custom packs on a deployment share.
 
@@ -42,8 +42,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Admin\090-UI\Drivers\LiteDeploy.Admin.UI.Drivers.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Admin\090-UI\Drivers\LiteDeploy.Admin.UI.Drivers.ps1'
 & $component -DefaultDeploymentShare 'C:\LiteDeploy-Staging' -Theme Light
 ~~~
 

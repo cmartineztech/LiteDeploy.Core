@@ -38,7 +38,7 @@ component inputs/results, the execution sequence, and safe inspection examples.
 ## Source and publish
 
 - Development: `Runtime/100-Engine/LiteDeploy.Engine.ps1` (preload Environment with `-Mode Development`).
-- Published: `Engine\Scripts\Runtime\LiteDeploy.Engine.ps1` (Environment defaults to `-Mode Production`).
+- Published: `Engine\Runtime\LiteDeploy.Engine.ps1` (Environment defaults to `-Mode Production`).
 - **BootInitializer compat:** Admin.Build also writes `LiteDeploy.DeploymentEngine.ps1` as a **byte-identical copy** of Engine. Legacy WinPE BootInitializer still launches that name; it must never lag behind Engine on the live share (`C:\DeploymentShare`).
 - Flat repo `Runtime\LiteDeploy.DeploymentEngine.ps1` (if present) is not a second source — keep it equal to Engine or rely on Admin.Build on the share only.
 - Boot supplies the source context; Environment owns the selected layout. Engine does not search alternate roots.
@@ -149,8 +149,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\100-Engine\LiteDeploy.Engine.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\100-Engine\LiteDeploy.Engine.ps1'
 $plan = & $component -BootObject $global:LiteDeployBootObject -ValidateOnly
 $plan.RequiredFiles | Format-List
 ~~~
@@ -166,7 +166,7 @@ Call after dot-sourcing the component. Parameter declarations:
 ## FullOS (`LiteDeploy.FullOS.ps1`)
 
 **ComponentId:** `FullOS`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1`  
+**Published:** `Engine\Runtime\LiteDeploy.FullOS.ps1`  
 **Primary entry:** `HKLM\...\Run\LiteDeployFullOS` (specialize-staged when workflow actions > 0). Engine `-ResumeFullOS` remains a compat entry.
 
 ### Purpose
@@ -193,7 +193,7 @@ Environment, Logs, State, Hardware, Packages (from staged Runtime on the OS volu
 ~~~powershell
 # Typical live path: launched by HKLM Run after interactive logon (no manual args).
 # Compat / lab:
-& '.\Engine\Scripts\Runtime\100-Engine\LiteDeploy.FullOS.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
+& '.\Engine\Runtime\100-Engine\LiteDeploy.FullOS.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
 ~~~
 
 ## Interactive Probe (`LiteDeploy.FullOS.InteractiveProbe.ps1`)

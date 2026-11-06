@@ -48,7 +48,7 @@
     Optional array of additional command-line arguments to pass directly to setup.exe or dism.exe.
 
 .PARAMETER BootObject
-    Optional LiteDeploy runtime context object passed from BootInitializer or DeploymentEngine.
+    Optional LiteDeploy runtime context object passed from LiteDeploy.PE.Boot.ps1 or LiteDeploy.PE.Engine.ps1.
 
 .PARAMETER ExecuteSetup
     Standalone only. Without this switch the script is read-only: it resolves/tests setup.exe/dism.exe,
@@ -882,7 +882,7 @@ function New-LiteDeployUnattendXml {
         <RunSynchronousCommand wcm:action="add">
           <Order>2</Order>
           <Description>LiteDeploy stage HKLM Run FullOS</Description>
-          <Path>cmd.exe /c reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v LiteDeployFullOS /t REG_SZ /d "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File %SystemDrive%\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1" /f</Path>
+          <Path>cmd.exe /c reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v LiteDeployFullOS /t REG_SZ /d "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File %SystemDrive%\~LiteDeploy\Engine\Runtime\LiteDeploy.OS.Engine.ps1" /f</Path>
         </RunSynchronousCommand>
 "@
     if ($generatedContent -match '<!--LiteDeployFullOSRun-->') {

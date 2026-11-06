@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Config`  
 **Dev:** `Admin/060-Config`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Config.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Config.ps1`
 
 Generates `BootConfig.json` for BootWim / DeploymentShare / Media modes.
 
@@ -61,6 +61,6 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\060-Config\LiteDeploy.Admin.Config.ps1'
+$component = '.\Engine\Admin\060-Config\LiteDeploy.Admin.Config.ps1'
 & $component -BootConfig -Mode DeploymentShare -NetworkPath '\\Server01\DeploymentShare$' -OutputPath 'C:\LiteDeploy-Staging\Config\BootConfig.json'
 ~~~

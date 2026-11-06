@@ -119,11 +119,11 @@ Detailed sequence, privilege model, and reboot survival: [Architecture diagrams]
 # Smoke (optional published Runtime)
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1' `
-  -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Scripts\Runtime'
+  -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Runtime'
 
 .\_Templates\Get-LiteDeployComponentInventory.ps1 | Format-Table -AutoSize
 
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare 'C:\DeploymentShare'
 ```
 
@@ -138,7 +138,7 @@ Lab checklist: [Project status](_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md)
 ```text
 LiteDeploy Core/
 ├── _Media/                  # brand art (master + GitHub light/dark README)
-├── Engine/Scripts/          # numbered Admin + Runtime (+ 110-UI) — edit here
+├── Engine/                  # numbered Admin + Runtime (+ 110-UI) — edit here
 ├── Engine/Tools/            # WinPECT, etc. → published to share Tools\
 ├── DeploymentShare/         # lab skeleton (flat Engine after Build)
 ├── _Templates/              # component blueprint + inventory
@@ -183,10 +183,9 @@ Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only th
 │   ├── Temp\
 │   └── Unattend\                       # Standard.xml, DomainJoin.xml, IntuneReady.xml
 ├── Engine\
-│   ├── Scripts\
-│   │   ├── Runtime\                    # flat LiteDeploy.*.ps1 + UI\
-│   │   │                               # Engine, DeploymentEngine alias, FullOS, …
-│   │   └── Admin\                      # flat Admin.*.ps1 + UI\
+│   ├── Runtime\                        # flat LiteDeploy.*.ps1 + UI\
+│   │                                   # Engine, DeploymentEngine alias, FullOS, …
+│   ├── Admin\                          # flat Admin.*.ps1 + UI\
 │   └── Tools\
 │       └── WinPECT\
 ├── WorkFlows\                          # *.json
@@ -195,7 +194,7 @@ Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only th
     └── Deployments\                    # <UID>\ mirrors at runtime
 ```
 
-Engine: `<root>\Engine\Scripts\Runtime\LiteDeploy.Engine.ps1`.  
+Engine: `<root>\Engine\Runtime\LiteDeploy.Engine.ps1`.  
 More: [WinPE bootstrap](_Docs/guides/WINPE_BOOTSTRAP.md), [DeploymentShare README](DeploymentShare/README.md).
 
 ---
@@ -286,7 +285,7 @@ Contracts: [Component guide](_Docs/COMPONENT_GUIDE.md).
 | [Credentials / WinPECT](_Docs/integrations/Credentials/README.md) | Secret handoff |
 | [LOCAL_TODO](_Docs/LOCAL_TODO.md) | Active roadmap |
 | [Package orchestrator plan](_Docs/planning/PACKAGE_ORCHESTRATOR_PLAN.md) | Planned FullOS packages |
-| [Engine Scripts README](Engine/Scripts/README.md) | Dev folder map |
+| [Engine README](Engine/README.md) | Dev folder map |
 | [Deployment Share README](DeploymentShare/README.md) | Published share layout |
 | [Smoke tests](_Tests/README.md) / [Templates](_Templates/README.md) | Repo tooling |
 

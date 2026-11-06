@@ -18,7 +18,7 @@ How LiteDeploy combines **DeployVault** (server-side network vault) and **WinPEC
   │                 Central Deployment Server (DeploymentShare$)           │
   │  - DeployVault + localseed.bin + localvault.bin (planned fetch)        │
   │  - Engine\Tools\WinPECT\ (LiteDeploy wrapper + crypto engine)          │
-  │  - Engine\Scripts\Runtime\ (flat publish via Admin.Build)              │
+  │  - Engine\Runtime\ (flat publish via Admin.Build)              │
   └───────────────────────────────────┬────────────────────────────────────┘
                                       │
                                       │ 1. Boot mounts Z:; BootObject.Credential in RAM

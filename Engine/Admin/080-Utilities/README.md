@@ -2,7 +2,7 @@
 
 **ComponentId:** `Admin.Utilities`  
 **Dev:** `Admin/080-Utilities`  
-**Published:** `Engine\Scripts\Admin\LiteDeploy.Admin.Utilities.ps1`
+**Published:** `Engine\Admin\LiteDeploy.Admin.Utilities.ps1`
 
 Shared admin utility helpers.
 
@@ -38,7 +38,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-$component = '.\Engine\Scripts\Admin\080-Utilities\LiteDeploy.Admin.Utilities.ps1'
+$component = '.\Engine\Admin\080-Utilities\LiteDeploy.Admin.Utilities.ps1'
 . $component
 Test-LiteDeployJson -Path 'C:\LiteDeploy-Staging\Config\BootConfig.json'
 ~~~

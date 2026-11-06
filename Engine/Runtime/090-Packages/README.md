@@ -2,7 +2,7 @@
 
 **ComponentId:** `Packages`  
 **Dev folder:** `Runtime/090-Packages`  
-**Published:** `Engine\Scripts\Runtime\LiteDeploy.Packages.ps1`
+**Published:** `Engine\Runtime\LiteDeploy.Packages.ps1`
 
 ## Purpose
 
@@ -43,8 +43,8 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
 
 ~~~powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Scripts\Runtime\090-Packages\LiteDeploy.Packages.ps1'
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+$component = '.\Engine\Runtime\090-Packages\LiteDeploy.Packages.ps1'
 . $component
 Get-LiteDeployPackages -ShareRoot 'C:\LiteDeploy-Staging' -IncludeDisabled
 ~~~
