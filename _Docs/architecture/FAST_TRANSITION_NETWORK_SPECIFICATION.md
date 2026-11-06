@@ -132,7 +132,7 @@ Both UI phases append `[F5: Refresh]` to the window title bar to guide technicia
 If any regression or unexpected behavior occurs, rollback can be executed in under 2 minutes:
 
 ### Rollback Step 1: Remove Optional Parameter from Engine
-In `Engine\Runtime\100-Engine\LiteDeploy.Engine.ps1` (Phase 2):
+In `Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1` (Phase 2):
 ```diff
 -$workflowResult = & $workflowScript ... -HardwareInventory $global:LiteDeployHardwareInventory ...
 +$workflowResult = & $workflowScript ... -Theme $uiTheme

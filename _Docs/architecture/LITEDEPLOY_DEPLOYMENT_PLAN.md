@@ -45,10 +45,7 @@ Produces:
 
 ```text
 X:\~LiteDeploy\
-  Boot\LiteDeploy.Boot.ps1
-  Runtime\LiteDeploy.Logs.ps1
-  Runtime\LiteDeploy.Environment.ps1
-  Runtime\LiteDeploy.Hardware.ps1
+  Engine\Runtime\LiteDeploy.PE.Boot.ps1
   Config\BootConfig.json
 ```
 
@@ -58,5 +55,5 @@ Full Engine/UI come from the mapped share (`Z:\Engine\…`) or offline media `~\
 
 Unhandled throws and phase failures set deployment `Status` to `Failed` or `Cancelled`, save state, restore console, and print `[NOTICE]` / `startnet` guidance. Disk formatting starts only after a confirmed selection and valid target index. A failed format can still leave the disk partially changed.
 
-FullOS resume (specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1`, HKCU console handoff on load, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z:, Interactive Probe second window) is implemented; Packages orchestration and driver application gaps remain. See [current diagrams](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [maintenance](../guides/MAINTENANCE.md) before release.
+FullOS resume (specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1`, HKCU console handoff on load, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z:, Interactive Probe second window) is implemented; Packages orchestration and driver application gaps remain. See [current diagrams](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [maintenance](../guides/MAINTENANCE.md) before release.
 

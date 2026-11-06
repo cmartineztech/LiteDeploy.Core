@@ -154,7 +154,7 @@ Templates use placeholders filled by `New-LiteDeployUnattendXml`:
 | Order | Placeholder | When filled |
 | :--- | :--- | :--- |
 | **1** | `<!--ComputerDescription-->` | **Always** — `cmd /c reg add …\LanmanServer\Parameters /v srvcomment` (blank → `No Description`) |
-| **2** | `<!--LiteDeployFullOSRun-->` | When workflow **actions > 0** — arms `HKLM\...\Run\LiteDeployFullOS` with short `powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File %SystemDrive%\~LiteDeploy\...\LiteDeploy.FullOS.ps1` (`REG_EXPAND_SZ`) |
+| **2** | `<!--LiteDeployFullOSRun-->` | When workflow **actions > 0** — arms `HKLM\...\Run\LiteDeployFullOS` with short `powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File %SystemDrive%\~LiteDeploy\...\LiteDeploy.OS.Engine.ps1` (`REG_EXPAND_SZ`) |
 | **3–4** | `<!--DisableUacForFullOS-->` | When **actions > 0** and template has **no** `<!--AuditMode-->` (Domain Join) — `EnableLUA=0` + `UacBypassed=1`; FullOS restores `EnableLUA=1` on cleanup |
 
 Action count comes from `WorkflowSelection` / `WorkflowTag.Actions` (Tag must carry `Actions` from workflow JSON). Nested-quoted PowerShell inside `reg add /d` breaks specialize parse — keep Paths as simple as Order 1. Intune Ready with **0 actions** clears FullOS Run and Audit placeholders (OOBE only).
@@ -182,7 +182,7 @@ Filled only when the template has `<!--AuditMode-->` **and** workflow actions > 
 ### Execution Modes
 
 - **Inspect / Resolve Mode (Read-Only)**: Default when executed without `-ExecuteSetup`. Resolves paths, tests binaries, validates templates, and returns status object.
-- **Deployment Mode**: Launched with `-ExecuteSetup` by `LiteDeploy.Engine.ps1` during Phase 4 of the deployment sequence.
+- **Deployment Mode**: Launched with `-ExecuteSetup` by `LiteDeploy.PE.Engine.ps1` during Phase 4 of the deployment sequence.
 - **Validation Mode**: Launched with `-ValidateEngineOnly` during engine pre-flight checks.
 
 ### Script parameters

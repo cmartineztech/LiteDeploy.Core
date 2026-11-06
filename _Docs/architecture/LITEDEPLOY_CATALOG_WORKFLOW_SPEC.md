@@ -97,7 +97,7 @@ Display names may change without breaking references. IDs must not contain a pas
       workflow-catalog.schema.json
       deployment-profile.schema.json
     <workflow-id>.json
-  Engine\Scripts\...
+  Engine\...
 ```
 
 The initial empty share tree in this repository is [DeploymentShare](../../DeploymentShare). It uses the folder name `WorkFlows`. Catalog JSON in that tree is placeholder-only until ImportOSMedia and workflow publishing exist.

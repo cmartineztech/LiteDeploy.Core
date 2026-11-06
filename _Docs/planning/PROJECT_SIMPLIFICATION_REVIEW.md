@@ -31,13 +31,13 @@ Separate temporary fixtures reproduced malformed-JSON validation and overwrite b
 
 Many components exist in numbered source folders, flat Engine/Scripts folders, and DeploymentShare. Comparing text after normalizing line endings found **10 divergent copies**: nine flat Engine copies (Boot, Disk, Drivers, Workflow, HostShell, and the HardwarePrecheck/WorkflowSelection scripts and XAML) and the published DeploymentShare Engine.
 
-Admin.Build discovers numbered sources at `Engine/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1` (SetupComplete is not staged; no `auditUser`).
+Admin.Build discovers numbered sources at `Engine/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1` (SetupComplete is not staged; no `auditUser`).
 
 Keep numbered folders as the editable source for the first cleanup. Generate flat deployment output into a clearly identified staging/output folder. Add a publish manifest or content comparison so a tested release can be tied to its source. Before retiring existing flat copies, preserve and compare their differences and inspect external launchers. Do not indiscriminately delete DeploymentShare: it also contains configuration and deployment content.
 
 ### 2. Declare Workflow explicitly and remove UI/domain duplication
 
-Engine's WinPE requirements at `Runtime/100-Engine/LiteDeploy.Engine.ps1:95` omit Workflow. Selection receives that requirements object as RuntimeFiles. In `Runtime/110-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1:126`, the UI then falls back to a flat Workflow script beneath DeploymentShare when no Workflow path is supplied. Source execution can consequently combine development UI with published domain code, and Engine validation does not check this dependency.
+Engine's WinPE requirements at `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1:95` omit Workflow. Selection receives that requirements object as RuntimeFiles. In `Runtime/110-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1:126`, the UI then falls back to a flat Workflow script beneath DeploymentShare when no Workflow path is supplied. Source execution can consequently combine development UI with published domain code, and Engine validation does not check this dependency.
 
 The UI also redefines domain functions already supplied by Workflow: catalog loading, catalog date text, selection result creation, JSON path determination, JSON serialization, and JSON validation. These implementations are not all interchangeable. For example, the UI result constructor at line 376 includes effective BootConfig, whereas the Workflow constructor at `Runtime/050-Workflow/LiteDeploy.Workflow.ps1:742` has a different parameter/result contract.
 
@@ -59,7 +59,7 @@ Implement the documented overwrite choice in one small copy helper, or deliberat
 
 ### 5. Shorten the orchestrator while preserving its visible sequence
 
-`Start-LiteDeployPipeline` at `Runtime/100-Engine/LiteDeploy.Engine.ps1:819` spans 598 lines. Boot's configuration/bootstrap function spans 306 lines, and FullOS's resume function spans 306 lines. These mix validation, state mutations, UI/process management, result mapping, logging, and phase execution.
+`Start-LiteDeployPipeline` at `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1:819` spans 598 lines. Boot's configuration/bootstrap function spans 306 lines, and FullOS's resume function spans 306 lines. These mix validation, state mutations, UI/process management, result mapping, logging, and phase execution.
 
 Extract a few cohesive phase functions inside the existing components: precheck/selection, disk execution, selected-driver staging, imaging, and handoff. Keep their order explicit in the main function. A shared failure-state helper can replace repeated failure/error/end-time/save sequences, provided it preserves each cancellation and failure contract.
 
@@ -71,7 +71,7 @@ Engine must save and restore BootObject around dot-sourced imports at line 205 b
 
 Prefer explicit context parameters and avoid top-level imported variables that collide with the caller. Standardizing a small import contract is sufficient; converting every script to a module is not a prerequisite.
 
-TCP probing is repeated in Boot, Hardware, Drivers, and Precheck. Extract the socket/timeout/disposal mechanism only; keep SMB readiness and internet availability as distinct policies. Boot already calls Environment's share connection helper at `Runtime/000-Boot/LiteDeploy.Boot.ps1:462`, so the older responsibility audit's claim that these helpers are largely unused is no longer accurate.
+TCP probing is repeated in Boot, Hardware, Drivers, and Precheck. Extract the socket/timeout/disposal mechanism only; keep SMB readiness and internet availability as distinct policies. Boot already calls Environment's share connection helper at `Runtime/000-Boot/LiteDeploy.PE.Boot.ps1`, so the older responsibility audit's claim that these helpers are largely unused is no longer accurate.
 
 Admin Images and Drivers duplicate WPF resource-building helpers. Share common palette/resources while retaining each screen's controls. Progress has separate process/native-host requirements; do not force console and WPF rendering into one implementation.
 
@@ -79,7 +79,7 @@ State and Progress also have separate state-to-display readers. Their phase maps
 
 ### 7. Clarify implemented functionality before pruning FullOS compatibility
 
-`Runtime/100-Engine/LiteDeploy.FullOS.ps1:849` explicitly logs that package orchestration is pending. The function loads Packages and establishes resume infrastructure, but does not call Install-LiteDeployPackage/Invoke-LiteDeployPackage in a package loop. README lines 71 and 122 suggest a package loop and package-reboot behavior that are not implemented by this FullOS path.
+`Runtime/100-Engine/LiteDeploy.OS.Engine.ps1` explicitly logs that package orchestration is pending. The function loads Packages and establishes resume infrastructure, but does not call Install-LiteDeployPackage/Invoke-LiteDeployPackage in a package loop. README lines 71 and 122 suggest a package loop and package-reboot behavior that are not implemented by this FullOS path.
 
 Separate the documented status of package execution helpers, scheduled resume infrastructure, and automatic package sequencing. Building the missing sequencing is feature work, not cleanup.
 

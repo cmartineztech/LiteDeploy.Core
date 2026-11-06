@@ -38,7 +38,7 @@ visible imports, result contracts, and `-ValidateOnly` inspection.
 
 | Folder | Component | Published file |
 | :--- | :--- | :--- |
-| `000-Boot` | Boot | `LiteDeploy.Boot.ps1` |
+| `000-Boot` | Boot | `LiteDeploy.PE.Boot.ps1` |
 | `010-Logs` | Logs | `LiteDeploy.Logs.ps1` |
 | `020-Environment` | Environment | `LiteDeploy.Environment.ps1` |
 | `030-Hardware` | Hardware | `LiteDeploy.Hardware.ps1` |
@@ -48,14 +48,14 @@ visible imports, result contracts, and `-ValidateOnly` inspection.
 | `070-Drivers` | Drivers | `LiteDeploy.Drivers.ps1` |
 | `080-Image` | Image | `LiteDeploy.Image.ps1` |
 | `090-Packages` | Packages | `LiteDeploy.Packages.ps1` |
-| `100-Engine` | Engine | `LiteDeploy.Engine.ps1` |
-| `100-Engine` | FullOS | `LiteDeploy.FullOS.ps1` |
+| `100-Engine` | Engine | `LiteDeploy.PE.Engine.ps1` |
+| `100-Engine` | FullOS | `LiteDeploy.OS.Engine.ps1` |
 | `110-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Runtime\UI\` |
 
 ### Execution
 
 ```text
-startnet → Boot → Engine
+startnet → LiteDeploy.PE.Boot.ps1 → LiteDeploy.PE.Engine.ps1
   Load required components once at script scope (stop on import failure)
   → UI.HardwarePrecheck (honors Startup.SkipHardwarePreCheck)
   → UI.WorkflowSelection

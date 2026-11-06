@@ -75,7 +75,7 @@ flowchart TB
   end
 
   subgraph FullOS["FullOS — Session 1"]
-    Run["HKLM Run → LiteDeploy.FullOS.ps1"]
+    Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
     Console["HKCU console handoff<br/>later windows only"]
     ReArm["Re-arm Run · kill sysprep.exe"]
     Secrets["WinPECT unseal · Z: · log mirror"]
@@ -149,12 +149,11 @@ LiteDeploy Core/
 
 ### WinPE bootstrap (ramdisk)
 
-Minimal set inside `boot.wim` — not the full content tree:
+Minimal set inside `boot.wim` — zero external script dependencies:
 
 ```text
 X:\~LiteDeploy\
-├── Boot\LiteDeploy.Boot.ps1
-├── Runtime\                 # Environment, Logs, Hardware
+├── Engine\Runtime\LiteDeploy.PE.Boot.ps1
 └── Config\BootConfig.json
 ```
 
@@ -172,9 +171,7 @@ Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only th
 ├── Config\
 │   └── BootConfig.json
 ├── Content\
-│   ├── BootMedia\
-│   │   ├── ISO\
-│   │   └── WIM\
+│   ├── BootMedia\                      # ISO, WIM, startnet.cmd
 │   ├── Drivers\                        # LocalCatalog.json, ComputerModels.csv, packs
 │   ├── OperatingSystems\               # catalog.json + media
 │   ├── Packages\
@@ -183,8 +180,7 @@ Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only th
 │   ├── Temp\
 │   └── Unattend\                       # Standard.xml, DomainJoin.xml, IntuneReady.xml
 ├── Engine\
-│   ├── Runtime\                        # flat LiteDeploy.*.ps1 + UI\
-│   │                                   # Engine, DeploymentEngine alias, FullOS, …
+│   ├── Runtime\                        # flat LiteDeploy.*.ps1 + UI\ (PE.Engine, OS.Engine, PE.Boot)
 │   ├── Admin\                          # flat Admin.*.ps1 + UI\
 │   └── Tools\
 │       └── WinPECT\
@@ -194,7 +190,7 @@ Reference skeleton in this repo: [`DeploymentShare\`](DeploymentShare/). Only th
     └── Deployments\                    # <UID>\ mirrors at runtime
 ```
 
-Engine: `<root>\Engine\Runtime\LiteDeploy.Engine.ps1`.  
+Engine: `<root>\Engine\Runtime\LiteDeploy.PE.Engine.ps1`.  
 More: [WinPE bootstrap](_Docs/guides/WINPE_BOOTSTRAP.md), [DeploymentShare README](DeploymentShare/README.md).
 
 ---
@@ -204,7 +200,7 @@ More: [WinPE bootstrap](_Docs/guides/WINPE_BOOTSTRAP.md), [DeploymentShare READM
 ### 1. WinPE (SYSTEM)
 
 ```text
-startnet → Boot → Engine -BootObject
+startnet → LiteDeploy.PE.Boot.ps1 → LiteDeploy.PE.Engine.ps1 -BootObject
   → HardwarePrecheck → WorkflowSelection → Progress
   → Disk -ConfirmDestroy → Image -ExecuteSetup
   → stage Runtime/Tools/state on W:\~LiteDeploy + WinPECT seal → reboot
@@ -214,7 +210,7 @@ startnet → Boot → Engine -BootObject
 
 ```text
 specialize: Order 1 description · Order 2 HKLM Run · Orders 3–4 UAC (Domain Join only)
-logon (Audit Admin | AutoLogon) → FullOS.ps1
+logon (Audit Admin | AutoLogon) → LiteDeploy.OS.Engine.ps1
   → HKCU console handoff (consoles started afterward) · kill sysprep.exe · re-arm Run · WinPECT · Z: · probe · Packages (planned)
   → clear Run · restore EnableLUA if bypassed
 ```
@@ -229,7 +225,7 @@ Native PowerShell share connect only. No SetupComplete / `auditUser` / Task Sche
 
 | Component | Dev folder | Published file | Role |
 | :--- | :--- | :--- | :--- |
-| Boot | `000-Boot` | `LiteDeploy.Boot.ps1` | startnet parent; share connect; launch Engine |
+| Boot | `000-Boot` | `LiteDeploy.PE.Boot.ps1` | startnet parent; zero-dependency share connect; launch PE.Engine |
 | Logs | `010-Logs` | `LiteDeploy.Logs.ps1` | CMTrace + console; mirrors |
 | Environment | `020-Environment` | `LiteDeploy.Environment.ps1` | Named paths, mode, theme helpers |
 | Hardware | `030-Hardware` | `LiteDeploy.Hardware.ps1` | Inventory / readiness |
@@ -239,8 +235,8 @@ Native PowerShell share connect only. No SetupComplete / `auditUser` / Task Sche
 | Drivers | `070-Drivers` | `LiteDeploy.Drivers.ps1` | Catalog/hardware match (extract/stage stubs — not full apply yet) |
 | Image | `080-Image` | `LiteDeploy.Image.ps1` | DISM/Setup, unattend, bcdboot, drivers |
 | Packages | `090-Packages` | `LiteDeploy.Packages.ps1` | Package helpers (FullOS sequencing planned) |
-| Engine | `100-Engine` | `LiteDeploy.Engine.ps1` | WinPE orchestrator |
-| FullOS | `100-Engine` | `LiteDeploy.FullOS.ps1` | Post-boot Session 1 resume; HKCU console handoff on load |
+| Engine | `100-Engine` | `LiteDeploy.PE.Engine.ps1` | WinPE orchestrator |
+| FullOS | `100-Engine` | `LiteDeploy.OS.Engine.ps1` | Post-boot Session 1 resume; HKCU console handoff on load |
 | UI.* | `110-UI\...` | `Runtime\UI\LiteDeploy.UI.*` | Precheck, Selection, Progress, Theme, HostShell |
 
 ### Admin

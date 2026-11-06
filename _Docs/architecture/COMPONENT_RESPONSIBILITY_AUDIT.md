@@ -33,14 +33,14 @@ The audit identified **4 primary areas** where responsibilities overlap or logic
   - `050-Workflow` was designed as the domain component to validate and parse `catalog.json` and `WorkFlows\*.json` (`Get-LiteDeployOperatingSystemsCatalog`, `New-LiteDeployWorkflowSelectionResult`, `Save-LiteDeployWorkflowSelectionJson`).
   - `110-UI\WorkflowSelection` re-implemented and embedded identical versions of these functions directly inside the UI script to support standalone STA execution.
 - **Impact**:
-  - `LiteDeploy.Engine.ps1` bypasses loading `Workflow.ps1` during WinPE execution because the UI script already contains the embedded domain logic.
+  - `LiteDeploy.PE.Engine.ps1` bypasses loading `Workflow.ps1` during WinPE execution because the UI script already contains the embedded domain logic.
   - Two distinct sources of truth exist for workflow and OS catalog schema validation.
 
 ### 2. Network Reachability & TCP Probing Proliferation
 - **Affected Components**: `000-Boot`, `030-Hardware`, `070-Drivers`, `110-UI\HardwarePrecheck`
 - **Finding**:
   - Four independent implementations instantiate `[System.Net.Sockets.TcpClient]` to test network connectivity:
-    1. **`000-Boot`** ([LiteDeploy.Boot.ps1](../../Engine/Runtime/000-Boot/LiteDeploy.Boot.ps1)): Probes TCP 445 on the deployment share server.
+    1. **`000-Boot`** ([LiteDeploy.PE.Boot.ps1](../../Engine/Runtime/000-Boot/LiteDeploy.PE.Boot.ps1)): Probes TCP 445 on the deployment share server.
     2. **`030-Hardware`** ([LiteDeploy.Hardware.ps1](../../Engine/Runtime/030-Hardware/LiteDeploy.Hardware.ps1)): Implements `Test-LiteDeployNetworkServer` for remote server probing.
     3. **`070-Drivers`** ([LiteDeploy.Drivers.ps1](../../Engine/Runtime/070-Drivers/LiteDeploy.Drivers.ps1)): Implements `Test-LiteDeployInternetConnection` probing `1.1.1.1:443` and `8.8.8.8:53`.
     4. **`110-UI\HardwarePrecheck`** ([LiteDeploy.UI.HardwarePrecheck.ps1](../../Engine/Runtime/110-UI/HardwarePrecheck/LiteDeploy.UI.HardwarePrecheck.ps1)): Performs embedded TCP socket checks during pre-flight checks.
@@ -48,10 +48,10 @@ The audit identified **4 primary areas** where responsibilities overlap or logic
   - The `Hardware` component has assumed network application reachability responsibilities outside its primary domain of local hardware inventory (CPU, RAM, Disks, TPM, Firmware).
 
 ### 3. Share Connection Responsibility Overlap
-- **Affected Components**: `000-Boot` ([LiteDeploy.Boot.ps1](../../Engine/Runtime/000-Boot/LiteDeploy.Boot.ps1)) vs `020-Environment` ([LiteDeploy.Environment.ps1](../../Engine/Runtime/020-Environment/LiteDeploy.Environment.ps1))
+- **Affected Components**: `000-Boot` ([LiteDeploy.PE.Boot.ps1](../../Engine/Runtime/000-Boot/LiteDeploy.PE.Boot.ps1)) vs `020-Environment` ([LiteDeploy.Environment.ps1](../../Engine/Runtime/020-Environment/LiteDeploy.Environment.ps1))
 - **Finding**:
   - `LiteDeploy.Environment.ps1` defines `Connect-LiteDeployShare` and `Disconnect-LiteDeployShare` via `New-PSDrive` / `New-SmbMapping`.
-  - `LiteDeploy.Boot.ps1` implements its own full WinPE network initialization, DHCP/DNS waiting, adapter binding, and SMB mount retries (`Connect-NetworkShare` / `Test-NetworkShareConnection`).
+  - `LiteDeploy.PE.Boot.ps1` implements its own full WinPE network initialization, DHCP/DNS waiting, adapter binding, and SMB mount retries (`Connect-NetworkShare` / `Test-NetworkShareConnection`).
 - **Impact**:
   - `Environment` functions for share connection are largely unused in the live pipeline because `Boot` owns the actual network bootstrap and transport layer.
 

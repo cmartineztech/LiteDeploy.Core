@@ -1,21 +1,18 @@
-# Boot
+# PE.Boot
 
-**ComponentId:** `Boot`  
+**ComponentId:** `PE.Boot`  
 **Dev folder:** `Runtime/000-Boot` (repo organization only)  
-**Published:** `Engine\Runtime\LiteDeploy.Boot.ps1` (also WinPE `~\LiteDeploy\Boot\`)
+**Published:** `Engine\Runtime\LiteDeploy.PE.Boot.ps1` (also WinPE `~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1`)
 
 ## Purpose
 
-WinPE parent process started by `startnet`. Discovers `BootConfig.json`, validates network when needed, mounts the deployment share with **native PowerShell** (`New-PSDrive` / `New-SmbMapping` + `PSCredential`), builds `BootObject`, launches `LiteDeploy.Engine.ps1` in the same STA process.
+WinPE parent process started by `startnet`. Discovers `BootConfig.json`, validates network hardware, link, and DHCP, tests SMB port 445 connectivity, prompts for credentials via CredUI dialog, mounts the deployment share with **native PowerShell** (`New-PSDrive` / `New-SmbMapping` + `PSCredential`), builds `BootObject`, and launches `LiteDeploy.PE.Engine.ps1` in the same STA process.
 
 ## Notes
 
+- **Zero External Dependencies:** `Dependencies = @("None")`. Does not require `Environment.ps1`, `Logs.ps1`, or `Hardware.ps1` inside `boot.wim`. Contains embedded CMTrace logging and network detection.
 - Never uses `net use` with passwords on a process command line.
-- Bootstrap loads Environment from `$env:SystemDrive\~LiteDeploy\Runtime\LiteDeploy.Environment.ps1`.
-  Use `-EnvironmentPath` for another bootstrap location. Environment then supplies named Logs
-  and Hardware paths. These files are required.
-- For source use, preload Environment with `-Mode Development`, then call the path returned
-  by `Get-LiteDeployComponentPath -Name Boot`. Boot does not search numbered folders.
+- Native WinPE RAM location: `X:\~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1`.
 - Soft failures show GUI retry where applicable and `[NOTICE]` / `startnet` guidance.
 
 <!-- component-contract -->
@@ -23,23 +20,21 @@ WinPE parent process started by `startnet`. Discovers `BootConfig.json`, validat
 
 Connect the source and pass one in-memory BootObject to Engine.
 
-**Source:** [LiteDeploy.Boot.ps1](LiteDeploy.Boot.ps1).
+**Source:** [LiteDeploy.PE.Boot.ps1](LiteDeploy.PE.Boot.ps1).
 
 ### Requirements and environment
 
-Windows PowerShell 5.1 STA, Environment, Logs, Hardware, BootConfig.json, network/media content, and SMB credentials when needed.
+Windows PowerShell 5.1 STA, BootConfig.json, network/media content, and SMB credentials when needed.
 
 ### What runs and changes
 
-Direct execution discovers config, may initialize networking, prompt for credentials and mount a share, then launches real deployment. Import loads helpers and prints a banner. Preload Environment for Development; EnvironmentPath selects the bootstrap file otherwise.
+Direct execution discovers config, initializes WinPE networking, prompts for credentials and mounts `Z:`, then launches `LiteDeploy.PE.Engine.ps1`.
 
 ### Results and failures
 
-Returns source/config/connection facts and EngineScriptPath through Get-LiteDeployBootConfig. Failures lead to retry/error guidance. Do not serialize credentials. Engine path prefers `LiteDeploy.Engine.ps1` and can fall back to the BootInitializer alias `LiteDeploy.DeploymentEngine.ps1`. After imaging handoff, FullOS is entered via specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1` at interactive logon (Engine `-ResumeFullOS` remains for compat).
+Returns source/config/connection facts and EngineScriptPath through Get-LiteDeployBootConfig. Failures lead to retry/error guidance. Do not serialize credentials. Launches `Z:\Engine\Runtime\LiteDeploy.PE.Engine.ps1`. After imaging handoff, FullOS is entered via specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1` at interactive logon.
 
 ### Script parameters
-
-Defaults are source expressions, not resolved paths. Constraints are declared attributes; runtime requirements above also apply. Metadata (or its alias) returns identity without the normal action.
 
 | Parameter | Type | Default | Constraints / aliases |
 | --- | --- | --- | --- |
@@ -47,15 +42,13 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 | MountShare | SwitchParameter | <code>$false</code> | [Parameter(Mandatory = $false)] |
 | ShowGuiError | SwitchParameter | <code>$false</code> | [Parameter(Mandatory = $false)] |
 | Metadata | SwitchParameter | <code>$false</code> | [Parameter(Mandatory = $false)] |
-| EnvironmentPath | String | <code>(Join-Path $env:SystemDrive '~LiteDeploy\Runtime\LiteDeploy.Environment.ps1')</code> |  |
 
 ### Example
 
-From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has the effects described above; sample content must exist.
+From the repository root in Windows PowerShell 5.1:
 
 ~~~powershell
-. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\000-Boot\LiteDeploy.Boot.ps1'
+$component = '.\Engine\Runtime\000-Boot\LiteDeploy.PE.Boot.ps1'
 . $component # Helpers only.
 ~~~
 

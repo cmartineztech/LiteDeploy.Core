@@ -4,7 +4,7 @@
 
 ## Current state
 
-Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy names (`BootInitializer`, `DeploymentEngine`, `LogWriter`, …) are retired as *source* components. Admin.Build still publishes **`LiteDeploy.DeploymentEngine.ps1` as a byte-identical copy of Engine** so existing WinPE BootInitializer images keep working.
+Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy names (`BootInitializer`, `DeploymentEngine`, `LogWriter`, …) are retired as *source* components. Legacy names and backward-compatibility aliases (`BootInitializer`, `DeploymentEngine`, `LogWriter`, …) are fully purged. The pipeline uses direct canonical naming: `LiteDeploy.PE.Boot.ps1` -> `LiteDeploy.PE.Engine.ps1` -> `LiteDeploy.OS.Engine.ps1`.
 
 ### Done
 
@@ -20,12 +20,12 @@ Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy name
   - Audit Mode Reseal: Configured `Microsoft-Windows-Deployment` (`<Reseal><Mode>Audit</Mode></Reseal>`) in `Standard.xml` and `IntuneReady.xml` under `oobeSystem` to boot directly into Administrator Audit Mode
   - Dual delivery: `/Unattend:"X:\unattended.xml"` for Setup.exe; offline Panther staging (`W:\Windows\Panther\unattend.xml`) for DISM
 - **Driver Management**: Hardware candidate matching with sub-millisecond SMB metadata validation (non-blocking size verification, avoiding SMB hashing during UI selection), post-copy byte size transfer verification, local SHA-256 integrity verification during Phase 3 staging, in-WinPE archive extraction (Dell EXE/CAB, Lenovo, HP), offline DISM `/Add-Driver` and Setup.exe `/InstallDrivers` integration
-- **FullOS resume (`LiteDeploy.FullOS.ps1`)**: WinPE stages Runtime/Tools (no SetupComplete); Image stages `HKLM\...\Run\LiteDeployFullOS` in specialize when workflow actions > 0 (short `powershell.exe -File`); first launch at interactive logon (Audit Admin or AutoLogon); on load, HKCU console handoff for consoles started afterward; WinPECT in-memory secret decryption; native `New-SmbMapping` Z: (`EnableLinkedConnections = 1`); FullOS may re-arm Run for mid-deploy reboots (scheduled tasks gated off); stock Setup sysprep left intact (`sysprep.exe` process killed); Interactive Probe in a second PowerShell window; log mirror to `WorkLogs\Deployments\<UID>` (Network). Domain Join (no `<!--AuditMode-->`, actions > 0): temporary `EnableLUA=0` + restore on cleanup. MDT reference: Startup/`RunOnce`/`LTIBootstrap`, not Task Scheduler.
+- **FullOS resume (`LiteDeploy.OS.Engine.ps1`)**: WinPE stages Runtime/Tools (no SetupComplete); Image stages `HKLM\...\Run\LiteDeployFullOS` in specialize when workflow actions > 0 (short `powershell.exe -File`); first launch at interactive logon (Audit Admin or AutoLogon); on load, HKCU console handoff for consoles started afterward; WinPECT in-memory secret decryption; native `New-SmbMapping` Z: (`EnableLinkedConnections = 1`); FullOS may re-arm Run for mid-deploy reboots (scheduled tasks gated off); stock Setup sysprep left intact (`sysprep.exe` process killed); Interactive Probe in a second PowerShell window; log mirror to `WorkLogs\Deployments\<UID>` (Network). Domain Join (no `<!--AuditMode-->`, actions > 0): temporary `EnableLUA=0` + restore on cleanup. MDT reference: Startup/`RunOnce`/`LTIBootstrap`, not Task Scheduler.
 - **WorkflowTag.Actions gating:** Tag carries `Actions`; Image gates FullOS Run + Audit reseal on `actions.Count > 0` (Intune Ready with 0 actions stays OOBE-only)
 - **Console & Logging Experience**: PowerShell host console window remains open and visible in background during all phases for live technician monitoring and troubleshooting
 - **Single Responsibility & Architecture**:
   - Component Responsibility Audit report ([COMPONENT_RESPONSIBILITY_AUDIT.md](COMPONENT_RESPONSIBILITY_AUDIT.md)) completed
-  - Architecture suite: **155 / 155** passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`; run from repo root with absolute `-PublishedRuntimeRoot` when checking DeploymentShare)
+  - Architecture suite: **158 / 158** passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`; run from repo root with absolute `-PublishedRuntimeRoot` when checking DeploymentShare)
   - Repo tooling layout: component blueprints/inventory under `_Templates\`; smoke suite under `_Tests\` (neither is published to the share)
 
 ### In progress / gaps & future exploration
@@ -40,14 +40,14 @@ Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy name
 
 ### Lab imaging checklist
 
-1. `Admin.Build -DeploymentShare C:\DeploymentShare` (Engine + DeploymentEngine alias + Tools\WinPECT)
-2. Confirm `LiteDeploy.Engine.ps1` and `LiteDeploy.DeploymentEngine.ps1` hashes match on the share
+1. `Admin.Build -DeploymentShare C:\DeploymentShare` (Engine + Tools\WinPECT)
+2. Confirm published runtime components in `C:\DeploymentShare\Engine\Runtime`
 3. `Admin.Config` → `BootConfig.json` (`Ui.Theme`)
 4. Import OS media + workflow catalog
-5. Inject Boot (or legacy BootInitializer) into WinPE; map share as `Z:`
-6. Boot → Engine through Disk/Image → handoff → specialize arms HKLM Run → interactive logon → FullOS.ps1
+5. Inject `LiteDeploy.PE.Boot.ps1` and `BootConfig.json` into WinPE; map share as `Z:`
+6. Boot (`LiteDeploy.PE.Boot.ps1`) → Engine (`LiteDeploy.PE.Engine.ps1`) through Disk/Image → handoff → specialize arms HKLM Run → interactive logon → `LiteDeploy.OS.Engine.ps1`
 
-Numbered folders under `Engine\Scripts\` are **not** required on the share when flat publish is present; they are for developers working in this repo.
+Numbered folders under `Engine\` are **not** required on the share when flat publish is present; they are for developers working in this repo.
 
 Deployment lifecycle: ID is assigned immediately before WorkflowSelection launches; deployment share logs are created only after confirmation and target validation. Cancelled/failed selection keeps local diagnostics only.
 

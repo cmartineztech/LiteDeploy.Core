@@ -93,7 +93,7 @@ startnet
 
 | # | Id | File | Single responsibility |
 | ---: | :--- | :--- | :--- |
-| 000 | Boot | `LiteDeploy.Boot.ps1` | Parent STA shell; source discovery; share mount; BootObject; hand off to Engine |
+| 000 | Boot | `LiteDeploy.PE.Boot.ps1` | Parent STA shell; source discovery; share mount; BootObject; hand off to Engine |
 | 010 | Logs | `LiteDeploy.Logs.ps1` | CMTrace + mirrors (local / share / OS volume when enabled) |
 | 020 | Environment | `LiteDeploy.Environment.ps1` | **Normalize environment**; named path map; content path join; process helper; theme read |
 | 030 | Hardware | `LiteDeploy.Hardware.ps1` | Local inventory / LiteDeploy readiness facts (not Setup LabConfig) |
@@ -103,7 +103,7 @@ startnet
 | 070 | Drivers | `LiteDeploy.Drivers.ps1` | Detect / stage packs; Image injects offline when engine is DISM |
 | 080 | Image | `LiteDeploy.Image.ps1` | `setup.exe` / `dism.exe` apply + unattend; Setup LabConfig when configured |
 | 090 | Packages | `LiteDeploy.Packages.ps1` | Primarily FullOS / later |
-| 100 | Engine | `LiteDeploy.Engine.ps1` | Orchestrator: required names, phases, result gates |
+| 100 | Engine | `LiteDeploy.PE.Engine.ps1` | Orchestrator: required names, phases, result gates |
 | 110 | UI.* | under `110-UI\` → publish `Engine\Runtime\UI\` | Precheck, WorkflowSelection, Progress, Theme, HostShell |
 
 **Separation reminders**
@@ -161,7 +161,7 @@ Aim below 1,000 lines per non-UI component. Keep UI or complex cohesive componen
 - [Project Status](LITEDEPLOY_PROJECT_STATUS.md)
 - [Responsibility audit](COMPONENT_RESPONSIBILITY_AUDIT.md)
 - [ComputerSetup mapping](../guides/COMPUTER_SETUP_MAPPING.md)
-- [Engine Scripts README](../../Engine/Scripts/README.md)
+- [Engine Scripts README](../../Engine/README.md)
 
 
 

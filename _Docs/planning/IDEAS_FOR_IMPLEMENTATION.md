@@ -184,7 +184,7 @@ For standard workflows requiring interactive desktop sessions (FullOS Phase 6 fo
 
 ## 5. `SetupComplete.cmd` Orchestration Trigger
 
-> **Implemented (entry):** staged from WinPE; calls `LiteDeploy.Engine.ps1 -ResumeFullOS` (same Engine, not a separate FullOS bootstrap). Remaining: power plan / GPO immunization / Packages from that entry.
+> **Implemented (entry):** staged from WinPE; calls `LiteDeploy.OS.Engine.ps1` (same Engine, not a separate FullOS bootstrap). Remaining: power plan / GPO immunization / Packages from that entry.
 
 ### Concept
 Instead of injecting complex post-install command scripts into `unattend.xml` (`<FirstLogonCommands>`), stage an offline `SetupComplete.cmd` directly in WinPE.
@@ -193,7 +193,7 @@ Instead of injecting complex post-install command scripts into `unattend.xml` (`
 - **Target Path:** `W:\Windows\Setup\Scripts\SetupComplete.cmd`
 - **Execution Context:** Native `NT AUTHORITY\SYSTEM` rights before user logon.
 - **Responsibilities (current):**
-  - Launch `LiteDeploy.Engine.ps1 -ResumeFullOS` (tee to `WorkLogs\SetupComplete.log`).
+  - Launch `LiteDeploy.OS.Engine.ps1` (tee to `WorkLogs\SetupComplete.log`).
   - Engine: WinPECT import, Network Z: reconnect, log mirror, register `LiteDeploy_SystemEngine`.
 - **Still planned from this entry:** High Performance power plan, GPO immunization, Packages orchestration.
 

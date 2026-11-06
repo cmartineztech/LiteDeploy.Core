@@ -9,13 +9,11 @@
 Publishes from numbered **dev** folders into the share layout:
 
 ```text
-Engine\Runtime\          # flat LiteDeploy.Boot / Logs / … / Engine.ps1
-Engine\Runtime\
-  LiteDeploy.DeploymentEngine.ps1   # byte-identical BootInitializer alias
+Engine\Runtime\          # flat LiteDeploy.PE.Boot / Logs / … / PE.Engine / OS.Engine.ps1
 Engine\Runtime\UI\       # LiteDeploy.UI.* + .xaml
 Engine\Admin\            # flat LiteDeploy.Admin.*
 Engine\Admin\UI\         # LiteDeploy.Admin.UI.*
-Engine\Tools\                    # from repo Engine\Tools\ (WinPECT, …)
+Engine\Tools\            # from repo Engine\Tools\ (WinPECT, …)
 ```
 
 Numbered folders (`000-Boot`, `110-UI`, …) stay in the git repo only. Edit tools under repo `Engine\Tools\`, not only on the share. Always target the **live** lab share path (e.g. `C:\DeploymentShare`) — never hardcode a personal profile path in docs or config samples.
@@ -28,14 +26,11 @@ Numbered folders (`000-Boot`, `110-UI`, …) stay in the git repo only. Edit too
 .\LiteDeploy.Admin.Build.ps1 -MediaRoot "D:\LiteDeployMedia"
 ```
 
-## WinPE bootstrap map
+## WinPE bootstrap map (Zero-Dependency)
 
 | Source | Injected as |
 | :--- | :--- |
-| `LiteDeploy.Boot.ps1` | `~\LiteDeploy\Boot\LiteDeploy.Boot.ps1` |
-| `LiteDeploy.Logs.ps1` | `~\LiteDeploy\Runtime\LiteDeploy.Logs.ps1` |
-| `LiteDeploy.Environment.ps1` | `~\LiteDeploy\Runtime\LiteDeploy.Environment.ps1` |
-| `LiteDeploy.Hardware.ps1` | `~\LiteDeploy\Runtime\LiteDeploy.Hardware.ps1` |
+| `LiteDeploy.PE.Boot.ps1` | `~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1` |
 
 <!-- component-contract -->
 ## Usage and contract

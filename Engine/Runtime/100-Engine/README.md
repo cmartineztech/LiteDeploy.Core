@@ -37,10 +37,8 @@ component inputs/results, the execution sequence, and safe inspection examples.
 
 ## Source and publish
 
-- Development: `Runtime/100-Engine/LiteDeploy.Engine.ps1` (preload Environment with `-Mode Development`).
-- Published: `Engine\Runtime\LiteDeploy.Engine.ps1` (Environment defaults to `-Mode Production`).
-- **BootInitializer compat:** Admin.Build also writes `LiteDeploy.DeploymentEngine.ps1` as a **byte-identical copy** of Engine. Legacy WinPE BootInitializer still launches that name; it must never lag behind Engine on the live share (`C:\DeploymentShare`).
-- Flat repo `Runtime\LiteDeploy.DeploymentEngine.ps1` (if present) is not a second source — keep it equal to Engine or rely on Admin.Build on the share only.
+- Development: `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1` (preload Environment with `-Mode Development`).
+- Published: `Engine\Runtime\LiteDeploy.PE.Engine.ps1` (Environment defaults to `-Mode Production`).
 - Boot supplies the source context; Environment owns the selected layout. Engine does not search alternate roots.
 
 ## Startup
@@ -68,17 +66,17 @@ APIs are not currently called by this pipeline and are not imported.
 
 ```powershell
 # Inspect the published runtime from an existing Boot session, without deploying.
-$plan = & '.\LiteDeploy.Engine.ps1' -BootObject $global:LiteDeployBootObject -ValidateOnly
+$plan = & '.\LiteDeploy.PE.Engine.ps1' -BootObject $global:LiteDeployBootObject -ValidateOnly
 $plan.RequiredFiles | Format-List
 
 # Load helpers only in the same STA session.
-. '.\LiteDeploy.Engine.ps1' -BootObject $global:LiteDeployBootObject
+. '.\LiteDeploy.PE.Engine.ps1' -BootObject $global:LiteDeployBootObject
 
 # Execute WinPE deployment. This eventually wipes the explicitly selected target disk.
-& '.\LiteDeploy.Engine.ps1' -BootObject $global:LiteDeployBootObject
+& '.\LiteDeploy.PE.Engine.ps1' -BootObject $global:LiteDeployBootObject
 
-# FullOS resume (compat path; primary entry is HKLM Run → FullOS.ps1) — no BootObject.
-& '.\LiteDeploy.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy' -OsDriveLetter $env:SystemDrive
+# FullOS resume (compat path; primary entry is HKLM Run → LiteDeploy.OS.Engine.ps1) — no BootObject.
+& '.\LiteDeploy.PE.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy' -OsDriveLetter $env:SystemDrive
 ```
 
 For a source checkout, load Environment with -Mode Development before running Engine. An explicit -RuntimeRoot belongs to Environment, not Engine. Missing files never change the selected layout.
@@ -90,7 +88,7 @@ process to recover STA, because doing so would lose in-memory inputs.
 **WinPE:** HardwarePrecheck → WorkflowSelection → Progress → Disk → Image → handoff
 (stage Runtime/Tools → WinPECT export → reboot).
 
-**FullOS (HKLM Run → `LiteDeploy.FullOS.ps1` at interactive logon):** console-host handoff (`HKCU\Console\%%Startup` DelegationConsole / DelegationTerminal) → state → kill sysprep.exe → WinPECT in-memory secret decryption → `New-SmbMapping` Z: reconnect → log mirror → re-arm `HKLM\...\Run\LiteDeployFullOS` (reboot survival) → start Interactive Probe in a second window. Packages and real Progress dispatch are next. First arm of Run is unattend specialize (`reg add` / `REG_EXPAND_SZ`), not FullOS. The console key applies to consoles created after it is written.
+**FullOS (HKLM Run → `LiteDeploy.OS.Engine.ps1` at interactive logon):** console-host handoff (`HKCU\Console\%%Startup` DelegationConsole / DelegationTerminal) → state → kill sysprep.exe → WinPECT in-memory secret decryption → `New-SmbMapping` Z: reconnect → log mirror → re-arm `HKLM\...\Run\LiteDeployFullOS` (reboot survival) → start Interactive Probe in a second window. Packages and real Progress dispatch are next. First arm of Run is unattend specialize (`reg add` / `REG_EXPAND_SZ`), not FullOS. The console key applies to consoles created after it is written.
 
 Read the numbered phase comments in `Start-LiteDeployPipeline` / `Start-LiteDeployFullOSResume`.
 Precheck and selection require an explicit boolean Passed result. Selection must supply a
@@ -115,11 +113,11 @@ Credential paths: `Content\Credentials\` — see [_Docs/integrations/Credentials
 
 Sequence verification, imports, readiness, selection, progress, disk, image and handoff.
 
-**Source:** [LiteDeploy.Engine.ps1](LiteDeploy.Engine.ps1).
+**Source:** [LiteDeploy.PE.Engine.ps1](LiteDeploy.PE.Engine.ps1).
 
 ### Requirements and environment
 
-WinPE: BootObject, configured Environment, required files, PowerShell 5.1 STA. FullOS: HKLM Run → `LiteDeploy.FullOS.ps1` as the interactive logged-on admin (Audit or AutoLogon) with staged Runtime on the OS volume.
+WinPE: BootObject, configured Environment, required files, PowerShell 5.1 STA. FullOS: HKLM Run → `LiteDeploy.OS.Engine.ps1` as the interactive logged-on admin (Audit or AutoLogon) with staged Runtime on the OS volume.
 
 ### What runs and changes
 
@@ -136,7 +134,7 @@ Defaults are source expressions, not resolved paths. Constraints are declared at
 | Parameter | Type | Default | Constraints / aliases |
 | --- | --- | --- | --- |
 | BootObject | PSObject | <code>$null</code> | WinPE; required unless ResumeFullOS |
-| ResumeFullOS | SwitchParameter | <code>$false</code> | FullOS compat entry (primary: HKLM Run → FullOS.ps1) |
+| ResumeFullOS | SwitchParameter | <code>$false</code> | FullOS compat entry (primary: HKLM Run → OS.Engine.ps1) |
 | LocalRootName | String | <code>~LiteDeploy</code> | FullOS / handoff |
 | OsDriveLetter | String | <code>$env:SystemDrive</code> | FullOS / handoff |
 | StatePath | String | <code>''</code> | Optional override for DeploymentState.json |
@@ -150,7 +148,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\100-Engine\LiteDeploy.Engine.ps1'
+$component = '.\Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1'
 $plan = & $component -BootObject $global:LiteDeployBootObject -ValidateOnly
 $plan.RequiredFiles | Format-List
 ~~~
@@ -163,10 +161,10 @@ Call after dot-sourcing the component. Parameter declarations:
 # No parameters.
 ~~~
 
-## FullOS (`LiteDeploy.FullOS.ps1`)
+## FullOS (`LiteDeploy.OS.Engine.ps1`)
 
 **ComponentId:** `FullOS`  
-**Published:** `Engine\Runtime\LiteDeploy.FullOS.ps1`  
+**Published:** `Engine\Runtime\LiteDeploy.OS.Engine.ps1`  
 **Primary entry:** `HKLM\...\Run\LiteDeployFullOS` (specialize-staged when workflow actions > 0). Engine `-ResumeFullOS` remains a compat entry.
 
 ### Purpose
@@ -193,10 +191,10 @@ Environment, Logs, State, Hardware, Packages (from staged Runtime on the OS volu
 ~~~powershell
 # Typical live path: launched by HKLM Run after interactive logon (no manual args).
 # Compat / lab:
-& '.\Engine\Runtime\100-Engine\LiteDeploy.FullOS.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
+& '.\Engine\Runtime\100-Engine\LiteDeploy.OS.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
 ~~~
 
-## Interactive Probe (`LiteDeploy.FullOS.InteractiveProbe.ps1`)
+## Interactive Probe (`LiteDeploy.OS.InteractiveProbe.ps1`)
 
 **Temporary** second-window monitor started by FullOS until real Progress owns Session 1.
 

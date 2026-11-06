@@ -11,7 +11,7 @@ It is **not** published to the deployment share.
 | File | Type | Purpose |
 | :--- | :--- | :--- |
 | **[`LiteDeploy.Component.Template.ps1`](LiteDeploy.Component.Template.ps1)** | PowerShell Template | Master single-file template implementing the LiteDeploy component contract, embedded metadata, semantic versioning, StrictMode 2.0, and Logs integration. |
-| **[`Get-LiteDeployComponentInventory.ps1`](Get-LiteDeployComponentInventory.ps1)** | PowerShell Utility | Scanner that queries `-Metadata` across `Engine\Scripts` and returns a consolidated inventory. |
+| **[`Get-LiteDeployComponentInventory.ps1`](Get-LiteDeployComponentInventory.ps1)** | PowerShell Utility | Scanner that queries `-Metadata` across `Engine` and returns a consolidated inventory. |
 
 ---
 
@@ -73,7 +73,7 @@ From the repository root:
 
 The scanner skips `Test-*`, `*.Template.*`, and `*InteractiveProbe*` (interactive-only script
 without a `-Metadata` fast-exit). Architecture tests under `_Tests\` are outside
-`Engine\Scripts` and are not scanned.
+`Engine` and are not scanned.
 
 **Current baseline (2026-10-15):** 28 components with metadata (Admin 11 + Runtime 17).
 

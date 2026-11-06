@@ -27,8 +27,8 @@ Guides cover entry points, dependencies, parameters, effects, results and limits
 | Drivers | [Guide](../Engine/Runtime/070-Drivers/README.md) |
 | Image | [Guide](../Engine/Runtime/080-Image/README.md) |
 | Packages | [Guide](../Engine/Runtime/090-Packages/README.md) |
-| Engine | [Guide](../Engine/Runtime/100-Engine/README.md) |
-| FullOS | Same guide as Engine ([100-Engine](../Engine/Runtime/100-Engine/README.md)) — `LiteDeploy.FullOS.ps1`; Interactive Probe is temporary |
+| Engine | [Guide](../Engine/Runtime/100-Engine/README.md) (`LiteDeploy.PE.Engine.ps1`) |
+| FullOS | Same guide as Engine ([100-Engine](../Engine/Runtime/100-Engine/README.md)) — `LiteDeploy.OS.Engine.ps1`; Interactive Probe is temporary |
 | UI.HardwarePrecheck | [Guide](../Engine/Runtime/110-UI/HardwarePrecheck/README.md) |
 | UI.HostShell | [Guide](../Engine/Runtime/110-UI/HostShell/README.md) |
 | UI.Progress | [Guide](../Engine/Runtime/110-UI/Progress/README.md) |
@@ -39,7 +39,7 @@ Guides cover entry points, dependencies, parameters, effects, results and limits
 | Component templates / inventory | [Guide](../_Templates/README.md) (`_Templates\` — not published) |
 | Progress emulator | [Guide](../Engine/Runtime/110-UI/Progress/TESTING.md) |
 
-FullOS (`LiteDeploy.FullOS.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, Interactive Probe in a second window) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
+FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, Interactive Probe in a second window) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
 
 ## Deployment setup and agreed designs
 
@@ -50,6 +50,6 @@ FullOS (`LiteDeploy.FullOS.ps1`: HKLM Run first launch staged by Image specializ
 - [Component Responsibility Audit](architecture/COMPONENT_RESPONSIBILITY_AUDIT.md): audit of single-responsibility adherence and deduplication opportunities across components.
 - [Fast Transition Spec & Rollback Plan](architecture/FAST_TRANSITION_NETWORK_SPECIFICATION.md): sub-second (<0.4s) network transition specification, RAM catalog caching rules, and rollback procedure.
 - [Credentials / WinPECT](integrations/Credentials/README.md): WinPE → FullOS credential handoff and FullOS entry.
-- [Deployment share template](../DeploymentShare/README.md): publish layout, `DeploymentEngine.ps1` BootInitializer alias, Tools sync.
+- [Deployment share template](../DeploymentShare/README.md): publish layout, flat runtime, Tools sync.
 - [Upcoming Ideas & Designs](planning/IDEAS_FOR_IMPLEMENTATION.md): ephemeral `LD_<UID>` account, Packages orchestration, console UX (future; current FullOS uses specialize-staged HKLM Run).
 - [Release status](architecture/LITEDEPLOY_PROJECT_STATUS.md): implemented work versus remaining blockers.

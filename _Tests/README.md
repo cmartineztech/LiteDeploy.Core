@@ -19,7 +19,7 @@ With a published Runtime layout (absolute path required):
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1' `
-  -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Scripts\Runtime' `
+  -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Runtime' `
   -TestRoot 'C:\LiteDeploy-TestFixtures'
 ```
 
@@ -34,7 +34,7 @@ performs read-only hardware/storage queries. Use a dedicated directory. Imported
 may initialize session state or local logging. Exit 0 means these checks passed; exit 1 means
 one or more failed. The console reports counts and individual failures.
 
-**Current baseline (2026-10-15):** 155 / 155 with DeploymentShare published Runtime.
+**Current baseline (2026-10-15):** 158 / 158 with DeploymentShare published Runtime.
 
 Actual WinPE boot, WPF rendering, share credentials, disk deployment and reboot/resume are
 not covered. See the [maintenance guide](../_Docs/guides/MAINTENANCE.md) for the release checks.
