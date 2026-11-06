@@ -1,6 +1,6 @@
 # Operation and maintenance
 
-LiteDeploy Core is the development repository. Edit `Engine\Scripts`; use Admin.Build
+LiteDeploy Core is the development repository. Edit `Engine`; use Admin.Build
 to create deployment files. Keep numbered source folders and flat published folders
 separate. Do not maintain a second edited copy on the deployment share.
 
@@ -42,7 +42,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1'
 ```
 
-The suite lives under `_Tests\` (not under `Engine\Scripts`). It creates small
+The suite lives under `_Tests\` (not under `Engine`). It creates small
 configuration/screen fixtures, parses maintained scripts, checks metadata, loads shared
 helpers, performs read-only disk inventory, verifies explicit paths, and exercises pipeline
 stop conditions with inert screens and mocked file/process actions. It does not format disks,
@@ -58,7 +58,7 @@ Component metadata inventory (also repo-only tooling under `_Templates\`):
 To inspect the detected environment:
 
 ```powershell
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
 Get-LiteDeployEnvironment
 ```
 
@@ -67,16 +67,16 @@ Get-LiteDeployEnvironment
 Use a dedicated staging directory:
 
 ```powershell
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare 'C:\LiteDeploy-Staging'
 
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -File '.\_Tests\Test-LiteDeployArchitectureV2.ps1' `
-  -PublishedRuntimeRoot 'C:\LiteDeploy-Staging\Engine\Scripts\Runtime'
+  -PublishedRuntimeRoot 'C:\LiteDeploy-Staging\Engine\Runtime'
 ```
 
-Admin.Build copies runtime scripts to `Engine\Scripts\Runtime`, UI assets to its `UI`
-subfolder, and admin tools to `Engine\Scripts\Admin`. Optional `-Clean` removes existing
+Admin.Build copies runtime scripts to `Engine\Runtime`, UI assets to its `UI`
+subfolder, and admin tools to `Engine\Admin`. Optional `-Clean` removes existing
 files from target script directories before copying; use it only for intentionally
 replaceable targets. Publishing does not rebuild boot.wim.
 

@@ -4,7 +4,7 @@
 
 ## 1. Completed Milestones (v2 Architecture)
 
-- [x] **Modular Repository Layout:** Numbered development folders under `Engine\Scripts\Runtime` and `Engine\Scripts\Admin`.
+- [x] **Modular Repository Layout:** Numbered development folders under `Engine\Runtime` and `Engine\Admin`.
 - [x] **Flat Published Production Layout:** Automated publishing via `LiteDeploy.Admin.Build.ps1` to `C:\DeploymentShare`.
 - [x] **Strict Architecture & Safety Gates:** Plain PowerShell 5.1 with `Set-StrictMode -Version 2.0` compliance across all runtime components.
 - [x] **Hardware Pre-Check & Inventory:** UEFI/BIOS detection, Secure Boot, CPU, RAM, Disk health, and network connectivity.
@@ -27,8 +27,11 @@
   - [x] Non-blocking offline network socket probe (200 ms).
   - [x] Instant synchronous UI dropdown population on window launch.
 - [x] **Triple Mirror Logging & State:** Live Memory-Mapped File (MMF) IPC, WinPE Ramdisk (`X:`), Remote Deployment Share (`Z:`), and Target OS Volume (`W:\~LiteDeploy`).
-- [x] **Automated Architecture Test Suite:** 155 tests passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`).
+- [x] **Automated Architecture Test Suite:** 158 tests passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`).
 - [x] **Repo tooling folders:** `Templates` → `_Templates`; `Engine\Scripts\Tests` → `_Tests` (docs + RepoRoot inference updated).
+- [x] **Repository Folder Flattening:** Removed redundant `Engine\Scripts\` nesting (`Engine\Runtime` and `Engine\Admin`).
+- [x] **Zero-Dependency WinPE Bootstrap:** `LiteDeploy.PE.Boot.ps1` (`Dependencies = @("None")`) is the sole script in `boot.wim` (`X:\~LiteDeploy\Engine\Runtime\`), embedding network detection, DHCP wait, SMB port 445 test, CredUI, and persistent `Z:` mounting.
+- [x] **Canonical `startnet.cmd` Template:** Maintained in `DeploymentShare\Content\BootMedia\startnet.cmd`, targeting `X:\~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1` with `-STA -NoExit` and omitting redundant `wpeinit`.
 - [x] **In-Memory WinPECT Credential Transfer:** Dynamic in-memory secret decryption (`Read-WPCTCredentialTransfer`), zero plaintext or DPAPI `.xml` files written to disk.
 - [x] **Native PowerShell Network Share Connect:** `New-SmbMapping` & `New-PSDrive` passing in-memory `PSCredential` (completely eliminates `net.exe use` and command-line credential exposure).
 - [x] **Direct Interactive FullOS Execution:** specialize stages `HKLM\...\Run\LiteDeployFullOS` when workflow actions > 0 (short `reg add` / `powershell.exe -File`; no `auditUser`); FullOS starts at interactive logon and may re-arm Run for reboot survival; kills `sysprep.exe` (stock Setup CmdLine left intact); `EnableLinkedConnections = 1` for Explorer-visible `Z:`; scheduled tasks gated off.
@@ -112,21 +115,23 @@
 
 ---
 
-## 5. Runtime orchestrator names (discussed, not started)
+## 5. Runtime Orchestrator Names & Architecture Domain Alignment
 
-- [ ] Rename the three phase entry points so the file name says where it runs. Shared components (`Disk`, `Image`, `Logs`, `State`, `Environment`, `Workflow`, UI) stay `LiteDeploy.*`.
-  - [ ] `LiteDeploy.Boot.ps1` → `LiteDeploy.PE.Boot`
-  - [ ] `LiteDeploy.Engine.ps1` → `LiteDeploy.PE.Engine` (WinPE pipeline)
-  - [ ] `LiteDeploy.FullOS.ps1` → `LiteDeploy.OS.Engine` (Session 1 resume)
-  - [ ] Decide the legacy alias `LiteDeploy.DeploymentEngine.ps1` (byte-identical copy for existing WinPE BootInitializer images).
-  - [ ] Update specialize `HKLM Run` so new images launch `LiteDeploy.OS.Engine.ps1`. In-flight installs still point at `LiteDeploy.FullOS.ps1` until republished.
+- [x] Rename the three phase entry points so the file name explicitly declares the execution domain.
+  - [x] `LiteDeploy.Boot.ps1` → `LiteDeploy.PE.Boot.ps1` (zero-dependency WinPE root shell)
+  - [x] `LiteDeploy.Engine.ps1` → `LiteDeploy.PE.Engine.ps1` (WinPE imaging pipeline)
+  - [x] `LiteDeploy.FullOS.ps1` → `LiteDeploy.OS.Engine.ps1` (Session 1 resume)
+  - [x] `LiteDeploy.FullOS.InteractiveProbe.ps1` → `LiteDeploy.OS.InteractiveProbe.ps1`
+  - [x] Retired and removed legacy alias recycling (`LiteDeploy.DeploymentEngine.ps1` and old aliases purged across the entire repository).
+  - [x] Updated specialize `HKLM Run` in `SetupComplete.cmd` and `LiteDeploy.PE.Engine.ps1` so installations launch `LiteDeploy.OS.Engine.ps1` directly.
+  - [x] Updated `_Docs/guides/WINPE_BOOTSTRAP.md` to reflect the zero-dependency bootstrap and canonical `X:\~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1` layout.
 
 ---
 
 ## 6. Future analysis (ideas only — do not implement yet)
 
 - [ ] **JSONNormalizer / schema merge** vs current StrictMode `PSObject.Properties[...]` probing in catalog/workflow/BootConfig — see [IDEAS §13](planning/IDEAS_FOR_IMPLEMENTATION.md#13-future-analysis-json-schema-merge-jsonnormalizer-vs-defensive-property-probing). Keep State serializer (depth 8 / JSON depth 10) as-is.
-- [x] **Repo source layout:** removed untracked flat `Engine\Scripts\Runtime|Admin\LiteDeploy*.ps1` (+ `UI\`) mirrors; `.gitignore` blocks them. Edit numbered folders only; publish flat to `DeploymentShare` via Admin.Build.
+- [x] **Repo source layout:** removed untracked flat `Engine\Runtime|Admin\LiteDeploy*.ps1` (+ `UI\`) mirrors; `.gitignore` blocks them. Edit numbered folders only; publish flat to `DeploymentShare` via Admin.Build.
 - [x] **`_Templates` / `_Tests`:** underscored root folders for blueprints/inventory and architecture smoke tests (not part of Admin.Build publish).
 
 ---

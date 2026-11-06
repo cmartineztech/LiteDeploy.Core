@@ -2,7 +2,7 @@
 
 **Updated:** 2026-10-15
 
-Canonical project docs live here. Component contracts stay next to source under `Engine/Scripts/**/README.md`. `DeploymentShare/**` copies of Tools READMEs are **publish mirrors** of `Engine/Tools/` (keep in sync via Admin.Build — do not edit only the share copy).
+Canonical project docs live here. Component contracts stay next to source under `Engine/**/README.md`. `DeploymentShare/**` copies of Tools READMEs are **publish mirrors** of `Engine/Tools/` (keep in sync via Admin.Build — do not edit only the share copy).
 
 Repo tooling (not published to the share):
 
@@ -50,8 +50,8 @@ Repo tooling (not published to the share):
 | :--- | :--- |
 | `Engine/Tools/README.md` ↔ `DeploymentShare/Engine/Tools/README.md` | Source vs published share template |
 | `Engine/Tools/WinPECT/SOURCE.md` ↔ share copy | Same publish mirror |
-| Per-folder `Engine/Scripts/**/README.md` | Component contracts; linked from `COMPONENT_GUIDE.md` |
+| Per-folder `Engine/**/README.md` | Component contracts; linked from `COMPONENT_GUIDE.md` |
 | `planning/IDEAS_*` vs live guides | Future designs vs implemented baseline |
 
 Do **not** keep a second copy of architecture/guides outside `_Docs/`.
-Do **not** keep editable flat `Engine/Scripts/Runtime|Admin/*.ps1` mirrors beside numbered folders (gitignore); publish only via Admin.Build.
+Do **not** keep editable flat `Engine/Runtime|Admin/*.ps1` mirrors beside numbered folders (gitignore); publish only via Admin.Build.

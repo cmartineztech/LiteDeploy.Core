@@ -1,6 +1,6 @@
 # Deployment Share Root Template
 
-Folder skeleton for a deployment share. Numbered sources stay under `Engine\Scripts\`. This tree keeps `Config`, `Content`, `WorkFlows`, catalogs, and empty `Engine` folders. `Admin.Build` writes the flat Runtime, Admin, and Tools files onto the live share (`C:\DeploymentShare`), not into these folders.
+Folder skeleton for a deployment share. Numbered sources stay under `Engine\Runtime\` and `Engine\Admin\`. This tree keeps `Config`, `Content`, `WorkFlows`, catalogs, and empty `Engine` folders. `Admin.Build` writes the flat Runtime, Admin, and Tools files onto the live share (`C:\DeploymentShare`), not into these folders.
 
 ## Layout
 
@@ -20,11 +20,10 @@ DeploymentShare\
 │   ├── Temp\
 │   └── Unattend\
 ├── Engine\
-│   ├── Scripts\
-│   │   ├── Runtime\                 # empty here; live share gets flat LiteDeploy.*.ps1 + UI\
-│   │   └── Admin\                   # empty here; live share gets flat LiteDeploy.Admin.*.ps1 + UI\
+│   ├── Runtime\                 # empty here; live share gets flat LiteDeploy.*.ps1 + UI\
+│   ├── Admin\                   # empty here; live share gets flat LiteDeploy.Admin.*.ps1 + UI\
 │   └── Tools\
-│       └── WinPECT\                 # empty here; source is repo Engine\Tools\WinPECT\
+│       └── WinPECT\             # empty here; source is repo Engine\Tools\WinPECT\
 ├── WorkFlows\
 └── WorkLogs\
     ├── Admin\
@@ -39,31 +38,19 @@ DeploymentShare\
 ## Publish
 
 ```powershell
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare "C:\DeploymentShare"
 ```
 
 | Source | Destination |
 | --- | --- |
-| `Engine\Scripts\Runtime\###-*\` | `Engine\Scripts\Runtime\` (+ `UI\`) |
-| `Engine\Scripts\Admin\###-*\` | `Engine\Scripts\Admin\` (+ `UI\`) |
-| `LiteDeploy.Engine.ps1` | also as `LiteDeploy.DeploymentEngine.ps1` (compat) |
+| `Engine\Runtime\###-*\` | `Engine\Runtime\` (+ `UI\`) |
+| `Engine\Admin\###-*\` | `Engine\Admin\` (+ `UI\`) |
 | repo `Engine\Tools\` | `Engine\Tools\` (WinPECT, …) |
 
-### BootInitializer vs Boot
+### WinPE Bootstrap & Engine Launch
 
 | Bootstrap in WinPE | Engine file it launches |
 | --- | --- |
-| Current `LiteDeploy.Boot.ps1` | Prefers `LiteDeploy.Engine.ps1`; falls back to `DeploymentEngine.ps1` |
-| Legacy BootInitializer | Typically `LiteDeploy.DeploymentEngine.ps1` |
-
-Both names must stay **byte-identical** on the share.
-
-## Related docs
-
-- [Root README — folder structure](../README.md#folder-structure)
-- [WinPE bootstrap](../_Docs/guides/WINPE_BOOTSTRAP.md)
-- [Credentials / WinPECT](../_Docs/integrations/Credentials/README.md)
-- [Architecture diagrams](../_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
-- [Tools README](../Engine/Tools/README.md)
-- [Docs map](../_Docs/README.md)
+| `LiteDeploy.PE.Boot.ps1` | `LiteDeploy.PE.Engine.ps1` |
+| First-Boot OS Resume | `LiteDeploy.OS.Engine.ps1` |

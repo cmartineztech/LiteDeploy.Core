@@ -33,10 +33,10 @@ Image writes WinPE `LabConfig` / `MoSetup` registry bypasses immediately before 
 
 Source locations:
 
-- `Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1`
-- `Engine\Scripts\Runtime\100-Engine\LiteDeploy.Engine.ps1`
+- `Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1`
+- `Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1`
 
-Published share also has `LiteDeploy.DeploymentEngine.ps1` as a **byte-identical** BootInitializer alias of Engine (Admin.Build). Prefer editing `100-Engine\LiteDeploy.Engine.ps1`, then publish to `C:\DeploymentShare`.
+Published share holds flat runtime scripts at `C:\DeploymentShare\Engine\Runtime\`. Canonical engine entry is `LiteDeploy.PE.Engine.ps1`. Legacy aliases have been retired.
 
 ## The important variables
 
@@ -109,7 +109,7 @@ path searching. Reopen the screen to load edited picker code.
 From a Boot session on the published share:
 
 ```powershell
-$plan = & 'Z:\Engine\Scripts\Runtime\LiteDeploy.Engine.ps1' `
+$plan = & 'Z:\Engine\Runtime\LiteDeploy.PE.Engine.ps1' `
     -BootObject $global:LiteDeployBootObject -ValidateOnly
 $plan | Select-Object Mode, DeploymentRoot, RuntimeRoot, HelpersToLoad, Phases
 $plan.RequiredFiles | Format-List
@@ -124,7 +124,7 @@ $boot = [pscustomobject]@{
     DriveLetter = 'C:\LiteDeploy-Staging'
     ConfigPath = 'C:\LiteDeploy-Staging\Config\BootConfig.json'
 }
-. '.\Engine\Scripts\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
+. '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
 $enginePath = Get-LiteDeployComponentPath -Name Engine
 $plan = & $enginePath `
     -BootObject $boot -ValidateOnly

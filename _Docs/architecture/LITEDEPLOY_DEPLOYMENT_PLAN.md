@@ -16,7 +16,7 @@ Bare-metal Windows deployment from WinPE with a thin Boot parent, domain Runtime
 ## Execution sequence
 
 ```text
-1. startnet.cmd → powershell -STA LiteDeploy.Boot.ps1
+1. startnet.cmd → powershell -STA LiteDeploy.PE.Boot.ps1
 2. Boot discovers BootConfig.json (media or local), optional network share map to Z:
 3. Boot builds BootObject (paths, mode, credential, Config) and launches Engine
 4. Engine creates provisional local state without an ID; resolves Ui.Theme
@@ -31,24 +31,21 @@ Bare-metal Windows deployment from WinPE with a thin Boot parent, domain Runtime
 ## Publish
 
 ```powershell
-.\Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
+.\Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1 `
   -DeploymentShare "C:\DeploymentShare" -Clean
 ```
 
 Produces:
 
-- `Engine\Scripts\Runtime\` — flat domain scripts
-- `Engine\Scripts\Runtime\UI\` — flat UI
-- `Engine\Scripts\Admin\` — flat admin
+- `Engine\Runtime\` — flat domain scripts
+- `Engine\Runtime\UI\` — flat UI
+- `Engine\Admin\` — flat admin
 
 ## WinPE inject (minimal)
 
 ```text
 X:\~LiteDeploy\
-  Boot\LiteDeploy.Boot.ps1
-  Runtime\LiteDeploy.Logs.ps1
-  Runtime\LiteDeploy.Environment.ps1
-  Runtime\LiteDeploy.Hardware.ps1
+  Engine\Runtime\LiteDeploy.PE.Boot.ps1
   Config\BootConfig.json
 ```
 
@@ -58,5 +55,5 @@ Full Engine/UI come from the mapped share (`Z:\Engine\…`) or offline media `~\
 
 Unhandled throws and phase failures set deployment `Status` to `Failed` or `Cancelled`, save state, restore console, and print `[NOTICE]` / `startnet` guidance. Disk formatting starts only after a confirmed selection and valid target index. A failed format can still leave the disk partially changed.
 
-FullOS resume (specialize-staged HKLM Run → `LiteDeploy.FullOS.ps1`, HKCU console handoff on load, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z:, Interactive Probe second window) is implemented; Packages orchestration and driver application gaps remain. See [current diagrams](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [maintenance](../guides/MAINTENANCE.md) before release.
+FullOS resume (specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1`, HKCU console handoff on load, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z:, Interactive Probe second window) is implemented; Packages orchestration and driver application gaps remain. See [current diagrams](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [maintenance](../guides/MAINTENANCE.md) before release.
 

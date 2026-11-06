@@ -43,7 +43,7 @@ flowchart TD
 
 ## 3. Detailed File-by-File Changes
 
-### File 1: `Engine\Scripts\Runtime\070-Drivers\LiteDeploy.Drivers.ps1`
+### File 1: `Engine\Runtime\070-Drivers\LiteDeploy.Drivers.ps1`
 * **Function:** `Get-SystemDriverDetection`
 * **Changes:** Add optional `[psobject]$HardwareInventory = $null` parameter. When present, read manufacturer, model, and SKU from the object instead of re-querying WMI.
 * **Code:**
@@ -63,7 +63,7 @@ function Get-SystemDriverDetection {
 
 ---
 
-### File 2: `Engine\Scripts\Runtime\050-Workflow\LiteDeploy.Workflow.ps1`
+### File 2: `Engine\Runtime\050-Workflow\LiteDeploy.Workflow.ps1`
 * **Function:** `Get-LiteDeployWorkflows`
 * **Changes:** Added `[switch]$CacheOnRAM` parameter (default: `$false`).
   - **When `$CacheOnRAM` is `$false` (default)**: Directly scans and loads all workflow JSON definitions from `<ShareRoot>\WorkFlows\*.json` over SMB with zero RAM caching.
@@ -92,7 +92,7 @@ if ($CacheOnRAM -and $isWinPE -and (Test-Path -LiteralPath $ramCacheDir -PathTyp
 
 ---
 
-### File 3: `Engine\Scripts\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1`
+### File 3: `Engine\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1`
 * **Architecture:** Uses standard direct Hardware module calls (`Get-HardwareVendor`, `Get-HardwareModel`, `Get-HardwareFirmwareType`, etc.) for device identity and firmware card rendering.
 * **Driver Detection:** Calls `Get-SystemDriverDetection -ShareRoot $script:DeploymentSharePath` immediately on startup with fast sub-millisecond SMB archive validation (<1ms size check), ensuring instant window rendering without deferred timer latency.
 
@@ -132,7 +132,7 @@ Both UI phases append `[F5: Refresh]` to the window title bar to guide technicia
 If any regression or unexpected behavior occurs, rollback can be executed in under 2 minutes:
 
 ### Rollback Step 1: Remove Optional Parameter from Engine
-In `Engine\Scripts\Runtime\100-Engine\LiteDeploy.Engine.ps1` (Phase 2):
+In `Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1` (Phase 2):
 ```diff
 -$workflowResult = & $workflowScript ... -HardwareInventory $global:LiteDeployHardwareInventory ...
 +$workflowResult = & $workflowScript ... -Theme $uiTheme
@@ -142,7 +142,7 @@ In `Engine\Scripts\Runtime\100-Engine\LiteDeploy.Engine.ps1` (Phase 2):
 ### Rollback Step 2: Synchronize Share
 Run the build synchronizer to update the deployment share:
 ```powershell
-pwsh -ExecutionPolicy Bypass -File "Engine\Scripts\Admin\000-Build\LiteDeploy.Admin.Build.ps1" -Clean
+pwsh -ExecutionPolicy Bypass -File "Engine\Admin\000-Build\LiteDeploy.Admin.Build.ps1" -Clean
 ```
 
 ### Rollback Step 3: Verify Test Suite
