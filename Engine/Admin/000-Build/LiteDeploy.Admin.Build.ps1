@@ -5,10 +5,10 @@
 .DESCRIPTION
     Automates the synchronization of LiteDeploy PowerShell modules and engine components
     from the development repository structure (numbered folders) to the published share layout:
-      Engine\Scripts\Runtime\          flat domain LiteDeploy.*.ps1
-      Engine\Scripts\Runtime\UI\       Runtime UI (.ps1 / .xaml)
-      Engine\Scripts\Admin\            flat LiteDeploy.Admin.*.ps1
-      Engine\Scripts\Admin\UI\         Admin UI
+      Engine\Runtime\          flat domain LiteDeploy.*.ps1
+      Engine\Runtime\UI\       Runtime UI (.ps1 / .xaml)
+      Engine\Admin\            flat LiteDeploy.Admin.*.ps1
+      Engine\Admin\UI\         Admin UI
       Tools\                           share tools (e.g. WinPECT) from repo Tools\
     Numbered folders remain repo/dev organization only.
 
@@ -17,7 +17,7 @@
 
 .PARAMETER WinPEStagingPath
     Target root path of the mounted WinPE image (e.g. 'C:\WinPE_Build\Mount' or 'C:\WinPE_Build\Staging').
-    Copies Boot, Environment, Logs, and Hardware into the WinPE bootstrap tree.
+    Copies LiteDeploy.PE.Boot into the WinPE bootstrap tree (zero-dependency bootstrap).
 
 .PARAMETER WinPEInjectionPath
     Target subfolder path inside WinPE staging for LiteDeploy scripts.
@@ -141,15 +141,15 @@ function Write-SyncLog {
 # ==============================================================================
 
 function Get-RepoRootPath {
-    # Resolve repository root from Engine\Scripts\Admin\<component>
+    # Resolve repository root from Engine\Admin\<component>
     $cursor = $PSScriptRoot
     for ($i = 0; $i -lt 8; $i++) {
         if (-not $cursor) { break }
         $check = Resolve-Path -Path $cursor -ErrorAction SilentlyContinue
         if ($check) {
-            $engineScripts = Join-Path $check.Path "Engine\Scripts"
+            $engineDir = Join-Path $check.Path "Engine"
             $gitDir = Join-Path $check.Path ".git"
-            if ((Test-Path -LiteralPath $engineScripts) -and (Test-Path -LiteralPath $gitDir)) {
+            if ((Test-Path -LiteralPath $engineDir) -and (Test-Path -LiteralPath $gitDir)) {
                 return $check.Path
             }
         }
@@ -163,9 +163,9 @@ function Get-RepoRootPath {
 function Get-RepoComponentFiles {
     param([string]$RepoRoot)
 
-    $componentsRoot = Join-Path $RepoRoot "Engine\Scripts"
+    $componentsRoot = Join-Path $RepoRoot "Engine"
     if (-not (Test-Path -LiteralPath $componentsRoot)) {
-        throw "Engine\\Scripts directory not found at '$componentsRoot'."
+        throw "Engine directory not found at '$componentsRoot'."
     }
 
     $adminFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
@@ -222,10 +222,7 @@ function Get-RepoComponentFiles {
 
     # WinPE bootstrap payload map (structured ~LiteDeploy layout)
     $bootstrapMap = @(
-        @{ Name = "LiteDeploy.Boot.ps1";         Dest = "Boot\LiteDeploy.Boot.ps1" }
-        @{ Name = "LiteDeploy.Logs.ps1";         Dest = "Runtime\LiteDeploy.Logs.ps1" }
-        @{ Name = "LiteDeploy.Environment.ps1";  Dest = "Runtime\LiteDeploy.Environment.ps1" }
-        @{ Name = "LiteDeploy.Hardware.ps1";     Dest = "Runtime\LiteDeploy.Hardware.ps1" }
+        @{ Name = "LiteDeploy.PE.Boot.ps1";         Dest = "Engine\Runtime\LiteDeploy.PE.Boot.ps1" }
     )
     foreach ($entry in $bootstrapMap) {
         $match = @($runtimeFiles | Where-Object { $_.Name -eq $entry.Name } | Select-Object -First 1)
@@ -265,13 +262,13 @@ function Sync-DeploymentShareTarget {
     Write-SyncLog "------------------------------------------------------------------" -Level "INFO" -ForegroundColor Cyan
 
     # Published share layout (numbered folders stay in the git repo only):
-    #   Engine\Scripts\Runtime\       flat domain LiteDeploy.*.ps1
-    #   Engine\Scripts\Runtime\UI\    Runtime UI
-    #   Engine\Scripts\Admin\         flat LiteDeploy.Admin.*.ps1
-    #   Engine\Scripts\Admin\UI\      Admin UI
-    $runtimeDest = Join-Path $SharePath "Engine\Scripts\Runtime"
+    #   Engine\Runtime\       flat domain LiteDeploy.*.ps1
+    #   Engine\Runtime\UI\    Runtime UI
+    #   Engine\Admin\         flat LiteDeploy.Admin.*.ps1
+    #   Engine\Admin\UI\      Admin UI
+    $runtimeDest = Join-Path $SharePath "Engine\Runtime"
     $runtimeUiDest = Join-Path $runtimeDest "UI"
-    $adminDest = Join-Path $SharePath "Engine\Scripts\Admin"
+    $adminDest = Join-Path $SharePath "Engine\Admin"
     $adminUiDest = Join-Path $adminDest "UI"
 
     foreach ($dir in @($runtimeDest, $runtimeUiDest, $adminDest, $adminUiDest)) {
@@ -295,44 +292,35 @@ function Sync-DeploymentShareTarget {
 
     foreach ($file in $Components.RuntimeScripts) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeDest $file.Name) -Force
-        Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Scripts\Runtime\" -Level "SUCCESS" -ForegroundColor Green
+        Write-SyncLog " [RUNTIME] Copied $($file.Name) -> Engine\Runtime\" -Level "SUCCESS" -ForegroundColor Green
         $copyCount++
     }
 
-    # Compat alias: older WinPE BootInitializer launches LiteDeploy.DeploymentEngine.ps1 -BootObject ...
-    # Always publish the v2 Engine under that name (overwrite any legacy monolith copy).
-    $engineDest = Join-Path $runtimeDest "LiteDeploy.Engine.ps1"
-    $compatDest = Join-Path $runtimeDest "LiteDeploy.DeploymentEngine.ps1"
-    if (Test-Path -LiteralPath $engineDest -PathType Leaf) {
-        Copy-Item -LiteralPath $engineDest -Destination $compatDest -Force
-        Write-SyncLog " [RUNTIME] Published Engine as LiteDeploy.DeploymentEngine.ps1 (BootInitializer compat)" -Level "WARNING" -ForegroundColor Yellow
-        $copyCount++
-    }
 
     $uiScripts = if ($Components.PSObject.Properties['UiScripts']) { $Components.UiScripts } else { @() }
     foreach ($file in $uiScripts) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeUiDest $file.Name) -Force
-        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
+        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
         $copyCount++
     }
 
     $uiAssets = if ($Components.PSObject.Properties['UiAssets']) { $Components.UiAssets } else { $Components.RuntimeAssets }
     foreach ($file in $uiAssets) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runtimeUiDest $file.Name) -Force
-        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Scripts\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
+        Write-SyncLog " [UI]      Copied $($file.Name) -> Engine\Runtime\UI\" -Level "SUCCESS" -ForegroundColor Green
         $copyCount++
     }
 
     foreach ($file in $Components.AdminScripts) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $adminDest $file.Name) -Force
-        Write-SyncLog " [ADMIN]   Copied $($file.Name) -> Engine\Scripts\Admin\" -Level "SUCCESS" -ForegroundColor Green
+        Write-SyncLog " [ADMIN]   Copied $($file.Name) -> Engine\Admin\" -Level "SUCCESS" -ForegroundColor Green
         $copyCount++
     }
 
     $adminUi = if ($Components.PSObject.Properties['AdminUiScripts']) { $Components.AdminUiScripts } else { @() }
     foreach ($file in $adminUi) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $adminUiDest $file.Name) -Force
-        Write-SyncLog " [ADMIN UI] Copied $($file.Name) -> Engine\Scripts\Admin\UI\" -Level "SUCCESS" -ForegroundColor Green
+        Write-SyncLog " [ADMIN UI] Copied $($file.Name) -> Engine\Admin\UI\" -Level "SUCCESS" -ForegroundColor Green
         $copyCount++
     }
 
@@ -446,7 +434,7 @@ function Sync-WinPEStagingTarget {
             Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
-    foreach ($sub in @("Boot", "Runtime", "UI", "Config")) {
+    foreach ($sub in @("Engine\Runtime", "Config")) {
         $p = Join-Path $targetRoot $sub
         if (-not (Test-Path -LiteralPath $p)) {
             $null = New-Item -Path $p -ItemType Directory -Force
@@ -455,7 +443,7 @@ function Sync-WinPEStagingTarget {
 
     $copyCount = 0
 
-    # Structured bootstrap: Boot + Logs/Environment/Hardware only (single source of truth copies)
+    # Structured bootstrap: LiteDeploy.PE.Boot only (zero external script dependencies)
     if ($Components.PSObject.Properties['WinPEBootstrap']) {
         foreach ($entry in $Components.WinPEBootstrap) {
             $destFile = Join-Path $targetRoot $entry.DestRelative
