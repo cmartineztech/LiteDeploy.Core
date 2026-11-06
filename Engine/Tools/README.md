@@ -18,11 +18,11 @@ Upstream CLI wrappers (`New-WPCTTransfer.ps1` / `Import-WPCTTransfer.ps1`), `doc
 
 ## What gets staged onto the OS volume (before reboot)
 
-WinPE handoff copies **Runtime + Tools only** — never `Engine\Scripts\Admin`:
+WinPE handoff copies **Runtime + Tools only** — never `Engine\Admin`:
 
 ```text
 W:\~LiteDeploy\
-  Engine\Scripts\Runtime\     # Environment, Logs, State, Hardware, Packages, Engine, FullOS, …
+  Engine\Runtime\     # Environment, Logs, State, Hardware, Packages, Engine, FullOS, …
   Engine\Tools\WinPECT\
   Content\Credentials\        # CredentialTransfer.bin (encrypted package; unsealed directly in RAM)
   WorkLogs\
@@ -37,7 +37,7 @@ SetupComplete.cmd is **not** staged. There is **no** `auditUser` FullOS launch. 
 # Specialize (unattend): reg add HKLM\...\Run\LiteDeployFullOS (REG_EXPAND_SZ) when actions > 0
 # Domain Join: Orders 3–4 EnableLUA=0 + UacBypassed when no <!--AuditMode-->
 # First / later interactive logons: that Run value launches FullOS
-& 'C:\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.FullOS.ps1' `
+& 'C:\~LiteDeploy\Engine\Runtime\LiteDeploy.OS.Engine.ps1' `
     -LocalRootName '~LiteDeploy' `
     -OsDriveLetter $env:SystemDrive
 ```

@@ -158,7 +158,7 @@ Rules:
 - [ ] Implement status machine + Index + WaitingReboot anti-loop.
 - [ ] ExecutionSource Remote vs Local (stage under `C:\~LiteDeploy\Content\Packages\<id>`).
 - [ ] Orchestration lock; Clear Run + UAC restore when queue finishes or Stop-on-error.
-- [ ] Wire call after Z:/WinPECT in `LiteDeploy.FullOS.ps1` (replace “packages pending” log).
+- [ ] Wire call after Z:/WinPECT in `LiteDeploy.OS.Engine.ps1` (replace “packages pending” log).
 
 ### Phase C — Hardening
 

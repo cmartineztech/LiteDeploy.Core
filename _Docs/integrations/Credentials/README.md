@@ -53,7 +53,7 @@ flowchart TD
     Gate -->|No| OOBE["Skip FullOS Run → OOBE"]
     Gate -->|Yes| Spec["specialize: Order 2 HKLM Run<br/>+ DJ Orders 3–4 EnableLUA=0 if no Audit"]
     Spec --> Logon["Interactive logon<br/>Audit Admin or Domain Join AutoLogon"]
-    Logon --> Run["HKLM Run → LiteDeploy.FullOS.ps1"]
+    Logon --> Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
     Run --> Console["HKCU console handoff"]
     Console --> Kill["Kill sysprep.exe process"]
     Kill --> State["Load DeploymentState.json"]

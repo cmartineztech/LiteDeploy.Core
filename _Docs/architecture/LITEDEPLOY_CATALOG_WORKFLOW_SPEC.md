@@ -12,7 +12,7 @@ Related documents:
 - [LITEDEPLOY_DEPLOYMENT_PLAN.md](LITEDEPLOY_DEPLOYMENT_PLAN.md)
 - [LITEDEPLOY_DEPLOYMENT_DIAGRAM.md](LITEDEPLOY_DEPLOYMENT_DIAGRAM.md)
 - [LITEDEPLOY_PROJECT_STATUS.md](LITEDEPLOY_PROJECT_STATUS.md)
-- [Admin.Images](../../Engine/Scripts/Admin/020-Images/README.md) (OS media / catalog; numbered folder is **dev only**)
+- [Admin.Images](../../Engine/Admin/020-Images/README.md) (OS media / catalog; numbered folder is **dev only**)
 
 ## 1. Catalog relationship model
 
@@ -97,7 +97,7 @@ Display names may change without breaking references. IDs must not contain a pas
       workflow-catalog.schema.json
       deployment-profile.schema.json
     <workflow-id>.json
-  Engine\Scripts\...
+  Engine\...
 ```
 
 The initial empty share tree in this repository is [DeploymentShare](../../DeploymentShare). It uses the folder name `WorkFlows`. Catalog JSON in that tree is placeholder-only until ImportOSMedia and workflow publishing exist.
@@ -106,7 +106,7 @@ Forward-slash paths stored in JSON are repository-relative. Runtime code resolve
 
 ## 4. Operating-system catalog
 
-[`020-Images/LiteDeploy.Admin.Images.ps1`](../../Engine/Scripts/Admin/020-Images/LiteDeploy.Admin.Images.ps1) (legacy ImportOSMedia) already creates:
+[`020-Images/LiteDeploy.Admin.Images.ps1`](../../Engine/Admin/020-Images/LiteDeploy.Admin.Images.ps1) (legacy ImportOSMedia) already creates:
 
 ```text
 Content/OperatingSystems/<media-folder>/os.json

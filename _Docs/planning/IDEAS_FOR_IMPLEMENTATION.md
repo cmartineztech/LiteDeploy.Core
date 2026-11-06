@@ -100,7 +100,7 @@ flowchart TD
 ### Key Technical Implementation
 1. **Persistent Startup Task (SYSTEM)**:
    ```powershell
-   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Scripts\Runtime\LiteDeploy.FullOS.Engine.ps1'"
+   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\LiteDeploy.FullOS.Engine.ps1'"
    $trigger   = New-ScheduledTaskTrigger -AtStartup
    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_SystemEngine" -Action $action -Trigger $trigger -Principal $principal -Force
@@ -109,7 +109,7 @@ flowchart TD
 2. **SYSTEM-to-User Interactive UI Dispatch (Session 1)**:
    ```powershell
    # SYSTEM launches the WPF Progress UI inside LD_<UID>'s active desktop session
-   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Scripts\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
+   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
    $uiPrincipal = New-ScheduledTaskPrincipal -UserId "LD_$shortUid" -LogonType InteractiveToken -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_UI_Host" -Action $uiAction -Principal $uiPrincipal -Force
    Start-ScheduledTask -TaskName "LiteDeploy_UI_Host"
@@ -184,7 +184,7 @@ For standard workflows requiring interactive desktop sessions (FullOS Phase 6 fo
 
 ## 5. `SetupComplete.cmd` Orchestration Trigger
 
-> **Implemented (entry):** staged from WinPE; calls `LiteDeploy.Engine.ps1 -ResumeFullOS` (same Engine, not a separate FullOS bootstrap). Remaining: power plan / GPO immunization / Packages from that entry.
+> **Implemented (entry):** staged from WinPE; calls `LiteDeploy.OS.Engine.ps1` (same Engine, not a separate FullOS bootstrap). Remaining: power plan / GPO immunization / Packages from that entry.
 
 ### Concept
 Instead of injecting complex post-install command scripts into `unattend.xml` (`<FirstLogonCommands>`), stage an offline `SetupComplete.cmd` directly in WinPE.
@@ -193,7 +193,7 @@ Instead of injecting complex post-install command scripts into `unattend.xml` (`
 - **Target Path:** `W:\Windows\Setup\Scripts\SetupComplete.cmd`
 - **Execution Context:** Native `NT AUTHORITY\SYSTEM` rights before user logon.
 - **Responsibilities (current):**
-  - Launch `LiteDeploy.Engine.ps1 -ResumeFullOS` (tee to `WorkLogs\SetupComplete.log`).
+  - Launch `LiteDeploy.OS.Engine.ps1` (tee to `WorkLogs\SetupComplete.log`).
   - Engine: WinPECT import, Network Z: reconnect, log mirror, register `LiteDeploy_SystemEngine`.
 - **Still planned from this entry:** High Performance power plan, GPO immunization, Packages orchestration.
 
@@ -471,4 +471,20 @@ A small **JSONNormalizer** helper (PS 5.1 / WinPE, no Newtonsoft):
 6. Compare with existing helpers like `Get-LiteDeployStateProperty` — avoid three parallel “safe get” styles.
 
 **Out of scope until then:** no new Runtime module, no bulk delete of `PSObject.Properties[` checks, no change to State MaxDepth.
+
+---
+
+## 14. Driver picker as part of Workflow Selection
+
+> **Status:** Idea only. Do **not** fold the picker into Workflow Selection until explicitly scheduled. Live path stays a separate dialog: `LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1`, opened from Browse.
+
+### Why it might feel faster
+
+Each Browse builds a new WPF window, theme brushes, and drive tree, then shows it. The share is already known when Workflow Selection is on screen. Building that tree once inside the same window (panel or overlay) would skip constructing the dialog on every click. `Z:` stays out of the first paint and is listed only when `DeploymentShare (Z:)` is expanded — that deferral is already in the separate picker and must stay.
+
+### Shape if scheduled
+
+- Keep the same selection rules: masked share is not a path, vendor folders under `Content\Drivers` are not selectable, a deeper folder must contain `.inf`, `.sys`, or `.cat`, cancel returns nothing.
+- Workflow Selection still stores the result as `Custom folder: ...`.
+- Do not probe `Z:` (`IsReady`, volume label, `GetFullPath` of `Content\Drivers`) until that node expands.
 
