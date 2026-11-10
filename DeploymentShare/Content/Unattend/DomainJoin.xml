@@ -80,30 +80,13 @@
         <HideLocalAccountScreen>true</HideLocalAccountScreen>
         <ProtectYourPC>3</ProtectYourPC>
       </OOBE>
+
       <UserAccounts>
         <LocalAccounts>
-          <LocalAccount wcm:action="add">
-            <Name>user</Name>
-            <DisplayName>user</DisplayName>
-            <Group>Administrators</Group>
-            <Password>
-              <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
-              <PlainText>false</PlainText>
-            </Password>
-          </LocalAccount>
+          <!--LocalServiceAccount-->
         </LocalAccounts>
       </UserAccounts>
-      <!--UserAccounts-->
-      <!-- AutoLogon: local test admin "user". HKLM Run FullOS (if actions>0) starts for whatever interactive account signs in (this user, built-in Admin, etc.). No AuditMode on Domain Join. -->
-      <AutoLogon>
-        <Enabled>true</Enabled>
-        <Username>user</Username>
-        <LogonCount>999</LogonCount>
-        <Password>
-          <Value>cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA=</Value>
-          <PlainText>false</PlainText>
-        </Password>
-      </AutoLogon>
+      <!--AutoLogon-->
     </component>
   </settings>
 </unattend>

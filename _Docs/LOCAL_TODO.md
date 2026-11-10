@@ -39,6 +39,7 @@
 - [x] **WorkflowTag.Actions gating:** selection Tag carries `Actions`; Image gates FullOS Run + Audit reseal on `actions.Count > 0`.
 - [x] **WinPECT robustness (lab):** Audit Administrator FullOS unseals DeploymentShare secret in RAM and reconnects `Z:` successfully (elevated context).
 - [x] **Domain Join AutoLogon path (non-Audit):** temporary `EnableLUA=0` + `UacBypassed` marker when template has no `<!--AuditMode-->` and actions > 0; FullOS cleanup restores `EnableLUA=1` via `Clear-LiteDeployFullOSRunKey` / `Restore-LiteDeployFullOSUacBypass`.
+- [x] **Dynamic Ephemeral Service Account Injection (`LD-<UID>`):** Template placeholders `<!--LocalServiceAccount-->` and `<!--AutoLogon-->` in `DomainJoin.xml` resolved dynamically by `LiteDeploy.Image.ps1` using Session `DeploymentUid` (e.g. `LD-261110-A3F1`) when `actions > 0`; cleared when `actions == 0`.
 
 ---
 
@@ -56,6 +57,7 @@
 
 ## 3. Next Session: Console & Terminal UX Modernization
 
+- [ ] **UI Component Consolidation (Embedded XAML):** Reduce file footprint across `Engine\Runtime\100-UI` and published `DeploymentShare\Engine\Runtime\UI` by embedding XAML markup directly inside host PowerShell scripts (e.g. here-strings), eliminating separate sidecar `.xaml` files for `HardwarePrecheck`, `WorkflowSelection`, `Progress`, and `DriverPicker`.
 - [ ] **Console wrap / host lag:** FullOS + Probe windows can slow under heavy colored log + word-wrap; consider minimized Probe, file-first logging, or narrower banner output.
 - [ ] **In-Place Driver Progress Counter:** Replace 400+ line terminal floods with a dynamic single-line carriage return counter (`[DRIVERS] Installing: 285/441 (65%) - Intel_I2C.inf`).
 - [ ] **Modern Unicode Box-Art Banners:** Add styled framing for phase headers matching active Dark/Light theme tokens.
@@ -97,8 +99,8 @@
   - [ ] Set High Performance (`powercfg`) & suppress screen lock / standby.
   - [ ] Temporarily block background GPO refresh (`DisableGPO = 1`) to prevent domain policies from breaking AutoLogon.
 - [ ] **Ephemeral Deployment Service Account (`LD_<UID>`):**
-  - [ ] Generate dynamic random GUID password in WinPE with salt.
-  - [ ] Inject temporary admin account with `AutoLogonCount = 999` in `unattend.xml`.
+  - [x] Inject temporary admin account `LD-<UID>` with `LogonCount = 999` in `unattend.xml` (staged dynamically by Image when `actions > 0`).
+  - [ ] **Dynamic Random Base64 Password:** Replace static lab base64 password (`passwordPassword`) with a cryptographically secure random password generated in WinPE, encoded to UTF-16LE Base64 with unattend salt for `<PlainText>false</PlainText>`.
   - [ ] Launch interactive desktop session (Session 1) for user-facing application installers and full-screen WPF progress display.
   - [ ] Implement Pre-Reboot Winlogon refresh hook to guarantee survival across intermediate restarts.
   - [ ] Implement automated teardown: delete local account, purge user profile in `C:\Users`, clean Winlogon registry keys, restore GPO, run `gpupdate /force`, and scrub Panther artifacts.
@@ -132,6 +134,7 @@
 
 ## 6. Future analysis (ideas only — do not implement yet)
 
+- [ ] **Single-File UI Components (Embed XAML in PS1):** Evaluate unifying UI scripts and XAML layout files to reduce packaging complexity and file count in the bootstrap and runtime directories.
 - [ ] **JSONNormalizer / schema merge** vs current StrictMode `PSObject.Properties[...]` probing in catalog/workflow/BootConfig — see [IDEAS §13](planning/IDEAS_FOR_IMPLEMENTATION.md#13-future-analysis-json-schema-merge-jsonnormalizer-vs-defensive-property-probing). Keep State serializer (depth 8 / JSON depth 10) as-is.
 - [x] **Repo source layout:** removed untracked flat `Engine\Runtime|Admin\LiteDeploy*.ps1` (+ `UI\`) mirrors; `.gitignore` blocks them. Edit numbered folders only; publish flat to `DeploymentShare` via Admin.Build.
 - [x] **`_Templates` / `_Tests`:** underscored root folders for blueprints/inventory and architecture smoke tests (not part of Admin.Build publish).

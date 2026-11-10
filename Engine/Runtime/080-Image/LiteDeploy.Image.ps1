@@ -946,6 +946,82 @@ function New-LiteDeployUnattendXml {
         }
     }
 
+    # Resolve Deployment UID from WorkflowData, BootCtx, or Session state.
+    $depUid = ""
+    if ($WorkflowData -and $WorkflowData.PSObject.Properties['DeploymentUid'] -and $WorkflowData.DeploymentUid) {
+        $depUid = [string]$WorkflowData.DeploymentUid
+    }
+    elseif ($BootCtx -and $BootCtx.PSObject.Properties['DeploymentUid'] -and $BootCtx.DeploymentUid) {
+        $depUid = [string]$BootCtx.DeploymentUid
+    }
+    elseif (Get-Command Get-LiteDeployState -ErrorAction SilentlyContinue) {
+        $liveState = Get-LiteDeployState
+        if ($liveState -and $liveState.PSObject.Properties['DeploymentUid'] -and $liveState.DeploymentUid) {
+            $depUid = [string]$liveState.DeploymentUid
+        }
+    }
+    elseif (Get-Variable -Name 'LiteDeployDeployment' -Scope Global -ValueOnly -ErrorAction SilentlyContinue) {
+        $liveObj = $global:LiteDeployDeployment
+        if ($liveObj -and $liveObj.PSObject.Properties['DeploymentUid'] -and $liveObj.DeploymentUid) {
+            $depUid = [string]$liveObj.DeploymentUid
+        }
+    }
+    elseif (Get-Variable -Name 'LiteDeployDeploymentUid' -Scope Global -ValueOnly -ErrorAction SilentlyContinue) {
+        $depUid = [string]$global:LiteDeployDeploymentUid
+    }
+
+    # oobeSystem LocalServiceAccount (Domain Join / non-Audit only; when actions > 0).
+    # Stages ephemeral admin account matching Deployment UID: LD-<DeploymentUid>.
+    $serviceAccountName = if (-not [string]::IsNullOrWhiteSpace($depUid)) { "LD-$depUid" } else { "LD-Service" }
+    $b64Password = "cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA="
+
+    $localServiceAccountComponent = @"
+          <LocalAccount wcm:action="add">
+            <Name>$serviceAccountName</Name>
+            <DisplayName>$serviceAccountName</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>$b64Password</Value>
+              <PlainText>false</PlainText>
+            </Password>
+          </LocalAccount>
+"@
+    if ($generatedContent -match '<!--LocalServiceAccount-->') {
+        if ($hasFullOsActions) {
+            $generatedContent = $generatedContent -replace '<!--LocalServiceAccount-->', $localServiceAccountComponent
+            Write-ComponentLog "Staged LocalServiceAccount '$serviceAccountName' (workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
+        }
+        else {
+            $generatedContent = $generatedContent -replace '<!--LocalServiceAccount-->', ''
+            $generatedContent = $generatedContent -replace '(?s)<UserAccounts>\s*<LocalAccounts>\s*</LocalAccounts>\s*</UserAccounts>', ''
+            Write-ComponentLog "Cleared <!--LocalServiceAccount--> (workflow actions count is 0)." -Level "INFO"
+        }
+    }
+
+    # oobeSystem AutoLogon (Domain Join / non-Audit only; when actions > 0).
+    # Configures AutoLogon for the staged LD-<DeploymentUid> account.
+    $autoLogonComponent = @"
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>$serviceAccountName</Username>
+        <LogonCount>999</LogonCount>
+        <Password>
+          <Value>$b64Password</Value>
+          <PlainText>false</PlainText>
+        </Password>
+      </AutoLogon>
+"@
+    if ($generatedContent -match '<!--AutoLogon-->') {
+        if ($hasFullOsActions) {
+            $generatedContent = $generatedContent -replace '<!--AutoLogon-->', $autoLogonComponent
+            Write-ComponentLog "Staged AutoLogon for '$serviceAccountName' (workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
+        }
+        else {
+            $generatedContent = $generatedContent -replace '<!--AutoLogon-->', ''
+            Write-ComponentLog "Cleared <!--AutoLogon--> (workflow actions count is 0)." -Level "INFO"
+        }
+    }
+
     # Validate generated XML syntax
     try {
         [xml]$testXml = $generatedContent

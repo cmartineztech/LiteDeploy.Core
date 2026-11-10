@@ -267,6 +267,19 @@ foreach ($engineTarget in $engineTargets) {
             if ($null -eq $domainNode -or $domainNode.InnerText -cne 'corp.example.com') { $mapped = $false }
             if ($null -eq $ouNode -or $ouNode.InnerText -cne 'OU=Workstations,DC=corp,DC=example,DC=com') { $mapped = $false }
 
+            # Verify LocalServiceAccount and AutoLogon match Deployment UID on DomainJoin.xml
+            $testUid = '261110-A3F1'
+            $wfWithActions = [pscustomobject]@{
+                DeploymentUid = $testUid
+                Actions       = @([pscustomobject]@{ id = 'action01' })
+            }
+            $null = New-LiteDeployUnattendXml -TemplateFile $domainTmplPath -TargetOutputFile $answer -ConfigObj $domainConfig -WorkflowData $wfWithActions
+            [xml]$djActionsXml = Get-Content $answer -Raw
+            $localAcctNode = $djActionsXml.SelectSingleNode("//*[local-name()='LocalAccount']/*[local-name()='Name']")
+            $autoLogonUserNode = $djActionsXml.SelectSingleNode("//*[local-name()='AutoLogon']/*[local-name()='Username']")
+            if ($null -eq $localAcctNode -or $localAcctNode.InnerText -cne "LD-$testUid") { $mapped = $false }
+            if ($null -eq $autoLogonUserNode -or $autoLogonUserNode.InnerText -cne "LD-$testUid") { $mapped = $false }
+
             [pscustomobject]@{ Omitted = $optionalClean; Preserved = $allPreserved; Mapped = $mapped; IdentityPolicies = $identityPolicies }
         }
         Assert-True $registrationChecks.Omitted "Blank registration omitted from state and answer file ($($engineTarget.Mode))"
