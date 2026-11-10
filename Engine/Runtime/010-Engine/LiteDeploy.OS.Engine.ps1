@@ -218,6 +218,8 @@ function Collect-LiteDeployFullOSPantherLogs {
     if ([string]::IsNullOrWhiteSpace($LocalLogDir)) {
         $localRoot = if (Get-Variable -Name LiteDeployLocalRoot -Scope Global -ValueOnly -ErrorAction SilentlyContinue) {
             $global:LiteDeployLocalRoot
+        } elseif (Get-Command Get-LiteDeployRoot -ErrorAction SilentlyContinue) {
+            Get-LiteDeployRoot
         } else {
             $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
             Join-Path $sysDrive "~LiteDeploy"

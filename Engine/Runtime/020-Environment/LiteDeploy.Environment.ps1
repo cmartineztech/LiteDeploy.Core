@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Environment - explicit path settings, runtime detection, share connectivity, and process execution.
 
@@ -100,6 +100,7 @@ $global:LiteDeployPathSettings = [pscustomobject]@{
         Progress = 'UI\LiteDeploy.UI.Progress.ps1'
         'UI.Progress' = 'UI\LiteDeploy.UI.Progress.ps1'
         AdminDrivers = '..\Admin\LiteDeploy.Admin.Drivers.ps1'
+        AdminImages = '..\Admin\LiteDeploy.Admin.Images.ps1'
     }
     DevelopmentFolders = @{
         Environment = '020-Environment'; Boot = '000-Boot'; 'PE.Boot' = '000-Boot'; Engine = '010-Engine'; 'PE.Engine' = '010-Engine'; FullOS = '010-Engine'; 'OS.Engine' = '010-Engine'
@@ -112,6 +113,7 @@ $global:LiteDeployPathSettings = [pscustomobject]@{
         DriverPicker = '100-UI\WorkflowSelection'; 'UI.DriverPicker' = '100-UI\WorkflowSelection'; DriverPickerView = '100-UI\WorkflowSelection'
         Progress = '100-UI\Progress'; 'UI.Progress' = '100-UI\Progress'
         AdminDrivers = '..\Admin\030-Drivers'
+        AdminImages = '..\Admin\020-Images'
     }
 }
 # File-only log helper: uses Session when loaded, otherwise stays silent (verbose only).

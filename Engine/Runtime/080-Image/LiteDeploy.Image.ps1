@@ -405,12 +405,13 @@ function Get-LiteDeployImageDeploymentRoot {
         }
     }
 
-    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    if ($scriptDir) {
-        $candidateRoot = Join-Path $scriptDir "..\..\..\..\DeploymentShare"
-        if (Test-Path -LiteralPath $candidateRoot) {
-            return (Resolve-Path -LiteralPath $candidateRoot).Path
-        }
+    if (Get-Command Get-LiteDeployRoot -ErrorAction SilentlyContinue) {
+        $root = Get-LiteDeployRoot -ErrorAction SilentlyContinue
+        if ($root -and (Test-Path -LiteralPath $root)) { return (Resolve-Path -LiteralPath $root).Path }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot) -and (Test-Path -LiteralPath $env:LiteDeployShareRoot)) {
+        return (Resolve-Path -LiteralPath $env:LiteDeployShareRoot).Path
     }
 
     return (Get-Location).Path

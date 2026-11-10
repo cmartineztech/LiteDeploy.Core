@@ -554,22 +554,16 @@ function Show-Msg {
 }
 
 function Get-ImportScriptPath {
-    $adminRoot = Split-Path -Parent $PSScriptRoot
-    $candidates = @(
-        (Join-Path $PSScriptRoot "LiteDeploy.Admin.Images.ps1"),
-        (Join-Path $adminRoot "LiteDeploy.Admin.Images.ps1"),
-        (Join-Path $adminRoot "020-Images\LiteDeploy.Admin.Images.ps1"),
-        (Join-Path (Get-Location).Path "Engine\Admin\020-Images\LiteDeploy.Admin.Images.ps1"),
-        (Join-Path (Get-Location).Path "LiteDeploy.Admin.Images.ps1"),
-        (Join-Path $PSScriptRoot "LiteDeploy.ImportOSMedia.ps1"),
-        (Join-Path (Get-Location).Path "LiteDeploy.ImportOSMedia.ps1"),
-        (Join-Path $adminRoot "LiteDeploy.ImportOSMedia.ps1"),
-        (Join-Path $PSScriptRoot "Import-OSMedia.ps1")
-    )
-    foreach ($cand in $candidates) {
-        if (Test-Path -LiteralPath $cand -PathType Leaf) { return (Resolve-Path $cand).Path }
+    if (Get-Command Get-LiteDeployComponentPath -ErrorAction SilentlyContinue) {
+        $path = Get-LiteDeployComponentPath -Name AdminImages -ErrorAction SilentlyContinue
+        if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) { return (Resolve-Path $path).Path }
     }
-    return (Join-Path $adminRoot "020-Images\LiteDeploy.Admin.Images.ps1")
+    $adminRoot = Split-Path -Parent $PSScriptRoot
+    $devPath = Join-Path $adminRoot "020-Images\LiteDeploy.Admin.Images.ps1"
+    if (Test-Path -LiteralPath $devPath -PathType Leaf) { return (Resolve-Path $devPath).Path }
+    $pubPath = Join-Path $adminRoot "LiteDeploy.Admin.Images.ps1"
+    if (Test-Path -LiteralPath $pubPath -PathType Leaf) { return (Resolve-Path $pubPath).Path }
+    throw "LiteDeploy.Admin.Images.ps1 could not be located in $adminRoot"
 }
 
 function Clear-ImportForm {
@@ -864,11 +858,12 @@ $dgOsCatalog.add_MouseDoubleClick({
 })
 
 # Initial Share Path Resolution
-if (Test-Path $DefaultDeploymentShare) { $txtDeploymentShare.Text = (Resolve-Path $DefaultDeploymentShare).Path }
-else {
-    $parentShare = Split-Path -Parent $PSScriptRoot
-    if (Test-Path (Join-Path $parentShare "Content")) { $txtDeploymentShare.Text = (Resolve-Path $parentShare).Path }
-    else { $txtDeploymentShare.Text = (Resolve-Path $PSScriptRoot).Path }
+if (-not [string]::IsNullOrWhiteSpace($DefaultDeploymentShare) -and (Test-Path -LiteralPath $DefaultDeploymentShare)) {
+    $txtDeploymentShare.Text = (Resolve-Path -LiteralPath $DefaultDeploymentShare).Path
+} elseif (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot) -and (Test-Path -LiteralPath $env:LiteDeployShareRoot)) {
+    $txtDeploymentShare.Text = (Resolve-Path -LiteralPath $env:LiteDeployShareRoot).Path
+} else {
+    $txtDeploymentShare.Text = ""
 }
 
 Update-ImportButtonState

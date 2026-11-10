@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Workflow - workflow catalog, validation, and plan resolution (business logic only; no UI).
 
@@ -276,6 +276,10 @@ function Resolve-LiteDeployWorkflowShareRoot {
             }
             return $drive
         }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot)) {
+        return $env:LiteDeployShareRoot.Trim().TrimEnd('\')
     }
 
     return $global:LiteDeployWorkflowDefaultShareRoot

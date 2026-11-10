@@ -102,19 +102,6 @@ function Resolve-LiteDeployDriverShareRoot {
         return [IO.Path]::GetFullPath($env:LiteDeployShareRoot.Trim().TrimEnd('\', '/'))
     }
 
-    # Walk up from this script looking for a share root (Content + Engine).
-    $probe = $ScriptRoot
-    for ($i = 0; $i -lt 8 -and $probe; $i++) {
-        $content = Join-Path $probe 'Content'
-        $engine  = Join-Path $probe 'Engine'
-        if ((Test-Path -LiteralPath $content) -and (Test-Path -LiteralPath $engine)) {
-            return [IO.Path]::GetFullPath($probe)
-        }
-        $parent = Split-Path -Parent $probe
-        if (-not $parent -or $parent -eq $probe) { break }
-        $probe = $parent
-    }
-
     return $null
 }
 

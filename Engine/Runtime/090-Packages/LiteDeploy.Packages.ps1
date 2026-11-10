@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Packages - package catalog, validation, staging, and execution (architecture v2).
 
@@ -310,6 +310,10 @@ function Resolve-LiteDeployPackageShareRoot {
             }
             return $drive
         }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot)) {
+        return $env:LiteDeployShareRoot.Trim().TrimEnd('\')
     }
 
     return $global:LiteDeployPackageDefaultShareRoot
