@@ -42,7 +42,7 @@ How LiteDeploy combines **DeployVault** (server-side network vault) and **WinPEC
   │  - Network: New-SmbMapping reconnects Z: (EnableLinkedConnections)     │
   │  - Mirror WorkLogs → Z:\WorkLogs\Deployments\<UID>                     │
   │  - Re-arm HKLM\...\Run\LiteDeployFullOS for package reboots            │
-  │  - Start Interactive Probe in a second PowerShell window               │
+  │  - Run interactive console monitor in Session 1                        │
   └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,7 +52,6 @@ sequenceDiagram
     participant Disk as OS volume ~LiteDeploy
     participant Reg as Offline SOFTWARE hive
     participant Admin as LiteDeploy.OS.Engine.ps1
-    participant Probe as InteractiveProbe window
 
     Note over WinPE: In-memory PSCredential (DeploymentShare / SecretMap)
     WinPE->>Disk: Export-LiteDeployWinPECTCredentials → Content\Credentials\CredentialTransfer.bin
@@ -67,7 +66,7 @@ sequenceDiagram
     Admin->>Disk: Decrypt package in RAM → PSCredential
     Admin->>Admin: New-SmbMapping Z: (EnableLinkedConnections)
     Admin->>Admin: Re-arm HKLM Run LiteDeployFullOS
-    Admin->>Probe: Start-Process second window probe
+    Admin->>Admin: Host interactive technician console
     Admin->>Admin: Mirror logs; packages planned; clear Run + restore UAC on finish
 ```
 
@@ -89,7 +88,7 @@ sequenceDiagram
 | **DeployVault** | Share `Vault\` | Persistent encrypted secrets (Domain Join, etc.). Fetch into `$global:LiteDeploySecretMap` (wiring pending). |
 | **WinPECT** (`Engine\Tools\WinPECT\`) | Staged on OS volume | Packages in-memory secrets in WinPE; FullOS unseals in RAM. |
 | **Engine WinPE handoff** | `Complete-LiteDeployWinPEHandoff` | Stages Runtime/Tools; calls `Export-LiteDeployWinPECTCredentials`. |
-| **FullOS** | `LiteDeploy.OS.Engine.ps1` | HKLM Run first entry (specialize-staged); HKCU console handoff on load; re-arm for resume; Z: reconnect; probe window. |
+| **FullOS** | `LiteDeploy.OS.Engine.ps1` | HKLM Run first entry (specialize-staged); HKCU console handoff on load; re-arm for resume; Z: reconnect; console monitor. |
 
 Paths (LiteDeploy defaults):
 
@@ -114,7 +113,7 @@ specialize: reg add HKLM Run LiteDeployFullOS (when actions > 0)
   → LiteDeploy.OS.Engine.ps1
       → kill sysprep.exe
       → re-arm HKLM Run LiteDeployFullOS
-      → Start-LiteDeployFullOSInteractiveProbe (second window)
+      → Start FullOS console monitor
 ```
 
 Secrets are consumed via `Get-LiteDeployFullOSSecret` / `Read-WPCTCredentialTransfer` in memory (interactive admin context).

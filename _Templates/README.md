@@ -71,10 +71,9 @@ From the repository root:
 .\_Templates\Get-LiteDeployComponentInventory.ps1 | Format-Table -AutoSize
 ```
 
-The scanner skips `Test-*`, `*.Template.*`, and `*InteractiveProbe*` (interactive-only script
-without a `-Metadata` fast-exit). Architecture tests under `_Tests\` are outside
+The scanner skips `Test-*` and `*.Template.*`. Architecture tests under `_Tests\` are outside
 `Engine` and are not scanned.
 
-**Current baseline (2026-10-15):** 28 components with metadata (Admin 11 + Runtime 17).
+**Current baseline:** 26 components with metadata (Admin 11 + Runtime 15).
 
 Related: [architecture smoke tests](../_Tests/README.md), [component guide](../_Docs/COMPONENT_GUIDE.md).

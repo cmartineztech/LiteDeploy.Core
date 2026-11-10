@@ -134,8 +134,8 @@ stateDiagram-v2
             UnsealSecretsToRAM --> SkipShare: [MediaMode]
             ConnectDeploymentShare --> LoadPersistedState
             SkipShare --> LoadPersistedState
-            LoadPersistedState --> LaunchInteractiveProbe
-            LaunchInteractiveProbe --> [*]
+            LoadPersistedState --> InitConsoleMonitoring
+            InitConsoleMonitoring --> [*]
         }
 
         FullOSInit --> ActionOrchestrator: INIT_SUCCESS
@@ -342,4 +342,4 @@ When reviewing this proposed alternative against the current diagram:
 - [ ] Does the hierarchical grouping of **WinPE**, **Specialize**, and **FullOS** make runtime boundaries easier to understand for engineers?
 - [ ] Are the conditions for bypassing FullOS (`actions.Count == 0` for Intune Ready) sufficiently clear in the Staging gate?
 - [ ] Does the Reboot Survival loop in §2.2 accurately reflect the planned package orchestrator behavior?
-- [ ] Should transition guards be codified directly into `LiteDeploy.State.ps1` via a state transition validator?
+- [ ] Should transition guards be codified directly into `LiteDeploy.Session.ps1` via a state transition validator?

@@ -9,7 +9,7 @@ Numbered folders under `Engine\Runtime\` and `Engine\Admin\` exist **only for de
 
 | Layer | Path | Purpose |
 | :--- | :--- | :--- |
-| Dev / git | `Engine\Runtime\<NNN-*>\` + `110-UI\` | Repo organization only |
+| Dev / git | `Engine\Runtime\<NNN-*>\` + `100-UI\` | Repo organization only |
 | Dev / git | `Engine\Admin\<NNN-*>\` + `090-UI\` | Repo organization only |
 | Published | `Engine\Runtime\*.ps1` | Flat domain scripts |
 | Published | `Engine\Runtime\UI\` | Runtime UI |
@@ -83,8 +83,7 @@ startnet
 | :--- | :--- |
 | Theme | `BootConfig.Ui.Theme` (`Light`\|`Dark`) via `Get-LiteDeployUiTheme`; Engine passes `-Theme` to all UI |
 | Progress | Separate process; polls RAM memory-map `Local\LiteDeploy.DeploymentState` then file; `-WinPE` for layout |
-| State | In-memory `$global:LiteDeployDeployment` + file + RAM map + share + OS volume |
-| Logs | Append CMTrace; mirror to RAM, share `RemoteLogDir`, and `OfflineOsLogDir` when present |
+| Session | DeploymentState + RAM IPC + CMTrace logging + UNC share resolution + artifact sync |
 | Credentials | `PSCredential` / `SecureString` only; never on process command lines |
 
 ---
@@ -94,17 +93,16 @@ startnet
 | # | Id | File | Single responsibility |
 | ---: | :--- | :--- | :--- |
 | 000 | Boot | `LiteDeploy.PE.Boot.ps1` | Parent STA shell; source discovery; share mount; BootObject; hand off to Engine |
-| 010 | Logs | `LiteDeploy.Logs.ps1` | CMTrace + mirrors (local / share / OS volume when enabled) |
+| 010 | Engine | `LiteDeploy.PE.Engine.ps1` / `LiteDeploy.OS.Engine.ps1` | WinPE deployment pipeline orchestrator & FullOS post-reboot resume engine |
 | 020 | Environment | `LiteDeploy.Environment.ps1` | **Normalize environment**; named path map; content path join; process helper; theme read |
-| 030 | Hardware | `LiteDeploy.Hardware.ps1` | Local inventory / LiteDeploy readiness facts (not Setup LabConfig) |
-| 040 | State | `LiteDeploy.State.ps1` | DeploymentState + RAM IPC; credential filtering |
+| 030 | Session | `LiteDeploy.Session.ps1` | DeploymentState, RAM IPC, CMTrace logging, share UNC pathing, and verified log/artifact sync |
+| 040 | Hardware | `LiteDeploy.Hardware.ps1` | Local inventory / LiteDeploy readiness facts (not Setup LabConfig) |
 | 050 | Workflow | `LiteDeploy.Workflow.ps1` | Workflow/OS catalog domain (UI must not fork a second copy long-term) |
 | 060 | Disk | `LiteDeploy.Disk.ps1` | Partition/format only with `-ConfirmDestroy` |
 | 070 | Drivers | `LiteDeploy.Drivers.ps1` | Detect / stage packs; Image injects offline when engine is DISM |
 | 080 | Image | `LiteDeploy.Image.ps1` | `setup.exe` / `dism.exe` apply + unattend; Setup LabConfig when configured |
 | 090 | Packages | `LiteDeploy.Packages.ps1` | Primarily FullOS / later |
-| 100 | Engine | `LiteDeploy.PE.Engine.ps1` | Orchestrator: required names, phases, result gates |
-| 110 | UI.* | under `110-UI\` → publish `Engine\Runtime\UI\` | Precheck, WorkflowSelection, Progress, Theme, HostShell |
+| 100 | UI.* | under `100-UI\` → publish `Engine\Runtime\UI\` | Precheck, WorkflowSelection, Progress, Theme, HostShell |
 
 **Separation reminders**
 
@@ -135,15 +133,15 @@ Admin may call Runtime helpers. Runtime never depends on Admin.
 ## Load order
 
 ```text
-Boot: Environment → Logs → Hardware
-Engine: verify requirements → reuse/load Logs, Hardware, State, Drivers, UI.HostShell
+Boot: Environment → Session → Hardware
+Engine: verify requirements → reuse/load Session, Hardware, Drivers, UI.HostShell
 Disk and Image execute only in their phases. Workflow and Packages are not imported.
 UI hosts are invoked by Engine (not permanently loaded into the domain set).
 ```
 
 ## Size targets
 
-Aim below 1,000 lines per non-UI component. Keep UI or complex cohesive components together when justified. Review Engine, Image, Hardware, State, Workflow, Packages and Admin.Drivers against this target; line counts change and are not a release guarantee.
+Aim below 1,000 lines per non-UI component. Keep UI or complex cohesive components together when justified. Review Engine, Image, Hardware, Session, Workflow, Packages and Admin.Drivers against this target; line counts change and are not a release guarantee.
 
 ## Known gaps (honest)
 

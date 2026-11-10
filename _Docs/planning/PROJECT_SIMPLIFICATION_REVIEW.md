@@ -37,7 +37,7 @@ Keep numbered folders as the editable source for the first cleanup. Generate fla
 
 ### 2. Declare Workflow explicitly and remove UI/domain duplication
 
-Engine's WinPE requirements at `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1:95` omit Workflow. Selection receives that requirements object as RuntimeFiles. In `Runtime/110-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1:126`, the UI then falls back to a flat Workflow script beneath DeploymentShare when no Workflow path is supplied. Source execution can consequently combine development UI with published domain code, and Engine validation does not check this dependency.
+Engine's WinPE requirements at `Runtime/010-Engine/LiteDeploy.PE.Engine.ps1` omit Workflow. Selection receives that requirements object as RuntimeFiles. In `Runtime/100-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1`, the UI then falls back to a flat Workflow script beneath DeploymentShare when no Workflow path is supplied. Source execution can consequently combine development UI with published domain code, and Engine validation does not check this dependency.
 
 The UI also redefines domain functions already supplied by Workflow: catalog loading, catalog date text, selection result creation, JSON path determination, JSON serialization, and JSON validation. These implementations are not all interchangeable. For example, the UI result constructor at line 376 includes effective BootConfig, whereas the Workflow constructor at `Runtime/050-Workflow/LiteDeploy.Workflow.ps1:742` has a different parameter/result contract.
 
@@ -59,7 +59,7 @@ Implement the documented overwrite choice in one small copy helper, or deliberat
 
 ### 5. Shorten the orchestrator while preserving its visible sequence
 
-`Start-LiteDeployPipeline` at `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1:819` spans 598 lines. Boot's configuration/bootstrap function spans 306 lines, and FullOS's resume function spans 306 lines. These mix validation, state mutations, UI/process management, result mapping, logging, and phase execution.
+`Start-LiteDeployPipeline` at `Runtime/010-Engine/LiteDeploy.PE.Engine.ps1` spans 598 lines. Boot's configuration/bootstrap function spans 306 lines, and FullOS's resume function spans 306 lines. These mix validation, state mutations, UI/process management, result mapping, logging, and phase execution.
 
 Extract a few cohesive phase functions inside the existing components: precheck/selection, disk execution, selected-driver staging, imaging, and handoff. Keep their order explicit in the main function. A shared failure-state helper can replace repeated failure/error/end-time/save sequences, provided it preserves each cancellation and failure contract.
 
@@ -79,7 +79,7 @@ State and Progress also have separate state-to-display readers. Their phase maps
 
 ### 7. Clarify implemented functionality before pruning FullOS compatibility
 
-`Runtime/100-Engine/LiteDeploy.OS.Engine.ps1` explicitly logs that package orchestration is pending. The function loads Packages and establishes resume infrastructure, but does not call Install-LiteDeployPackage/Invoke-LiteDeployPackage in a package loop. README lines 71 and 122 suggest a package loop and package-reboot behavior that are not implemented by this FullOS path.
+`Runtime/010-Engine/LiteDeploy.OS.Engine.ps1` explicitly logs that package orchestration is pending. The function loads Packages and establishes resume infrastructure, but does not call Install-LiteDeployPackage/Invoke-LiteDeployPackage in a package loop. README lines 71 and 122 suggest a package loop and package-reboot behavior that are not implemented by this FullOS path.
 
 Separate the documented status of package execution helpers, scheduled resume infrastructure, and automatic package sequencing. Building the missing sequencing is feature work, not cleanup.
 

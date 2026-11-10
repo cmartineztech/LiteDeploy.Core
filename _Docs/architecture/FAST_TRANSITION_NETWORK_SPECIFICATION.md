@@ -92,7 +92,7 @@ if ($CacheOnRAM -and $isWinPE -and (Test-Path -LiteralPath $ramCacheDir -PathTyp
 
 ---
 
-### File 3: `Engine\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1`
+### File 3: `Engine\Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1`
 * **Architecture:** Uses standard direct Hardware module calls (`Get-HardwareVendor`, `Get-HardwareModel`, `Get-HardwareFirmwareType`, etc.) for device identity and firmware card rendering.
 * **Driver Detection:** Calls `Get-SystemDriverDetection -ShareRoot $script:DeploymentSharePath` immediately on startup with fast sub-millisecond SMB archive validation (<1ms size check), ensuring instant window rendering without deferred timer latency.
 
@@ -132,7 +132,7 @@ Both UI phases append `[F5: Refresh]` to the window title bar to guide technicia
 If any regression or unexpected behavior occurs, rollback can be executed in under 2 minutes:
 
 ### Rollback Step 1: Remove Optional Parameter from Engine
-In `Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1` (Phase 2):
+In `Engine\Runtime\010-Engine\LiteDeploy.PE.Engine.ps1` (Phase 2):
 ```diff
 -$workflowResult = & $workflowScript ... -HardwareInventory $global:LiteDeployHardwareInventory ...
 +$workflowResult = & $workflowScript ... -Theme $uiTheme

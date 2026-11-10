@@ -17,7 +17,7 @@ Keep the existing PowerShell 5.1 scripts, numbered source folders, and flat publ
 
 - FullOS first launch is now `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\LiteDeployFullOS`, staged in unattend specialize when the workflow has actions (short `reg add` / `REG_EXPAND_SZ`; not `auditUser`). FullOS may re-arm the same Run key for mid-deploy reboot survival. SYSTEM deferral and cleanup of LiteDeploy-owned legacy startup settings are existing behavior to preserve.
 - Scheduled tasks are legacy cleanup, not the current resume mechanism. SetupComplete is not staged by the current Engine handoff, although Build still discovers the legacy asset.
-- FullOS package orchestration is still pending at `Runtime/100-Engine/LiteDeploy.OS.Engine.ps1:1008`. Loading package helpers and reconnecting after reboot are not an implemented automatic package loop.
+- FullOS package orchestration is still pending at `Runtime/010-Engine/LiteDeploy.OS.Engine.ps1:1008`. Loading package helpers and reconnecting after reboot are not an implemented automatic package loop.
 - A fresh Windows PowerShell 5.1 architecture run returned **185 passed, 1 failed**. The numbered source FullOS script fails parsing at line 329. PowerShell 7 parsed it successfully, so verification must use the supported 5.1 host. Investigate file encoding and the non-ASCII punctuation on that line before broader work; the exact encoding cause has not yet been proven.
 - Text comparison, ignoring line endings and surrounding whitespace, still finds 10 divergent copies. The current mismatch set includes the flat Engine FullOS copy; the prior published Engine mismatch is no longer in that set.
 - Workflow is still absent from Engine's required component list. Selection can therefore load a published Workflow through its own fallback.
@@ -140,7 +140,7 @@ Fix DISM's restarted stopwatch as a separate small correctness change. Review UT
 
 Remove dead helpers only after checking internal references, public examples, generated launchers, and known external boot/release consumers. Engine's unused offline Setup CmdLine helper is a candidate; preserve cleanup of LiteDeploy-owned legacy keys and never clear stock sysprep settings.
 
-Keep the temporary InteractiveProbe behavior until its replacement is implemented and validated, or make its launch an explicit diagnostic option with a documented default migration. Do not silently remove a currently used window/behavior as cosmetic cleanup.
+InteractiveProbe behavior has been consolidated directly into `LiteDeploy.OS.Engine.ps1` console monitoring, and the standalone script retired, avoiding extra window overhead and mutex contention during post-reboot deployment.
 
 Update component READMEs, README execution diagrams, metadata, and examples together. Label package orchestration as pending. Replace Engine comments/log messages saying FullOS arms Setup CmdLine with the current HKLM Run behavior. Keep earlier review documents as historical snapshots and point readers to this plan for the current baseline.
 

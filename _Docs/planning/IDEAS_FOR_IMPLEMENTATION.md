@@ -365,7 +365,7 @@ flowchart TD
 ## 11. Deep-Dive Research: Task Scheduler 'Queued' State vs RunOnce Dispatch
 
 ### The Problem
-During post-boot execution in Windows Audit Mode, scheduled tasks registered with `New-ScheduledTaskTrigger -AtLogOn` (such as `LiteDeploy_ResumeEngine` and `LiteDeploy_InteractiveProbe`) can occasionally enter a **`Queued`** state in Task Scheduler (`schtasks /query`) rather than immediately launching (`Running`).
+During post-boot execution in Windows Audit Mode, scheduled tasks registered with `New-ScheduledTaskTrigger -AtLogOn` (such as legacy `LiteDeploy_ResumeEngine` and earlier `LiteDeploy_InteractiveProbe` experiments) can occasionally enter a **`Queued`** state in Task Scheduler (`schtasks /query`) rather than immediately launching (`Running`).
 
 ### Suspected Root Causes
 1. **Logon Initialization Order & Session State:**

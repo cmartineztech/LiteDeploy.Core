@@ -57,7 +57,7 @@ bypasses are **not** Engine Startup flags — they live under
 3. Check every required file. Report all missing names/paths together and stop.
 4. Use Boot's config object or read the declared config file once.
 5. With `-ValidateOnly`, return paths and phase names, then stop.
-6. Load Logs, Hardware, State, Drivers, and HostShell once at script scope.
+6. Load Session, Hardware, Drivers, and HostShell once at script scope.
 
 Disk and Image are executed later, not imported here. The Workflow and Packages domain
 APIs are not currently called by this pipeline and are not imported.
@@ -194,14 +194,13 @@ Environment, Session, Hardware, Packages (from staged Runtime on the OS volume).
 & '.\Engine\Runtime\010-Engine\LiteDeploy.OS.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
 ~~~
 
-## Interactive Probe (`LiteDeploy.OS.InteractiveProbe.ps1`)
+## FullOS Console Monitoring
 
-**Temporary** second-window monitor started by FullOS until real Progress owns Session 1.
+`LiteDeploy.OS.Engine.ps1` directly hosts the interactive technician console during post-reboot deployment in Windows Audit Mode / Session 1.
 
-- No `-Metadata` / contract param block (inventory scanner skips `*InteractiveProbe*`).
-- Single-instance mutex `Global\LiteDeploy_InteractiveProbe_Mutex`.
-- Reads `~\LiteDeploy\DeploymentState.json`, writes `WorkLogs\LiteDeploy.InteractiveProbe.log`.
-- Not a package runner and not the production Progress UI.
+- Obsolete standalone `LiteDeploy.OS.InteractiveProbe.ps1` has been retired.
+- Engine monitors state transitions, Panther setup progress, and DISM progress directly from the primary session.
+- Package loop execution remains staged for future integration.
 
 ## Deployment ID and log-folder timing
 

@@ -1,8 +1,9 @@
 # LiteDeploy Architecture and Execution Diagrams
 
 Updated 2026-10-13. LiteDeploy Core v2 Architecture:
-- **WinPE Engine** ([`100-Engine/LiteDeploy.PE.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.PE.Engine.ps1))
-- **FullOS Engine** ([`100-Engine/LiteDeploy.OS.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.OS.Engine.ps1))
+- **WinPE Engine** ([`010-Engine/LiteDeploy.PE.Engine.ps1`](../../Engine/Runtime/010-Engine/LiteDeploy.PE.Engine.ps1))
+- **FullOS Engine** ([`010-Engine/LiteDeploy.OS.Engine.ps1`](../../Engine/Runtime/010-Engine/LiteDeploy.OS.Engine.ps1))
+- **Session & Logging** ([`030-Session/LiteDeploy.Session.ps1`](../../Engine/Runtime/030-Session/LiteDeploy.Session.ps1))
 - **Actions gating** — `WorkflowTag.Actions`; FullOS Run (+ Audit reseal / Domain Join UAC bypass) only when `actions.Count > 0` (e.g. Intune Ready with 0 actions → OOBE only, no Run)
 - **First FullOS entry** — unattend **specialize** stages `HKLM\...\Run\LiteDeployFullOS` when actions > 0 (short `powershell.exe -File` / `REG_EXPAND_SZ`; no `auditUser`); keep **HKLM Run** as primary resume (not Startup / Task Scheduler)
 - **Logon models** — Standard = Audit Admin (elevated); Domain Join = AutoLogon local admin + temporary `EnableLUA=0` / `UacBypassed` when no `<!--AuditMode-->` and actions > 0; FullOS cleanup restores `EnableLUA=1`
@@ -12,7 +13,7 @@ Updated 2026-10-13. LiteDeploy Core v2 Architecture:
   - Log mirroring (`WorkLogs\Deployments\<UID>`)
   - On load, `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` (`{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}`) so consoles started afterward hand off to Windows Terminal. The window that already launched FullOS is unchanged. A registry failure does not stop resume
   - Kill `sysprep.exe` process; leave stock Setup `CmdLine` (sysprep) intact
-  - Interactive Probe in a second independent PowerShell window (`Start-LiteDeployFullOSInteractiveProbe`); real Progress / packages still open
+  - Live console monitor integrated directly in FullOS; real Progress / packages orchestration next
 - **Reboot Survival** (same HKLM Run value; FullOS may re-arm; LiteDeploy_* scheduled tasks gated off / cleaned)
 - **MDT reference** — stock MDT uses Startup `LiteTouch.lnk` / `RunOnce` / `FirstLogonCommands`→`LTIBootstrap`, not Task Scheduler; LiteDeploy stays on HKLM Run
 - **Future Headless Exploration Roadmap** (Decoupled SYSTEM worker + IPC progress bar, detailed in [`IDEAS_FOR_IMPLEMENTATION.md`](../planning/IDEAS_FOR_IMPLEMENTATION.md) §3)
@@ -157,10 +158,10 @@ flowchart TD
 
 | Component | Execution Context | Trigger | Key Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`LiteDeploy.PE.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.PE.Engine.ps1) | WinPE (SYSTEM) | [`LiteDeploy.PE.Boot.ps1`](../../Engine/Runtime/000-Boot/LiteDeploy.PE.Boot.ps1) | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
-| [`LiteDeploy.OS.Engine.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.OS.Engine.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | On load, HKCU console handoff for later windows; state progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, Interactive Probe window; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
-| [`LiteDeploy.OS.InteractiveProbe.ps1`](../../Engine/Runtime/100-Engine/LiteDeploy.OS.InteractiveProbe.ps1) | Session 1 | `Start-Process` from FullOS | Temporary Progress dry-run in a second window; monitors state / `Z:`. |
+| [`LiteDeploy.PE.Engine.ps1`](../../Engine/Runtime/010-Engine/LiteDeploy.PE.Engine.ps1) | WinPE (SYSTEM) | [`LiteDeploy.PE.Boot.ps1`](../../Engine/Runtime/000-Boot/LiteDeploy.PE.Boot.ps1) | Hardware precheck, disk wipe/partitioning, imaging, driver/unattend staging, WinPECT export, Runtime/Tools staging. |
+| [`LiteDeploy.OS.Engine.ps1`](../../Engine/Runtime/010-Engine/LiteDeploy.OS.Engine.ps1) | Session 1 (interactive admin) | HKLM Run (specialize-staged; FullOS may re-arm) | On load, HKCU console handoff for later windows; state progression (Phase 5), kill sysprep.exe, WinPECT unseal, `Z:` reconnect (`EnableLinkedConnections`), log mirror, re-arm HKLM Run, live console monitor; clear Run + restore UAC on finish. Packages planned. Scheduled tasks gated off. |
 | [`LiteDeploy.Image.ps1`](../../Engine/Runtime/080-Image/LiteDeploy.Image.ps1) | WinPE | Engine Image phase | Unattend: Order 1 description; Order 2 FullOS Run when `WorkflowTag.Actions` > 0; Orders 3–4 `EnableLUA=0` + marker when Domain Join (no Audit) + actions; Audit reseal when `<!--AuditMode-->` + actions. |
+| [`LiteDeploy.Session.ps1`](../../Engine/Runtime/030-Session/LiteDeploy.Session.ps1) | WinPE & FullOS | Sibling helper (Session) | Unified deployment state document, RAM memory-map IPC, CMTrace logging, UNC share resolution, and verified artifact synchronization across WinPE and FullOS. |
 | **HKLM Run** | Interactive admin | specialize first arm; logon thereafter | Primary FullOS entry + mid-deploy reboot survival (`LiteDeployFullOS`). Kept for now (not MDT Startup / Task Scheduler). |
 | **Setup CmdLine (sysprep)** | Windows Setup / Audit | stock Audit continue | Left intact; FullOS kills the `sysprep.exe` process instead of rewriting Setup. |
 
@@ -189,7 +190,7 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    StateSource["LiteDeploy State and Log Generator"]
+    StateSource["LiteDeploy Session (State & Log Generator)"]
 
     StateSource -->|1. Live IPC / MMF| RAM["RAM / Memory-Mapped File"]
     StateSource -->|2. WinPE Ramdisk| LocalDisk["X:/~LiteDeploy/WorkLogs/"]
@@ -205,8 +206,8 @@ flowchart LR
 flowchart LR
     subgraph DevelopmentRepo["Development Repository"]
         AdminSrc["Engine/Admin/000-090"]
-        RuntimeSrc["Engine/Runtime/000-110"]
-        UISrc["Runtime/110-UI"]
+        RuntimeSrc["Engine/Runtime/000-100"]
+        UISrc["Runtime/100-UI"]
         ToolsSrc["Engine/Tools/WinPECT/"]
     end
 

@@ -117,13 +117,15 @@
 
 ## 5. Runtime Orchestrator Names & Architecture Domain Alignment
 
-- [x] Rename the three phase entry points so the file name explicitly declares the execution domain.
+- [x] Rename the three phase entry points so the file name explicitly declares the execution domain:
   - [x] `LiteDeploy.Boot.ps1` → `LiteDeploy.PE.Boot.ps1` (zero-dependency WinPE root shell)
-  - [x] `LiteDeploy.Engine.ps1` → `LiteDeploy.PE.Engine.ps1` (WinPE imaging pipeline)
-  - [x] `LiteDeploy.FullOS.ps1` → `LiteDeploy.OS.Engine.ps1` (Session 1 resume)
-  - [x] `LiteDeploy.FullOS.InteractiveProbe.ps1` → `LiteDeploy.OS.InteractiveProbe.ps1`
+  - [x] `LiteDeploy.Engine.ps1` → `LiteDeploy.PE.Engine.ps1` (WinPE imaging pipeline, `010-Engine`)
+  - [x] `LiteDeploy.FullOS.ps1` → `LiteDeploy.OS.Engine.ps1` (Session 1 resume, `010-Engine`)
+  - [x] Consolidate `LiteDeploy.State.ps1` and `LiteDeploy.Logs.ps1` into unified `LiteDeploy.Session.ps1` (`030-Session`).
+  - [x] Retire and remove obsolete `LiteDeploy.OS.InteractiveProbe.ps1`.
+  - [x] Realign runtime numbering: `010-Engine`, `030-Session`, `040-Hardware`, `100-UI`.
   - [x] Retired and removed legacy alias recycling (`LiteDeploy.DeploymentEngine.ps1` and old aliases purged across the entire repository).
-  - [x] Updated specialize `HKLM Run` in `SetupComplete.cmd` and `LiteDeploy.PE.Engine.ps1` so installations launch `LiteDeploy.OS.Engine.ps1` directly.
+  - [x] Updated specialize `HKLM Run` in `LiteDeploy.Image.ps1` and `LiteDeploy.PE.Engine.ps1` so installations launch `LiteDeploy.OS.Engine.ps1` directly.
   - [x] Updated `_Docs/guides/WINPE_BOOTSTRAP.md` to reflect the zero-dependency bootstrap and canonical `X:\~LiteDeploy\Engine\Runtime\LiteDeploy.PE.Boot.ps1` layout.
 
 ---
