@@ -41,7 +41,8 @@ Specialize stages Run with a short `cmd /c reg add … /t REG_EXPAND_SZ` Path (s
 In-memory `PSCredential` only:
 
 - **`DeploymentShare`** from `BootObject.Credential` / `$global:LiteDeployCredential`
-- Entries in `$global:LiteDeploySecretMap` (e.g. `DomainJoin` from DeployVault)
+- **`LocalServiceAccount`** for Domain Join workflows with post-install actions (dynamically generated in WinPE, used by FullOS `Set-LiteDeployFullOSAutoLogon` across reboots)
+- Entries in `$global:LiteDeploySecretMap` (e.g. `DomainJoin` from DeployVault when configured)
 
 No plaintext in unattend, state JSON, or logs. Secrets reside in RAM only.
 

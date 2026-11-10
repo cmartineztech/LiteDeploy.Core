@@ -146,7 +146,7 @@ The generated XML file includes an audit header identifying the source workflow,
 ### Template Archetypes & Policies
 - **`Standard.xml`** (`<ProtectYourPC>1</ProtectYourPC>`): Workgroup workstation. Has `<!--AuditMode-->` (filled when workflow `actions.Count > 0`) so first interactive session is built-in Administrator in Audit Mode.
 - **`IntuneReady.xml`**: MDM-oriented OOBE. Same placeholders as Standard, but the stock Intune workflow has **zero actions**, so Image clears FullOS Run and Audit reseal (plain OOBE).
-- **`DomainJoin.xml`** (`<ProtectYourPC>3</ProtectYourPC>`): Ephemeral local admin `LD-<UID>` (`<!--LocalServiceAccount-->`) + AutoLogon (`<!--AutoLogonServiceAccount-->`); **no** `<!--AuditMode-->`. FullOS Run (when actions > 0) starts at AutoLogon; temporary UAC bypass via `<!--DisableUacForFullOS-->`. When actions are 0, placeholders and empty `<UserAccounts>` tags are stripped.
+- **`DomainJoin.xml`** (`<ProtectYourPC>3</ProtectYourPC>`): Ephemeral local admin `LD-<UID>` (`<!--LocalServiceAccount-->`) with complex random password generated in WinPE and sealed in WinPECT + AutoLogon (`<!--AutoLogonServiceAccount-->`); **no** `<!--AuditMode-->`. FullOS Run (when actions > 0) starts at AutoLogon; temporary UAC bypass via `<!--DisableUacForFullOS-->`. When actions are 0, placeholders and empty `<UserAccounts>` tags are stripped.
 
 ### Specialize RunSynchronous (`Microsoft-Windows-Deployment`)
 Templates use placeholders filled by `New-LiteDeployUnattendXml`:
