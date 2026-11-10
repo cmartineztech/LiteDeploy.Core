@@ -40,6 +40,7 @@
 - [x] **WinPECT robustness (lab):** Audit Administrator FullOS unseals DeploymentShare secret in RAM and reconnects `Z:` successfully (elevated context).
 - [x] **Domain Join AutoLogon path (non-Audit):** temporary `EnableLUA=0` + `UacBypassed` marker when template has no `<!--AuditMode-->` and actions > 0; FullOS cleanup restores `EnableLUA=1` via `Clear-LiteDeployFullOSRunKey` / `Restore-LiteDeployFullOSUacBypass`.
 - [x] **Dynamic Ephemeral Service Account Injection (`LD-<UID>`):** Template placeholders `<!--LocalServiceAccount-->` and `<!--AutoLogon-->` in `DomainJoin.xml` resolved dynamically by `LiteDeploy.Image.ps1` using Session `DeploymentUid` (e.g. `LD-261110-A3F1`) when `actions > 0`; cleared when `actions == 0`.
+- [x] **Workflow Domain vs UI Deduplication:** Purged redundant helper functions (`Test-JSONFormat`, `Get-LiteDeployOperatingSystemsCatalog`, `Get-LiteDeployOsCatalogDateText`) from `LiteDeploy.UI.WorkflowSelection.ps1` in favor of canonical `050-Workflow` (`LiteDeploy.Workflow.ps1`) domain exports. Synchronized `Save-LiteDeployWorkflowSelectionJson` in `LiteDeploy.Workflow.ps1` to consistently exclude `BootConfig` from disk serialization.
 
 ---
 

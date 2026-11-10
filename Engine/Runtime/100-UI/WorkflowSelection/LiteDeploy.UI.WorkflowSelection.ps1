@@ -172,19 +172,6 @@ function Get-EffectiveBootConfig {
         ConvertFrom-Json -ErrorAction Stop)
 }
 
-function Test-JSONFormat([string]$Path) {
-    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
-
-    try {
-        $null = (Get-Content -LiteralPath $Path -Raw) | ConvertFrom-Json -ErrorAction Stop
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
 function Show-DeploymentWarning {
     param(
         [Parameter(Mandatory = $true)]
@@ -707,68 +694,6 @@ if ($null -ne $gridDisks) {
             Clear-InlineValidationError -ErrorTextBlock $txtDiskError
         }
     })
-}
-
-# ==============================================================================
-# OPERATING SYSTEMS CATALOG (ImportOSMedia Content\OperatingSystems\LocalCatalog.json)
-# ==============================================================================
-
-function Get-LiteDeployOperatingSystemsCatalog {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ShareRoot
-    )
-
-    $catalogPath = Join-Path $ShareRoot.TrimEnd('\') "Content\OperatingSystems\LocalCatalog.json"
-    if (-not (Test-JSONFormat -Path $catalogPath)) {
-        return $null
-    }
-
-    $catalogData = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    if (-not $catalogData -or -not $catalogData.PSObject.Properties["operatingSystems"]) {
-        return $null
-    }
-
-    return [PSCustomObject]@{
-        CatalogPath      = $catalogPath
-        OperatingSystems = @($catalogData.operatingSystems)
-    }
-}
-
-function Get-LiteDeployOsCatalogDateText {
-    param(
-        [psobject]$Os,
-        [psobject]$Edition = $null
-    )
-
-    $imported = $null
-    if ($Os -and $Os.PSObject.Properties["importedDate"] -and $Os.importedDate) {
-        $imported = [string]$Os.importedDate
-    }
-
-    $lang = $null
-    if ($Edition -and $Edition.PSObject.Properties["defaultLanguage"] -and $Edition.defaultLanguage) {
-        $lang = [string]$Edition.defaultLanguage
-    }
-    elseif ($Os -and $Os.PSObject.Properties["defaultLanguage"] -and $Os.defaultLanguage) {
-        $lang = [string]$Os.defaultLanguage
-    }
-
-    $build = $null
-    if ($Edition -and $Edition.PSObject.Properties["buildVersion"] -and $Edition.buildVersion) {
-        $build = [string]$Edition.buildVersion
-    }
-    elseif ($Os -and $Os.buildVersion) {
-        $build = [string]$Os.buildVersion
-    }
-
-    $parts = [System.Collections.Generic.List[string]]::new()
-    if ($imported) { $parts.Add("Imported: $imported") }
-    if ($lang) { $parts.Add("Leng: $lang") }
-    if ($build) { $parts.Add("Build $build") }
-
-    if ($parts.Count -eq 0) { return "Updated" }
-    return ($parts -join " | ")
 }
 
 function Populate-WorkflowTreeView {

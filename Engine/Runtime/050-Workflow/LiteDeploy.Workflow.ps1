@@ -766,7 +766,8 @@ function Save-LiteDeployWorkflowSelectionJson {
     )
 
     $targetPath = if ([string]::IsNullOrWhiteSpace($Path)) { Get-LiteDeployWorkflowSelectionJsonPath } else { $Path }
-    $json = ($Selection | ConvertTo-Json -Depth 6)
+    # BootConfig is an in-memory handoff; do not duplicate configuration secrets in this file.
+    $json = ($Selection | Select-Object * -ExcludeProperty BootConfig | ConvertTo-Json -Depth 6)
     Set-Content -LiteralPath $targetPath -Value $json -Encoding UTF8 -Force
     return $targetPath
 }
@@ -793,11 +794,15 @@ function New-LiteDeployWorkflowSelectionResult {
         [string]$TargetDiskModel = $null,
         [string]$DriverFolderPath = $null,
         [bool]$AutoDetectDrivers = $false,
+        [object]$BootConfig = $null,
         [string]$BootConfigPath = "",
         [string]$DeploymentSharePath = "",
         [string]$DeploymentUid = ""
     )
 
+    if ($null -eq $BootConfig) {
+        $BootConfig = Get-Variable -Name bootConfig -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    }
     if ([string]::IsNullOrWhiteSpace($BootConfigPath)) {
         $BootConfigPath = [string](Get-Variable -Name BootConfigPath -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
     }
@@ -812,6 +817,7 @@ function New-LiteDeployWorkflowSelectionResult {
         Passed              = [bool]$Passed
         Status              = $Status
         SelectionJsonPath   = $SelectionJsonPath
+        BootConfig          = $BootConfig
         BootConfigPath      = $BootConfigPath
         DeploymentSharePath = $DeploymentSharePath
         DeploymentUid       = $DeploymentUid
