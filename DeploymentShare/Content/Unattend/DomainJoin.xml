@@ -86,7 +86,7 @@
           <!--LocalServiceAccount-->
         </LocalAccounts>
       </UserAccounts>
-      <!--AutoLogon-->
+        <!--AutoLogonServiceAccount-->
     </component>
   </settings>
 </unattend>

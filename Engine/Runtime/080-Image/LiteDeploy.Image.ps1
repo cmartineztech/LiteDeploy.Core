@@ -1011,14 +1011,14 @@ function New-LiteDeployUnattendXml {
         </Password>
       </AutoLogon>
 "@
-    if ($generatedContent -match '<!--AutoLogon-->') {
+    if ($generatedContent -match '<!--AutoLogon(ServiceAccount)?-->') {
         if ($hasFullOsActions) {
-            $generatedContent = $generatedContent -replace '<!--AutoLogon-->', $autoLogonComponent
+            $generatedContent = $generatedContent -replace '<!--AutoLogon(ServiceAccount)?-->', $autoLogonComponent
             Write-ComponentLog "Staged AutoLogon for '$serviceAccountName' (workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
         }
         else {
-            $generatedContent = $generatedContent -replace '<!--AutoLogon-->', ''
-            Write-ComponentLog "Cleared <!--AutoLogon--> (workflow actions count is 0)." -Level "INFO"
+            $generatedContent = $generatedContent -replace '<!--AutoLogon(ServiceAccount)?-->', ''
+            Write-ComponentLog "Cleared AutoLogon placeholder (workflow actions count is 0)." -Level "INFO"
         }
     }
 
