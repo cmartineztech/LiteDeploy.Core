@@ -188,6 +188,29 @@ function Format-LiteDeployUncPath {
     return $clean.TrimEnd('\')
 }
 
+function Enable-LiteDeployLongPaths {
+    <#
+    .SYNOPSIS
+        Enables Win32/NTFS long path support (>260 characters) in the registry for WinPE and host environments.
+    #>
+    [CmdletBinding()]
+    param()
+
+    try {
+        $fsKey = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+        if (Test-Path -LiteralPath $fsKey -ErrorAction SilentlyContinue) {
+            $currentVal = (Get-ItemProperty -LiteralPath $fsKey -Name "LongPathsEnabled" -ErrorAction SilentlyContinue).LongPathsEnabled
+            if ($currentVal -ne 1) {
+                Set-ItemProperty -LiteralPath $fsKey -Name "LongPathsEnabled" -Value 1 -Type DWord -Force -ErrorAction Stop
+                Write-LiteDeployLog "Enabled Windows long path support (LongPathsEnabled=1)." -Level "INIT" -Component "PE.Boot" -NoConsole
+            }
+        }
+    }
+    catch {
+        Write-LiteDeployLog "Notice: Could not set LongPathsEnabled registry flag: $_" -Level "NOTICE" -Component "PE.Boot" -NoConsole
+    }
+}
+
 function Show-LiteDeployGuiError {
     param(
         [string]$Message,
@@ -602,6 +625,10 @@ function Connect-LiteDeployDeploymentShare {
     $driveName = $cleanDrive.TrimEnd(':')
     $isWinPE = Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT" -ErrorAction SilentlyContinue
 
+    if ($isWinPE) {
+        Enable-LiteDeployLongPaths
+    }
+
     # Clean existing mapping to prevent stale credential locks
     try { [void](net.exe use "$cleanDrive" /delete /y 2>$null) } catch {}
     if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
@@ -725,6 +752,9 @@ function Get-LiteDeployBootConfig {
     )
 
     $isWinPE = Test-Path -Path "HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT" -ErrorAction SilentlyContinue
+    if ($isWinPE) {
+        Enable-LiteDeployLongPaths
+    }
 
     # Discover BootConfig.json
     Write-Host ""
@@ -1034,6 +1064,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     if ($isWinPE) {
         # Activate High Performance power plan
         try { powercfg.exe /setactive '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' 2>$null } catch {}
+
+        # Enable Windows long path support (>260 characters)
+        Enable-LiteDeployLongPaths
 
         # Initialize WinPE components and network stack
         try { wpeinit.exe 2>$null } catch {}
