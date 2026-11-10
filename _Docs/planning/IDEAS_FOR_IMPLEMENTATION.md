@@ -60,7 +60,7 @@ Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Deskto
 ```
 
 #### C. Pre-Reboot Winlogon Hook (`Set-LiteDeployFullOSAutoLogon` - Pending Feature)
-Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume. Because Windows purges `DefaultPassword` from the registry upon initial interactive logon, and because joining Active Directory alters `DefaultDomainName`, `Set-LiteDeployFullOSAutoLogon` restores full authentication with `DefaultDomainName = '.'` (local machine context):
+Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume. Because Windows purges `DefaultPassword` from the registry upon initial interactive logon, and because joining Active Directory alters `DefaultDomainName`, `Set-LiteDeployFullOSAutoLogon` restores full authentication with `DefaultDomainName = '.'` (local machine context). For Domain Join workflows, the password is recovered securely in RAM via WinPECT using the `LocalServiceAccount` secret ID:
 ```powershell
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoAdminLogon"    -Value "1" -Type String
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoLogonCount"    -Value 999 -Type DWord
