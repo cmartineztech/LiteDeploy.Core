@@ -148,7 +148,7 @@ execution/import also requires Windows PowerShell `-STA`. Engine never silently 
 - Add future dependencies to Engine's environment lists and Environment's path map, then add a visible import or
   phase call and document its inputs/result. Avoid hidden import registries or auto-discovery.
 - Logs owns log-copy and OS handoff functions. Engine passes RuntimePaths explicitly. UI.HostShell owns console window controls; importing it does not change the window.
-- Offline driver staging and offline DISM servicing are operational. FullOS resume (WinPECT, Z: reconnect, **HKLM Run** specialize-staged / re-armed) is implemented; package execution and interactive Progress dispatch after reboot remain open. See [Credentials](../integrations/Credentials/README.md).
+- Offline driver staging and offline DISM servicing are operational. FullOS resume (WinPECT, Z: reconnect, **HKLM Run** specialize-staged / re-armed, universal High Performance power plan, and Environment Shielding) is implemented; Pre-Reboot Hook (`Set-LiteDeployFullOSAutoLogon`), package execution, and interactive Progress dispatch after reboot remain open. See [Credentials](../integrations/Credentials/README.md) and [Shielding Matrix](../architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md).
 
 ## One layout setting
 

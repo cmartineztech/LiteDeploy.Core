@@ -51,10 +51,12 @@ No plaintext in unattend, state JSON, or logs. Secrets reside in RAM only.
 flowchart TD
     Gate{"actions.Count > 0?"}
     Gate -->|No| OOBE["Skip FullOS Run → OOBE"]
-    Gate -->|Yes| Spec["specialize: Order 2 HKLM Run<br/>+ DJ Orders 3–4 EnableLUA=0 if no Audit"]
-    Spec --> Logon["Interactive logon<br/>Audit Admin or Domain Join AutoLogon"]
+    Gate -->|Yes| Spec["specialize: Order 2 HKLM Run<br/>+ DJ Orders 3–4 EnableLUA=0 + LD-UID"]
+    Spec --> Logon["Interactive logon<br/>Audit Admin or LD-UID AutoLogon"]
     Logon --> Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
-    Run --> Console["HKCU console handoff"]
+    Run --> Power["Set-LiteDeployFullOSHighPerformance<br/>(0 sleep/timeouts AC/DC)"]
+    Power --> Shield["Enable-LiteDeployFullOSShielding<br/>(DisableGPO=1, CAD/Lock off, Count=999)"]
+    Shield --> Console["HKCU console handoff"]
     Console --> Kill["Kill sysprep.exe process"]
     Kill --> State["Load DeploymentState.json"]
     State --> Read["Read-WPCTCredentialTransfer in RAM"]
@@ -65,10 +67,12 @@ flowchart TD
     Mirror --> Arm["Re-arm HKLM Run LiteDeployFullOS"]
     Local --> Arm
     Arm --> Probe["Start Interactive Probe second window"]
-    Probe --> Reboot["Later reboot → logon → Run relaunches FullOS"]
-    Probe --> Done["Clear Run + restore EnableLUA if UacBypassed"]
+    Probe -.->|reboot 3010| Hook["Pre-Reboot Hook: Set-LiteDeployFullOSAutoLogon<br/>(re-inject password, domain='.')"]
+    Hook --> Reboot["Reboot → AutoLogon → Run relaunches FullOS"]
+    Reboot --> Run
+    Probe --> Done["Teardown: Disable-LiteDeployFullOSShielding (gpupdate)<br/>+ Clear Run + restore UAC + delete LD-UID"]
 ```
 
-Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon ephemeral local `LD-<UID>` + temporary UAC bypass + Environment Shielding) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume.
+Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon ephemeral local `LD-<UID>` + temporary UAC bypass + Environment Shielding) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. Universal High Performance power scheme and FullOS Environment Shielding protect execution. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. Pre-Reboot Hook (`Set-LiteDeployFullOSAutoLogon`) re-injects credentials with `DefaultDomainName = '.'` before intermediate restarts to guarantee AutoLogon survival. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume. Note: SYSTEM Session 0 daemon has been retired from the roadmap; all FullOS execution is interactive desktop (Session 1).
 
 See [EndToEndDeploymentGuide.md](EndToEndDeploymentGuide.md), [Tools README](../../../Engine/Tools/README.md), and [deployment diagrams](../../architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).

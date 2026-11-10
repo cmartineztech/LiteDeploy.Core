@@ -82,7 +82,11 @@ flowchart TB
     ReArm["Re-arm Run · kill sysprep.exe"]
     Secrets["WinPECT unseal · Z: · log mirror"]
     Probe["Interactive Probe window<br/>(Progress/packages next)"]
+    RebootHook["Pre-Reboot Hook: AutoLogon shielding<br/>(re-inject password, domain='.')"]
+    Cleanup["Teardown: Disable shielding · gpupdate · restore UAC · delete LD-UID"]
     Run --> Power --> Shield --> Console --> ReArm --> Secrets --> Probe
+    Probe -.->|reboot 3010| RebootHook --> Run
+    Probe --> Cleanup
   end
 
   Build -.->|publish| Boot

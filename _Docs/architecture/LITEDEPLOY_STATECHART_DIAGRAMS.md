@@ -114,10 +114,10 @@ stateDiagram-v2
         Order1_Description --> SkipRun_OOBE: [Actions == 0]
         Order2_RegAddRun --> DJ_Orders: [DomainJoin && !AuditMode]
         Order2_RegAddRun --> Audit_Reseal: [AuditMode]
-        DJ_Orders --> SetupComplete
-        Audit_Reseal --> SetupComplete
-        SkipRun_OOBE --> SetupComplete
-        SetupComplete --> [*]
+        DJ_Orders --> SpecializeComplete
+        Audit_Reseal --> SpecializeComplete
+        SkipRun_OOBE --> SpecializeComplete
+        SpecializeComplete --> [*]
     }
 
     SpecializePhase --> FullOS: INTERACTIVE_LOGON [Actions > 0]
@@ -127,7 +127,10 @@ stateDiagram-v2
         [*] --> FullOSInit
 
         state FullOSInit {
-            [*] --> RegisterConsoleHandoff
+            [*] --> SetHighPerformance
+            SetHighPerformance --> EnableEnvironmentShielding: [Non-Admin or UacBypassed]
+            SetHighPerformance --> RegisterConsoleHandoff: [Admin Audit]
+            EnableEnvironmentShielding --> RegisterConsoleHandoff
             RegisterConsoleHandoff --> TerminateSysprepProcess
             TerminateSysprepProcess --> UnsealSecretsToRAM
             UnsealSecretsToRAM --> ConnectDeploymentShare: [NetworkMode]
@@ -156,7 +159,8 @@ stateDiagram-v2
 
         state FullOSRebootPreparation {
             [*] --> RearmHklmRun
-            RearmHklmRun --> SaveStateWithIncrementedResume
+            RearmHklmRun --> PreRebootAutoLogonHook: [Restore DefaultPassword & Domain='.']
+            PreRebootAutoLogonHook --> SaveStateWithIncrementedResume
             SaveStateWithIncrementedResume --> InitiateReboot
             InitiateReboot --> [*]
         }
@@ -166,10 +170,12 @@ stateDiagram-v2
         state FinalizeFullOS {
             [*] --> DisconnectShareZ
             DisconnectShareZ --> ClearHklmRunKey
-            ClearHklmRunKey --> RestoreUAC: [If UacBypassed]
-            ClearHklmRunKey --> SkipUAC: [If AuditMode]
-            RestoreUAC --> MarkStateCompleted
-            SkipUAC --> MarkStateCompleted
+            ClearHklmRunKey --> DisableShieldingAndUnfreezeGPO
+            DisableShieldingAndUnfreezeGPO --> RestoreUAC: [If UacBypassed]
+            DisableShieldingAndUnfreezeGPO --> SkipUAC: [If AuditMode]
+            RestoreUAC --> CleanupEphemeralAccount: [If LD-UID]
+            SkipUAC --> CleanupEphemeralAccount: [If LD-UID]
+            CleanupEphemeralAccount --> MarkStateCompleted
             MarkStateCompleted --> FinalLogMirror
             FinalLogMirror --> [*]
         }

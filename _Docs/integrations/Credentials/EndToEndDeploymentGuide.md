@@ -1,4 +1,4 @@
-> **Status (2026-10-17):** WinPECT source is repo `Engine\Tools\WinPECT\` (trimmed); Admin.Build publishes it to the live share. Engine WinPE handoff stages Runtime/Tools and calls `Export-LiteDeployWinPECTCredentials` when credentials are in memory. FullOS first entry is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** when workflow actions > 0 (not `auditUser`). On direct execution, before resume, FullOS sets the HKCU console handoff so consoles started afterward use Windows Terminal. Domain Join (no Audit) may stage temporary `EnableLUA=0` + restore on cleanup. FullOS may re-arm Run for mid-deploy reboots, kills `sysprep.exe` (leaves stock Setup CmdLine), and starts the Interactive Probe in a second window. Legacy BootInitializer and DeploymentEngine aliases are purged; pipeline uses LiteDeploy.PE.Boot.ps1 -> LiteDeploy.PE.Engine.ps1 -> LiteDeploy.OS.Engine.ps1. DeployVault → `$global:LiteDeploySecretMap` and Packages orchestration remain open.
+> **Status (2026-11-10):** WinPECT source is repo `Engine\Tools\WinPECT\` (trimmed); Admin.Build publishes it to the live share. Engine WinPE handoff stages Runtime/Tools and calls `Export-LiteDeployWinPECTCredentials` when credentials are in memory. FullOS first entry is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** when workflow actions > 0 (not `auditUser`). On direct execution, before resume, FullOS sets the HKCU console handoff so consoles started afterward use Windows Terminal. Universal High Performance power scheme and FullOS Environment Shielding are active. Domain Join (no Audit) stages temporary `EnableLUA=0` and ephemeral service account `LD-<UID>`. FullOS re-arms Run and invokes Pre-Reboot AutoLogon Hook (`Set-LiteDeployFullOSAutoLogon`) across mid-deploy reboots (3010), kills `sysprep.exe` (leaves stock Setup CmdLine), and starts the Interactive Probe. Teardown unshields and restores UAC. Legacy SetupComplete and Session 0 SYSTEM daemon are retired from the roadmap. Legacy BootInitializer and DeploymentEngine aliases are purged; pipeline uses LiteDeploy.PE.Boot.ps1 -> LiteDeploy.PE.Engine.ps1 -> LiteDeploy.OS.Engine.ps1. DeployVault → `$global:LiteDeploySecretMap` and Packages orchestration remain open.
 
 # End-to-End Zero-Plaintext OS Deployment Architecture
 
@@ -61,13 +61,19 @@ sequenceDiagram
 
     Note over Admin: specialize (actions>0): Run + optional DJ EnableLUA=0 → logon → HKLM Run FullOS
     Admin->>Admin: HKCU console handoff for later windows
+    Admin->>Admin: Set-LiteDeployFullOSHighPerformance (0 timeouts AC/DC)
+    Admin->>Admin: Enable-LiteDeployFullOSShielding (DisableGPO=1, blank notices, DisableCAD, NoLockScreen)
     Admin->>Admin: Kill sysprep.exe process
     Admin->>Reg: Read bootstrap key from LiteDeploy\CredentialTransfer
     Admin->>Disk: Decrypt package in RAM → PSCredential
     Admin->>Admin: New-SmbMapping Z: (EnableLinkedConnections)
     Admin->>Admin: Re-arm HKLM Run LiteDeployFullOS
     Admin->>Admin: Host interactive technician console
-    Admin->>Admin: Mirror logs; packages planned; clear Run + restore UAC on finish
+    opt Mid-deploy reboot (3010)
+        Admin->>Admin: Set-LiteDeployFullOSAutoLogon (Pre-Reboot Hook: re-inject password, domain='.')
+        Admin->>Admin: Restart-Computer
+    end
+    Admin->>Admin: Mirror logs; packages planned; teardown: unshield + restore UAC on finish
 ```
 
 ---
