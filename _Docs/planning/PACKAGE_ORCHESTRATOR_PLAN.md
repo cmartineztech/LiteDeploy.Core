@@ -158,7 +158,7 @@ Rules:
 
 - [ ] `Start-LiteDeployPackageOrchestration` (FullOS or thin helper; reuse `Invoke-`/`Install-LiteDeployPackage`).
 - [ ] Implement status machine + Index + WaitingReboot anti-loop.
-- [ ] Pre-Reboot AutoLogon Hook (`Set-LiteDeployFullOSAutoLogon`): When an action returns `3010`, re-inject `AutoAdminLogon=1`, `AutoLogonCount=999`, `DefaultUserName`, `DefaultPassword` (retrieved from WinPECT `LocalServiceAccount` secret in memory for Domain Join), `DefaultDomainName='.'`, re-arm `Set-LiteDeployFullOSRunKey`, and initiate controlled reboot.
+- [x] Pre-Reboot AutoLogon Hook (`Set-LiteDeployFullOSAutoLogon`): Implemented in `LiteDeploy.OS.Engine.ps1`. When an action returns `3010`, re-injects `AutoAdminLogon=1`, `AutoLogonCount=999`, `DefaultUserName`, `DefaultPassword` (retrieved from WinPECT `LocalServiceAccount` secret in memory for Domain Join), `DefaultDomainName='.'`. Orchestrator pre-reboot trigger will invoke this along with `Set-LiteDeployFullOSRunKey` and initiate controlled reboot.
 - [ ] ExecutionSource Remote vs Local (stage under `C:\~LiteDeploy\Content\Packages\<id>`).
 - [ ] Orchestration lock; Clear Run + FullOS shielding teardown (`Disable-LiteDeployFullOSShielding`) + UAC restore (`Restore-LiteDeployFullOSUacBypass`) + account cleanup when queue finishes or Stop-on-error.
 - [ ] Wire call after Z:/WinPECT in `LiteDeploy.OS.Engine.ps1` (replace “packages pending” log).

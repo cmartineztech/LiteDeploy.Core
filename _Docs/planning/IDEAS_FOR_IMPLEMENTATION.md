@@ -59,8 +59,8 @@ Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization" -Na
 Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop" -Name "ScreenSaveActive" -Value "0"
 ```
 
-#### C. Pre-Reboot Winlogon Hook (`Set-LiteDeployFullOSAutoLogon` - Pending Feature)
-Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume. Because Windows purges `DefaultPassword` from the registry upon initial interactive logon, and because joining Active Directory alters `DefaultDomainName`, `Set-LiteDeployFullOSAutoLogon` restores full authentication with `DefaultDomainName = '.'` (local machine context). For Domain Join workflows, the password is recovered securely in RAM via WinPECT using the `LocalServiceAccount` secret ID:
+#### C. Pre-Reboot Winlogon Hook (`Set-LiteDeployFullOSAutoLogon` - Implemented in v2)
+Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume. Because Windows purges `DefaultPassword` from the registry upon initial interactive logon, and because joining Active Directory alters `DefaultDomainName`, `Set-LiteDeployFullOSAutoLogon` restores full authentication with `DefaultDomainName = '.'` (local machine context). For Domain Join workflows, the dynamic password generated in WinPE is recovered securely in RAM via WinPECT using the `LocalServiceAccount` secret ID without any plaintext stored on disk:
 ```powershell
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoAdminLogon"    -Value "1" -Type String
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoLogonCount"    -Value 999 -Type DWord
@@ -68,6 +68,7 @@ Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultPassword"   -Value $tempPassword -Type String
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultDomainName" -Value "." -Type String
 ```
+When final teardown completes, `Disable-LiteDeployFullOSShielding` purges `DefaultPassword`, clears `AutoLogonCount`, and sets `AutoAdminLogon = "0"`.
 
 #### D. Teardown & Final Polish
 Once all packages finish successfully, `Disable-LiteDeployFullOSShielding` and `Clear-LiteDeployFullOSRunKey` execute teardown:
@@ -187,10 +188,11 @@ For standard workflows requiring interactive desktop sessions (FullOS Phase 6 fo
   - Constrained within the 20-character Windows SAM/NetBIOS limit.
   - Directly maps 1:1 to the deployment ID and server log folder (`Z:\WorkLogs\Deployments\<DeploymentUid>`).
   - 100% traceable in Windows Event Viewer (`Security Event ID 4624 / 4672`).
-- **Dynamic Password Generation:**
-  - Generated dynamically in WinPE from a GUID + random salt (e.g., `[guid]::NewGuid().ToString("N") + "!" + (Get-Random -Minimum 100 -Maximum 999)`).
-  - Stored in `unattend.xml` under `<AutoLogon>` with `AutoLogonCount = 999` and decoded by Windows Setup.
-  - Zero static or hardcoded passwords left on disks.
+- **Dynamic Password Generation & WinPECT Hand-Off:**
+  - Generated dynamically in WinPE with high complexity: `'Ld!' + [guid]::NewGuid().ToString('N').Substring(0, 16) + 'Aa9#'`.
+  - Injected into `unattend.xml` under `<UserAccounts><LocalAccounts>` and `<AutoLogon>` with `AutoLogonCount = 999`.
+  - Registered in memory into `$global:LiteDeploySecretMap['LocalServiceAccount']` and exported via WinPECT (`Export-LiteDeployWinPECTCredentials`) exclusively for Domain Join workflows with post-install actions.
+  - Enables FullOS `Set-LiteDeployFullOSAutoLogon` to unseal the password in RAM and re-inject Winlogon registry keys before intermediate reboots (3010) without leaving plaintext passwords anywhere on disk.
 
 ---
 
