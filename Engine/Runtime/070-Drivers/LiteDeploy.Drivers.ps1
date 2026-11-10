@@ -133,6 +133,7 @@ function Get-DriverPackCatalogDetails {
     return [PSCustomObject]@{
         PackModel        = (Get-DriverPackPropertyValue -Pack $Pack -Names @("Model"))
         FileName         = (Get-DriverPackPropertyValue -Pack $Pack -Names @("FileName", "Filename"))
+        FilePath         = (Get-DriverPackPropertyValue -Pack $Pack -Names @("FilePath", "Path", "RelativePath"))
         SHA256           = (Get-DriverPackPropertyValue -Pack $Pack -Names @("SHA256", "Hash", "FileHash"))
         ReleaseDate      = (Get-DriverPackPropertyValue -Pack $Pack -Names @("ReleaseDate", "ReleaseDateUTC", "Date", "PublishedDate"))
         DownloadedOn     = (Get-DriverPackPropertyValue -Pack $Pack -Names @("DownloadedOn", "DateDownloaded", "DownloadDate", "LastUpdate", "Downloaded"))
@@ -370,76 +371,70 @@ function Resolve-DriverPackHit {
     } else { "" }
     if ([string]::IsNullOrWhiteSpace($contentLocation)) { return $null }
 
-    $contentPath = Join-Path $DriversRoot $contentLocation
-    $modelPath = Split-Path -Parent $contentPath
+    $targetRoot = Join-Path $DriversRoot $contentLocation
     $details = Get-DriverPackCatalogDetails -Pack $Pack
-    $isDellOrLenovo = ($ManufacturerKey -like "*Dell*") -or ($ManufacturerKey -ieq "LENOVO") -or ($ManufacturerKey -like "*Lenovo*")
 
-    # Dell / Lenovo: prefer extracted Content with driver files (depth 10); else use downloaded .exe beside Content.
-    if ($isDellOrLenovo) {
-        $contentOk = $details.ContentExtracted -and
-            (Test-Path -LiteralPath $contentPath -PathType Container) -and
-            (Test-DriverFolderHasDriverFiles -RootPath $contentPath -MaxDepth 10)
+    # 1. Prefer extracted driver files (.inf/.sys) directly in ContentLocation or its Content subfolder
+    $hasExtractedDrivers = (Test-Path -LiteralPath $targetRoot -PathType Container) -and
+        (Test-DriverFolderHasDriverFiles -RootPath $targetRoot -MaxDepth 10)
 
-        if ($contentOk) {
-            return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
-                    -ContentLocation $contentLocation -FullPath $contentPath `
-                    -RelativePath "Content\Drivers\$contentLocation" -SourceKind "Content")
+    if ($hasExtractedDrivers) {
+        return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
+                -ContentLocation $contentLocation -FullPath $targetRoot `
+                -RelativePath "Content\Drivers\$contentLocation" -SourceKind "Content")
+    }
+
+    # 2. If not extracted as folder with drivers, check for downloaded installation archive (.exe / .cab)
+    $candidateArchives = [System.Collections.Generic.List[string]]::new()
+
+    # Candidate A: Pack FilePath direct from catalog (e.g. Manufactures\Dell Inc\Latitude_7450\archive.exe)
+    if (-not [string]::IsNullOrWhiteSpace($details.FilePath)) {
+        $candidateArchives.Add((Join-Path $DriversRoot $details.FilePath.Trim().TrimStart('\')))
+    }
+
+    # Candidate B: Pack FileName inside ContentLocation (modern root layout)
+    if (-not [string]::IsNullOrWhiteSpace($details.FileName)) {
+        $candidateArchives.Add((Join-Path $targetRoot $details.FileName.Trim()))
+        # Candidate C: Legacy parent model path if ContentLocation was ending in Content
+        $legacyParent = Split-Path -Parent $targetRoot
+        if (-not [string]::IsNullOrWhiteSpace($legacyParent)) {
+            $candidateArchives.Add((Join-Path $legacyParent $details.FileName.Trim()))
         }
-
-        # Archive path is derived only from LocalCatalog: parent(ContentLocation) + FileName.
-        $fileName = $details.FileName
-        if (-not [string]::IsNullOrWhiteSpace($fileName) -and -not [string]::IsNullOrWhiteSpace($modelPath)) {
-            $archivePath = Join-Path $modelPath $fileName
-            if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
-                # Fast file size metadata check (< 1ms SMB attribute check, ensures file is non-empty)
-                try {
-                    $item = Get-Item -LiteralPath $archivePath -ErrorAction Stop
-                    if ($item.Length -le 0) {
-                        Write-LiteDeployLog "Driver archive '$archivePath' is empty (0 bytes). Skipping archive." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
-                        return $null
-                    }
-                }
-                catch {
-                    return $null
-                }
-
-                $relArchive = Join-Path (Split-Path $contentLocation -Parent) $fileName
-                return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
-                        -ContentLocation $contentLocation -FullPath $archivePath `
-                        -RelativePath "Content\Drivers\$relArchive" -SourceKind "Archive")
+    }
+    else {
+        # Candidate D: If catalog didn't specify FileName (e.g. manual Custom registration), scan targetRoot for .exe / .cab
+        if (Test-Path -LiteralPath $targetRoot -PathType Container) {
+            $foundArchives = @(Get-ChildItem -LiteralPath $targetRoot -File | Where-Object { $_.Extension -match '^\.(exe|cab)$' })
+            foreach ($fa in $foundArchives) {
+                $candidateArchives.Add($fa.FullName)
             }
         }
-
-        return $null
     }
 
-    # Custom: scan the model root (parent of ContentLocation) depth 5 for at least one driver file.
-    if ($ManufacturerKey -ieq "Custom") {
-        $customRoot = if (-not [string]::IsNullOrWhiteSpace($modelPath)) { $modelPath } else { $contentPath }
-        if (-not (Test-Path -LiteralPath $customRoot -PathType Container)) { return $null }
-        if (-not (Test-DriverFolderHasDriverFiles -RootPath $customRoot -MaxDepth 5)) { return $null }
-
-        # Prefer ContentLocation when it exists; otherwise the model root that passed the scan.
-        $selectedPath = if (Test-Path -LiteralPath $contentPath -PathType Container) { $contentPath } else { $customRoot }
-        $relPath = if ($selectedPath -eq $contentPath) {
-            "Content\Drivers\$contentLocation"
-        } else {
-            "Content\Drivers\$(Split-Path $contentLocation -Parent)"
+    foreach ($archivePath in $candidateArchives) {
+        if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
+            try {
+                $item = Get-Item -LiteralPath $archivePath -ErrorAction Stop
+                if ($item.Length -gt 0) {
+                    $fileName = $item.Name
+                    $relArchive = if (-not [string]::IsNullOrWhiteSpace($details.FilePath)) {
+                        $details.FilePath.Trim().TrimStart('\')
+                    } else {
+                        Join-Path $contentLocation $fileName
+                    }
+                    return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
+                            -ContentLocation $contentLocation -FullPath $archivePath `
+                            -RelativePath "Content\Drivers\$relArchive" -SourceKind "Archive")
+                }
+                else {
+                    Write-LiteDeployLog "Driver archive '$archivePath' is empty (0 bytes). Skipping." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
+                }
+            }
+            catch { }
         }
-
-        return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
-                -ContentLocation $contentLocation -FullPath $selectedPath `
-                -RelativePath $relPath -SourceKind "Content")
     }
 
-    # HP / others: extracted Content folder only.
-    if (-not $details.ContentExtracted) { return $null }
-    if (-not (Test-Path -LiteralPath $contentPath -PathType Container)) { return $null }
-
-    return (New-DriverPackHit -Pack $Pack -ManufacturerKey $ManufacturerKey -MatchReason $MatchReason `
-            -ContentLocation $contentLocation -FullPath $contentPath `
-            -RelativePath "Content\Drivers\$contentLocation" -SourceKind "Content")
+    return $null
 }
 
 function Get-SystemDriverDetection {
@@ -461,16 +456,21 @@ function Get-SystemDriverDetection {
 
     if ($HardwareInventory) {
         if ($HardwareInventory.PSObject.Properties['Vendor'] -and $HardwareInventory.Vendor) { $vendorNorm = [string]$HardwareInventory.Vendor }
+        if ($HardwareInventory.PSObject.Properties['VendorRaw'] -and $HardwareInventory.VendorRaw) { $vendorRaw = [string]$HardwareInventory.VendorRaw }
         if ($HardwareInventory.PSObject.Properties['Model'] -and $HardwareInventory.Model) { $model = [string]$HardwareInventory.Model }
         if ($HardwareInventory.PSObject.Properties['SerialNumber'] -and $HardwareInventory.SerialNumber) { $serial = [string]$HardwareInventory.SerialNumber }
         if ($HardwareInventory.PSObject.Properties['Sku'] -and $HardwareInventory.Sku) { $sku = [string]$HardwareInventory.Sku }
+        elseif ($HardwareInventory.PSObject.Properties['SystemSKU'] -and $HardwareInventory.SystemSKU) { $sku = [string]$HardwareInventory.SystemSKU }
         if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
             Write-LiteDeployLog "Fast Transition: Reused in-memory hardware inventory for $vendorNorm $model (0 ms WMI overhead)." -Level "INFO" -Component "Drivers"
         }
     }
 
     if ([string]::IsNullOrWhiteSpace($vendorNorm)) { try { $vendorNorm = Get-HardwareVendor } catch {} }
-    if ([string]::IsNullOrWhiteSpace($vendorRaw)) { try { $vendorRaw = Get-HardwareVendorRaw } catch {} }
+    if ([string]::IsNullOrWhiteSpace($vendorRaw)) {
+        if (-not [string]::IsNullOrWhiteSpace($vendorNorm)) { $vendorRaw = $vendorNorm }
+        else { try { $vendorRaw = Get-HardwareVendorRaw } catch {} }
+    }
     if ([string]::IsNullOrWhiteSpace($model)) { try { $model = Get-HardwareModel } catch {} }
     if ([string]::IsNullOrWhiteSpace($serial)) { try { $serial = Get-HardwareSerialNumber } catch {} }
     if ([string]::IsNullOrWhiteSpace($sku)) { try { $sku = Get-HardwareComputerSku } catch {} }
