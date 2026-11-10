@@ -1,7 +1,7 @@
 # UI.HardwarePrecheck
 
 **ComponentId:** `UI.HardwarePrecheck`  
-**Dev:** `110-UI/HardwarePrecheck`  
+**Dev:** `100-UI/HardwarePrecheck`  
 **Published:** `Engine\Runtime\UI\LiteDeploy.UI.HardwarePrecheck.ps1` (+ `.xaml`)
 
 Phase 1 readiness UI. Theme: `-Theme` or `BootConfig.Ui.Theme` (default Light). Diagram: `Docs/PRECHECK_DIAGRAM.md`.
@@ -63,7 +63,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1'
+$component = '.\Engine\Runtime\100-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1'
 $result = & $component -BootConfigPath 'C:\LiteDeploy-Staging\Config\BootConfig.json'
 $result.Passed
 ~~~

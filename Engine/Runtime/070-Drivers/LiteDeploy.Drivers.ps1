@@ -38,7 +38,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Hardware")
+        Dependencies         = @("Session", "Hardware")
         Description          = "LocalCatalog driver detection (Custom then OEM), folder/archive resolve, extraction, and staging helpers."
     }
 }
@@ -56,7 +56,7 @@ if ($Metadata) {
 # Never reload a dependency already available in this session.
 if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) {
     if (-not (Get-Command Get-LiteDeployComponentPath -ErrorAction SilentlyContinue)) { throw 'Load Environment before Drivers.' }
-    . (Get-LiteDeployComponentPath -Name Logs)
+    . (Get-LiteDeployComponentPath -Name Session)
 }
 if (-not (Get-Command Get-HardwareInventory -ErrorAction SilentlyContinue)) {
     if (-not (Get-Command Get-LiteDeployComponentPath -ErrorAction SilentlyContinue)) { throw 'Load Environment before Drivers.' }
@@ -270,7 +270,7 @@ function Get-LiteDeployLocalDriverCatalog {
 
     $catalogPath = Join-Path $ShareRoot.TrimEnd('\') "Content\Drivers\LocalCatalog.json"
     if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
-        Write-LiteDeployLog " [WARNING] LocalCatalog.json was not found at '$catalogPath'. Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "LocalCatalog.json was not found at '$catalogPath'. Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return $null
     }
 
@@ -278,16 +278,16 @@ function Get-LiteDeployLocalDriverCatalog {
         $catalogData = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        Write-LiteDeployLog " [WARNING] LocalCatalog.json could not be parsed at '$catalogPath': $($_.Exception.Message). Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "LocalCatalog.json could not be parsed at '$catalogPath': $($_.Exception.Message). Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return $null
     }
 
     if (-not $catalogData -or -not $catalogData.PSObject.Properties["Manufacturers"] -or $null -eq $catalogData.Manufacturers) {
-        Write-LiteDeployLog " [WARNING] LocalCatalog.json is missing required 'Manufacturers' at '$catalogPath'. Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "LocalCatalog.json is missing required 'Manufacturers' at '$catalogPath'. Using Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return $null
     }
 
-    Write-LiteDeployLog " [INFO]    Driver catalog loaded." -Level "INFO" -Component "DriverStaging"
+    Write-LiteDeployLog "Driver catalog loaded." -Level "INFO" -Component "Drivers"
     return [PSCustomObject]@{
         CatalogPath   = $catalogPath
         Manufacturers = $catalogData.Manufacturers
@@ -396,7 +396,7 @@ function Resolve-DriverPackHit {
                 try {
                     $item = Get-Item -LiteralPath $archivePath -ErrorAction Stop
                     if ($item.Length -le 0) {
-                        Write-LiteDeployLog " [WARNING] Driver archive '$archivePath' is empty (0 bytes). Skipping archive." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+                        Write-LiteDeployLog "Driver archive '$archivePath' is empty (0 bytes). Skipping archive." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
                         return $null
                     }
                 }
@@ -618,7 +618,7 @@ function Get-SystemDriverDetection {
     } else {
         "matched"
     }
-    Write-LiteDeployLog (" [SUCCESS] Driver pack: {0} | {1} | {2}" -f $winner.MatchBy, $sourceLabel, $packLabel) -Level "SUCCESS" -ForegroundColor Green -Component "DriverStaging"
+    Write-LiteDeployLog ("Driver pack: {0} | {1} | {2}" -f $winner.MatchBy, $sourceLabel, $packLabel) -Level "SUCCESS" -ForegroundColor Green -Component "Drivers"
 
     return [PSCustomObject]@{
         Manufacturer     = $vendorNorm
@@ -701,16 +701,16 @@ function Expand-LiteDeployDriverPackage {
     }
     if ($sourceKind -ieq "Content") {
         if (Test-DriverFolderHasDriverFiles -RootPath $fullPath -MaxDepth 10) {
-            Write-LiteDeployLog " [INFO]    Driver pack content is already extracted: '$fullPath'" -Level "INFO" -Component "DriverStaging"
+            Write-LiteDeployLog "Driver pack content is already extracted: '$fullPath'" -Level "INFO" -Component "Drivers"
             return [PSCustomObject]@{ Success = $true; Expanded = $false; Status = "AlreadyExtracted"; SourcePath = $fullPath; ExpandedPath = $fullPath; Message = "Pack content is already extracted." }
         }
-        Write-LiteDeployLog " [WARNING] Content folder '$fullPath' has no .inf driver files." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "Content folder '$fullPath' has no .inf driver files." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "NoDriverFiles"; SourcePath = $fullPath; ExpandedPath = $null; Message = "No .inf driver files found in folder." }
     }
 
     $targetArchive = if (-not [string]::IsNullOrWhiteSpace($ArchivePath)) { $ArchivePath } else { $fullPath }
     if (-not (Test-Path -LiteralPath $targetArchive -PathType Leaf)) {
-        Write-LiteDeployLog " [ERROR]   Driver archive was not found at '$targetArchive'." -Level "ERROR" -ForegroundColor Red -Component "DriverStaging"
+        Write-LiteDeployLog "Driver archive was not found at '$targetArchive'." -Level "ERROR" -ForegroundColor Red -Component "Drivers"
         return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "ArchiveNotFound"; SourcePath = $targetArchive; ExpandedPath = $null; Message = "Archive not found." }
     }
 
@@ -719,7 +719,7 @@ function Expand-LiteDeployDriverPackage {
     }
 
     $archiveName = Split-Path -Path $targetArchive -Leaf
-    Write-LiteDeployLog " [INIT]    Extracting driver archive '$archiveName' to '$DestinationPath'..." -Level "INIT" -ForegroundColor Cyan -Component "DriverStaging"
+    Write-LiteDeployLog "Extracting driver archive '$archiveName' to '$DestinationPath'..." -Level "INIT" -ForegroundColor Cyan -Component "Drivers"
 
     $mfrKey = if ($Detection.PSObject.Properties["ManufacturerKey"]) { [string]$Detection.ManufacturerKey } else { "" }
     $mfrNorm = if ($Detection.PSObject.Properties["Manufacturer"]) { [string]$Detection.Manufacturer } else { "" }
@@ -758,18 +758,18 @@ function Expand-LiteDeployDriverPackage {
 
             $exitCode = -1
             foreach ($arguments in $attemptArgs) {
-                Write-LiteDeployLog " [INIT]    Spawn: $archiveName $arguments" -Level "INIT" -ForegroundColor Cyan -Component "DriverStaging"
+                Write-LiteDeployLog "Spawn: $archiveName $arguments" -Level "INIT" -Component "Drivers" -NoConsole
                 $proc = Start-Process -FilePath $targetArchive -ArgumentList $arguments -Wait -PassThru -NoNewWindow
                 $exitCode = $proc.ExitCode
                 $successCodesTry = if ($isHp) { @(0, 1168) } else { @(0) }
                 $hasTry = Test-DriverFolderHasDriverFiles -RootPath $DestinationPath -MaxDepth 10
                 if (($successCodesTry -contains $exitCode) -and $hasTry) { break }
-                Write-LiteDeployLog " [WARNING] Extract attempt failed (exit $exitCode, hasInf=$hasTry). Trying next switch if any..." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+                Write-LiteDeployLog "Extract attempt failed (exit $exitCode, hasInf=$hasTry). Trying next switch if any..." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
             }
         }
     }
     catch {
-        Write-LiteDeployLog " [ERROR]   Extraction process threw an exception: $($_.Exception.Message)" -Level "ERROR" -ForegroundColor Red -Component "DriverStaging"
+        Write-LiteDeployLog "Extraction process threw an exception: $($_.Exception.Message)" -Level "ERROR" -ForegroundColor Red -Component "Drivers"
         return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "ExecutionException"; SourcePath = $targetArchive; ExpandedPath = $null; Message = $_.Exception.Message }
     }
 
@@ -777,12 +777,12 @@ function Expand-LiteDeployDriverPackage {
     $hasDrivers = Test-DriverFolderHasDriverFiles -RootPath $DestinationPath -MaxDepth 10
 
     if ($successCodes -contains $exitCode -and $hasDrivers) {
-        Write-LiteDeployLog " [SUCCESS] Driver package extracted successfully (exit code $exitCode) to '$DestinationPath'." -Level "SUCCESS" -ForegroundColor Green -Component "DriverStaging"
+        Write-LiteDeployLog "Driver package extracted successfully (exit code $exitCode) to '$DestinationPath'." -Level "SUCCESS" -ForegroundColor Green -Component "Drivers"
         return [PSCustomObject]@{ Success = $true; Expanded = $true; Status = "Extracted"; SourcePath = $targetArchive; ExpandedPath = $DestinationPath; Message = "Extraction succeeded." }
     }
 
     $reason = if ($successCodes -notcontains $exitCode) { "Exit code $exitCode" } else { "No .inf driver files found after extraction" }
-    Write-LiteDeployLog " [WARNING] Extraction validation failed: $reason. Falling back to Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+    Write-LiteDeployLog "Extraction validation failed: $reason. Falling back to Standard OS In-Box Drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
     return [PSCustomObject]@{ Success = $false; Expanded = $false; Status = "ValidationFailed"; SourcePath = $targetArchive; ExpandedPath = $null; Message = $reason }
 }
 
@@ -804,7 +804,7 @@ function Stage-LiteDeployDrivers {
 
     $isDetected = [bool]($Detection.PSObject.Properties["IsDetected"] -and $Detection.IsDetected)
     if (-not $isDetected) {
-        Write-LiteDeployLog " [INFO]    No OEM driver pack detected; Windows in-box drivers will be used." -Level "INFO" -Component "DriverStaging"
+        Write-LiteDeployLog "No OEM driver pack detected; Windows in-box drivers will be used." -Level "INFO" -Component "Drivers"
         return [PSCustomObject]@{
             Success         = $true
             Staged          = $false
@@ -830,7 +830,8 @@ function Stage-LiteDeployDrivers {
     # 1. Content folder already extracted on the share / media
     if ($sourceKind -ieq "Content") {
         if ($fullPath -and (Test-Path -LiteralPath $fullPath -PathType Container) -and (Test-DriverFolderHasDriverFiles -RootPath $fullPath -MaxDepth 10)) {
-            Write-LiteDeployLog " [SUCCESS] Driver staging ready (extracted folder): '$fullPath'" -Level "SUCCESS" -ForegroundColor Green -Component "DriverStaging"
+            Write-LiteDeployLog ""
+            Write-LiteDeployLog "Driver staging ready (extracted folder): '$fullPath'" -Level "SUCCESS" -ForegroundColor Green -Component "Drivers"
             return [PSCustomObject]@{
                 Success         = $true
                 Staged          = $true
@@ -842,7 +843,7 @@ function Stage-LiteDeployDrivers {
                 Message         = "Extracted driver content validated."
             }
         }
-        Write-LiteDeployLog " [WARNING] Extracted driver path '$fullPath' is missing or contains no drivers. Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "Extracted driver path '$fullPath' is missing or contains no drivers. Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return [PSCustomObject]@{
             Success         = $false
             Staged          = $false
@@ -863,12 +864,12 @@ function Stage-LiteDeployDrivers {
     $archiveName = Split-Path -Path $fullPath -Leaf
     $stagedArchive = Join-Path $extractDir $archiveName
 
-    Write-LiteDeployLog " [INIT]    Copying driver archive '$archiveName' to '$stagedArchive'..." -Level "INIT" -ForegroundColor Cyan -Component "DriverStaging"
+    Write-LiteDeployLog "Copying driver archive '$archiveName' to '$stagedArchive'..." -Level "INIT" -ForegroundColor Cyan -Component "Drivers"
     try {
         Copy-Item -LiteralPath $fullPath -Destination $stagedArchive -Force -ErrorAction Stop
     }
     catch {
-        Write-LiteDeployLog " [WARNING] Failed to copy driver archive '$fullPath' to '$stagedArchive': $($_.Exception.Message). Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+        Write-LiteDeployLog "Failed to copy driver archive '$fullPath' to '$stagedArchive': $($_.Exception.Message). Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
         return [PSCustomObject]@{
             Success         = $false
             Staged          = $false
@@ -886,7 +887,7 @@ function Stage-LiteDeployDrivers {
         $sourceSize = (Get-Item -LiteralPath $fullPath -ErrorAction Stop).Length
         $stagedSize = (Get-Item -LiteralPath $stagedArchive -ErrorAction Stop).Length
         if ($sourceSize -ne $stagedSize -or $stagedSize -le 0) {
-            Write-LiteDeployLog " [WARNING] Staged driver archive size mismatch ($stagedSize bytes vs $sourceSize bytes). Copy was incomplete. Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+            Write-LiteDeployLog "Staged driver archive size mismatch ($stagedSize bytes vs $sourceSize bytes). Copy was incomplete. Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
             if (Test-Path -LiteralPath $stagedArchive -PathType Leaf) {
                 Remove-Item -LiteralPath $stagedArchive -Force -ErrorAction SilentlyContinue
             }
@@ -903,20 +904,20 @@ function Stage-LiteDeployDrivers {
         }
     }
     catch {
-        Write-LiteDeployLog " [WARNING] Could not verify staged driver archive size: $($_.Exception.Message)" -Level "WARNING" -Component "DriverStaging"
+        Write-LiteDeployLog "Could not verify staged driver archive size: $($_.Exception.Message)" -Level "WARNING" -Component "Drivers"
     }
 
     # Verify file integrity of the copied archive locally before extracting
     $expectedSha = if ($Detection.PSObject.Properties["SHA256"] -and $Detection.SHA256) { [string]$Detection.SHA256 } else { $null }
 
     if (-not [string]::IsNullOrWhiteSpace($expectedSha)) {
-        Write-LiteDeployLog " [CHECK]   Verifying SHA256 integrity of staged archive '$archiveName'..." -Level "INFO" -Component "DriverStaging"
+        Write-LiteDeployLog "Verifying SHA256 integrity of staged archive '$archiveName'..." -Level "INFO" -Component "Drivers"
         $stagedSha = $null
         try {
             $stagedSha = (Get-FileHash -LiteralPath $stagedArchive -Algorithm SHA256 -ErrorAction Stop).Hash
         }
         catch {
-            Write-LiteDeployLog " [WARNING] Failed to calculate hash for staged archive '$stagedArchive': $($_.Exception.Message). Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+            Write-LiteDeployLog "Failed to calculate hash for staged archive '$stagedArchive': $($_.Exception.Message). Falling back to in-box." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
             if (Test-Path -LiteralPath $stagedArchive -PathType Leaf) {
                 Remove-Item -LiteralPath $stagedArchive -Force -ErrorAction SilentlyContinue
             }
@@ -933,7 +934,7 @@ function Stage-LiteDeployDrivers {
         }
 
         if ($stagedSha -ne $expectedSha) {
-            Write-LiteDeployLog " [WARNING] Staged archive hash mismatch for '$archiveName'! Expected: $expectedSha, Got: $stagedSha. Integrity check failed; falling back to in-box drivers." -Level "WARNING" -ForegroundColor Yellow -Component "DriverStaging"
+            Write-LiteDeployLog "Staged archive hash mismatch for '$archiveName'! Expected: $expectedSha, Got: $stagedSha. Integrity check failed; falling back to in-box drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Drivers"
             if (Test-Path -LiteralPath $stagedArchive -PathType Leaf) {
                 Remove-Item -LiteralPath $stagedArchive -Force -ErrorAction SilentlyContinue
             }
@@ -949,7 +950,7 @@ function Stage-LiteDeployDrivers {
             }
         }
 
-        Write-LiteDeployLog " [SUCCESS] Archive integrity verified (SHA256 matched: $stagedSha)." -Level "SUCCESS" -ForegroundColor Green -Component "DriverStaging"
+        Write-LiteDeployLog "Archive integrity verified (SHA256 matched: $stagedSha)." -Level "SUCCESS" -ForegroundColor Green -Component "Drivers" -NoConsole
     }
 
     $expandResult = Expand-LiteDeployDriverPackage -Detection $Detection -ArchivePath $stagedArchive -DestinationPath $extractDir
@@ -960,7 +961,8 @@ function Stage-LiteDeployDrivers {
     }
 
     if ($expandResult.Success -and $expandResult.ExpandedPath) {
-        Write-LiteDeployLog " [SUCCESS] Driver staging completed successfully: '$($expandResult.ExpandedPath)'" -Level "SUCCESS" -ForegroundColor Green -Component "DriverStaging"
+        Write-LiteDeployLog ""
+        Write-LiteDeployLog "Driver staging completed successfully: '$($expandResult.ExpandedPath)'" -Level "SUCCESS" -ForegroundColor Green -Component "Drivers"
         return [PSCustomObject]@{
             Success         = $true
             Staged          = $true

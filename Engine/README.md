@@ -2,12 +2,12 @@
 
 ## Dev vs production
 
-**Numbered folders (`000-Boot`, `110-UI`, …) are for development and repository organization only.**
+**Numbered folders (`000-Boot`, `100-UI`, …) are for development and repository organization only.**
 
 | Location | Role |
 | :--- | :--- |
 | `Engine\Runtime\<NNN-*>\` | Dev source (this repo) |
-| `Engine\Runtime\110-UI\` | Dev Runtime UI source |
+| `Engine\Runtime\100-UI\` | Dev Runtime UI source |
 | `Engine\Admin\<NNN-*>\` | Dev Admin source |
 | **Published share** `Engine\Runtime\*.ps1` | Flat domain scripts |
 | **Published share** `Engine\Runtime\UI\` | Runtime UI |
@@ -39,18 +39,17 @@ visible imports, result contracts, and `-ValidateOnly` inspection.
 | Folder | Component | Published file |
 | :--- | :--- | :--- |
 | `000-Boot` | Boot | `LiteDeploy.PE.Boot.ps1` |
-| `010-Logs` | Logs | `LiteDeploy.Logs.ps1` |
+| `010-Engine` | PE.Engine | `LiteDeploy.PE.Engine.ps1` |
+| `010-Engine` | OS.Engine | `LiteDeploy.OS.Engine.ps1` |
 | `020-Environment` | Environment | `LiteDeploy.Environment.ps1` |
-| `030-Hardware` | Hardware | `LiteDeploy.Hardware.ps1` |
-| `040-State` | State | `LiteDeploy.State.ps1` |
+| `030-Session` | Session | `LiteDeploy.Session.ps1` |
+| `040-Hardware` | Hardware | `LiteDeploy.Hardware.ps1` |
 | `050-Workflow` | Workflow | `LiteDeploy.Workflow.ps1` |
 | `060-Disk` | Disk | `LiteDeploy.Disk.ps1` |
 | `070-Drivers` | Drivers | `LiteDeploy.Drivers.ps1` |
 | `080-Image` | Image | `LiteDeploy.Image.ps1` |
 | `090-Packages` | Packages | `LiteDeploy.Packages.ps1` |
-| `100-Engine` | Engine | `LiteDeploy.PE.Engine.ps1` |
-| `100-Engine` | FullOS | `LiteDeploy.OS.Engine.ps1` |
-| `110-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Runtime\UI\` |
+| `100-UI\...` | UI.* | `LiteDeploy.UI.*` → `Engine\Runtime\UI\` |
 
 ### Execution
 

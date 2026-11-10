@@ -24,7 +24,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Host"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Workflow")
+        Dependencies         = @("Session", "Workflow")
         Description          = "Create/edit/validate WorkFlows\\*.json definitions and action ordering."
     }
 }

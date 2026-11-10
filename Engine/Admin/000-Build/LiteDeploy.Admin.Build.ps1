@@ -97,7 +97,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Host"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs")
+        Dependencies         = @("Session")
         Description          = "Builds/publishes deployable LiteDeploy artifacts, WinPE bootstrap staging, and share sync (formerly SyncComponents)."
     }
 }
@@ -243,9 +243,6 @@ function Get-RepoComponentFiles {
     }
 }
 
-# ==============================================================================
-# 4. SYNCHRONIZATION WORKFLOWS
-# ==============================================================================
 
 function Sync-DeploymentShareTarget {
     param(
@@ -285,6 +282,16 @@ function Sync-DeploymentShareTarget {
             Get-ChildItem -Path $dir -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -ne 'UI' } |
                 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # Directed cleanup of obsolete fused/probe scripts: remove old LiteDeploy.Logs.ps1, LiteDeploy.State.ps1,
+    # and LiteDeploy.OS.InteractiveProbe.ps1 even when CleanTarget is false, ensuring published Engine\Runtime does not retain stale split components.
+    foreach ($obsoleteScript in @('LiteDeploy.Logs.ps1', 'LiteDeploy.State.ps1', 'LiteDeploy.OS.InteractiveProbe.ps1')) {
+        $obsoletePath = Join-Path $runtimeDest $obsoleteScript
+        if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) {
+            Write-SyncLog "Removing obsolete fused script '$obsoleteScript' from '$runtimeDest'..." -Level "INFO" -ForegroundColor DarkGray
+            Remove-Item -LiteralPath $obsoletePath -Force -ErrorAction SilentlyContinue
         }
     }
 

@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Domain logic for OS/workflow catalogs and selection contracts consumed by `UI.WorkflowSelection`. WPF stays under `110-UI/WorkflowSelection`.
+Domain logic for OS/workflow catalogs and selection contracts consumed by `UI.WorkflowSelection`. WPF stays under `100-UI/WorkflowSelection`.
 
 ### Key Features & Design
 

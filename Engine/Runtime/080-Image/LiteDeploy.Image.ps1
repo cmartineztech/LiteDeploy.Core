@@ -139,7 +139,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Workflow")
+        Dependencies         = @("Session", "Workflow")
         Description          = "Applies Windows operating system using Windows Setup (setup.exe) or DISM (dism.exe) with automated unattended answer file generation."
     }
 }
@@ -155,17 +155,22 @@ if ($Metadata) {
 
 function Write-ComponentLog {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Message,
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Message = "",
         [string]$Level = "INFO",
-        [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White
+        [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White,
+        [switch]$NoConsole,
+        [switch]$NoPrefix
     )
 
     if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-        Write-LiteDeployLog -Component "Image" -Message $Message -Level $Level
+        Write-LiteDeployLog -Component "Image" -Message $Message -Level $Level -ForegroundColor $ForegroundColor -NoConsole:$NoConsole -NoPrefix:$NoPrefix
     }
     else {
-        Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
+        if (-not $NoConsole) {
+            Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
+        }
     }
 }
 
@@ -386,7 +391,7 @@ function Get-LiteDeployImageDeploymentRoot {
         }
         if ($BootCtx.PSObject.Properties['DriveLetter'] -and $BootCtx.DriveLetter) {
             $dl = [string]$BootCtx.DriveLetter
-            return if ($dl -match '^[A-Za-z]:$') { "$dl\" } else { $dl }
+            if ($dl -match '^[A-Za-z]:$') { return "$dl\" } else { return $dl }
         }
         if ($BootCtx.PSObject.Properties['NetworkPath'] -and $BootCtx.NetworkPath) {
             return [string]$BootCtx.NetworkPath
@@ -1045,6 +1050,445 @@ function Get-LiteDeploySetupArguments {
     return ($argsList -join " ")
 }
 
+function Get-LiteDeployLocalWorkLogsPath {
+    <#
+    .SYNOPSIS
+        Resolves the local deployment WorkLogs directory without hardcoded drive letters.
+    #>
+    if (Get-Command Get-LiteDeployLogPath -ErrorAction SilentlyContinue) {
+        $execLog = Get-LiteDeployLogPath
+        return (Split-Path -Parent $execLog)
+    }
+    $overrideDir = Get-Variable -Name LiteDeploySessionLogDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrWhiteSpace($overrideDir)) {
+        return [string]$overrideDir
+    }
+    $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
+    $defaultDir = Join-Path $sysDrive "~LiteDeploy\WorkLogs"
+    if (-not (Test-Path -LiteralPath $defaultDir)) {
+        $null = New-Item -Path $defaultDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+    }
+    return $defaultDir
+}
+
+function Collect-LiteDeploySetupLogs {
+    <#
+    .SYNOPSIS
+        Collects active WinPE Windows Setup execution logs (setupact.log, setuperr.log)
+        directly into WorkLogs\Setup\ without subdirectories.
+    .DESCRIPTION
+        Selects the current WinPE execution Panther source per-file using deterministic priority:
+          1) $sysDrive\$Windows.~BT\Sources\Panther (active Setup execution/extraction log in WinPE)
+          2) $sysDrive\Windows\Panther (WinPE Panther fallback)
+        Avoids overwriting by loops through multiple sources and never copies baked target image logs.
+        Post-reboot first-boot Panther logs are collected in FullOS into WorkLogs\Setup\FullOS-Panther.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$DestinationRoot = "",
+        [Parameter(Mandatory = $false)]
+        [string]$WinPESystemDrive = ""
+    )
+
+    $workLogsRoot = Get-LiteDeployLocalWorkLogsPath
+    $setupDestDir = Join-Path $workLogsRoot "Setup"
+
+    $sysDrive = if ($WinPESystemDrive) {
+        $WinPESystemDrive
+    } elseif (Get-Variable -Name LiteDeployWinPESystemDrive -Scope Global -ValueOnly -ErrorAction SilentlyContinue) {
+        $global:LiteDeployWinPESystemDrive
+    } elseif ($env:SystemDrive) {
+        $env:SystemDrive
+    } else {
+        "X:"
+    }
+
+    $candidateSources = @(
+        (Join-Path $sysDrive "`$Windows.~BT\Sources\Panther"),
+        (Join-Path $sysDrive "Windows\Panther")
+    )
+
+    $targetLogs = @("setupact.log", "setuperr.log")
+    $copiedCount = 0
+    $destCreated = $false
+
+    foreach ($logName in $targetLogs) {
+        $selectedSource = $null
+        foreach ($srcDir in $candidateSources) {
+            $candidateFile = Join-Path $srcDir $logName
+            if (Test-Path -LiteralPath $candidateFile -PathType Leaf -ErrorAction SilentlyContinue) {
+                $selectedSource = $candidateFile
+                break # Deterministic priority: stop at first existing candidate
+            }
+        }
+
+        if ($selectedSource) {
+            if (-not $destCreated) {
+                if (-not (Test-Path -LiteralPath $setupDestDir)) {
+                    try {
+                        $null = New-Item -Path $setupDestDir -ItemType Directory -Force -ErrorAction Stop
+                    }
+                    catch {
+                        Write-ComponentLog "Warning: Could not create Setup logs directory '$setupDestDir': $($_.Exception.Message)" -Level "WARNING" -ForegroundColor Yellow
+                        return
+                    }
+                }
+                $destCreated = $true
+            }
+
+            $destFile = Join-Path $setupDestDir $logName
+            try {
+                Copy-Item -LiteralPath $selectedSource -Destination $destFile -Force -ErrorAction Stop
+                $copiedCount++
+            }
+            catch {
+                Write-ComponentLog "Warning: Failed to copy Setup log '$selectedSource' to '$destFile': $($_.Exception.Message)" -Level "WARNING" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    if ($copiedCount -gt 0) {
+        Write-ComponentLog "Collected $copiedCount native Windows Setup log file(s) into '$setupDestDir'." -Level "INFO"
+    }
+}
+
+function Invoke-DismProcessStream {
+    <#
+    .SYNOPSIS
+        Executes a DISM command with real-time progress streaming, milestone logging,
+        bounded memory tracking, and detailed failure diagnostics.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Stage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DismExecutable,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$ArgumentString = "",
+
+        [Parameter(Mandatory = $true)]
+        [string]$NativeLogPath
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $latestPercentage = $null
+    $highestObserved = -1.0
+    $nextMilestone = 10
+    $exitCode = -1
+    $errorMessage = ""
+
+    # Ensure parent directory for native DISM log exists and rotate .bak if file already exists
+    try {
+        $logDir = Split-Path -Parent $NativeLogPath
+        if ($logDir -and -not (Test-Path -LiteralPath $logDir)) {
+            $null = New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $NativeLogPath) {
+            $bakPath = "$NativeLogPath.bak"
+            Copy-Item -LiteralPath $NativeLogPath -Destination $bakPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $NativeLogPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch {}
+
+    $regex = '\[[\s=]*(\d{1,3}(?:[.,]\d+)?)\s*%[\s=]*\]'
+    $errorTail = [System.Collections.Generic.Queue[string]]::new()
+
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $DismExecutable
+    $processInfo.Arguments = $ArgumentString
+    $processInfo.UseShellExecute = $false
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.CreateNoWindow = $true
+
+    $proc = $null
+    try {
+        $proc = [System.Diagnostics.Process]::Start($processInfo)
+    }
+    catch {
+        $stopwatch.Stop()
+        $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+        $progressDesc = "Progress unavailable (process launch failed)."
+        $failMsg = "DISM /$Stage failed to start: $($_.Exception.Message). $progressDesc DISM log: $NativeLogPath"
+        Write-ComponentLog $failMsg -Level "ERROR" -ForegroundColor Red
+        return [PSCustomObject]@{
+            Success          = $false
+            ExitCode         = -1
+            ExitCodeHex      = "0xFFFFFFFF"
+            DurationSeconds  = $durationSec
+            LatestPercentage = $null
+            LogPath          = $NativeLogPath
+            Stage            = $Stage
+            ErrorMessage     = $_.Exception.Message
+        }
+    }
+
+    try {
+        $outBuf = New-Object char[] 1024
+        $errBuf = New-Object char[] 1024
+
+        $outTask = $proc.StandardOutput.ReadAsync($outBuf, 0, $outBuf.Length)
+        $errTask = $proc.StandardError.ReadAsync($errBuf, 0, $errBuf.Length)
+
+        $pending = ""
+        $pendingErr = ""
+        $maxErrCap = 8192
+
+        while ($outTask -ne $null -or $errTask -ne $null) {
+            $taskList = [System.Collections.Generic.List[System.Threading.Tasks.Task]]::new()
+            if ($outTask) { $taskList.Add($outTask) }
+            if ($errTask) { $taskList.Add($errTask) }
+
+            $taskArr = $taskList.ToArray()
+            $idx = [System.Threading.Tasks.Task]::WaitAny($taskArr, 200)
+
+            if ($idx -lt 0) {
+                if ($proc.HasExited) {
+                    if ($null -eq $outTask -and $null -eq $errTask) {
+                        break
+                    }
+                }
+                continue
+            }
+
+            $completed = $taskArr[$idx]
+            if ($outTask -and $completed.Id -eq $outTask.Id) {
+                $charsRead = $outTask.Result
+                if ($charsRead -le 0) {
+                    $outTask = $null
+                }
+                else {
+                    $pending += New-Object string ($outBuf, 0, $charsRead)
+
+                    # Prevent unbounded growth if output has no line breaks
+                    if ($pending.Length -gt 8192) {
+                        $lastR = $pending.LastIndexOf("`r")
+                        $lastN = $pending.LastIndexOf("`n")
+                        $lastBreak = [Math]::Max($lastR, $lastN)
+                        if ($lastBreak -lt 0) {
+                            $pending = $pending.Substring($pending.Length - 4096)
+                        }
+                    }
+
+                    $lastR = $pending.LastIndexOf("`r")
+                    $lastN = $pending.LastIndexOf("`n")
+                    $lastBreak = [Math]::Max($lastR, $lastN)
+
+                    if ($lastBreak -ge 0) {
+                        $toProcess = $pending.Substring(0, $lastBreak)
+                        $pending = $pending.Substring($lastBreak + 1)
+                        $lines = $toProcess -split "[\r\n]+"
+                        foreach ($line in $lines) {
+                            $trimmed = $line.Trim()
+                            if (-not $trimmed) { continue }
+
+                            if ($trimmed -match $regex) {
+                                $rawPct = $matches[1].Replace(',', '.')
+                                $pctVal = [double]::Parse($rawPct, [System.Globalization.CultureInfo]::InvariantCulture)
+                                if ($pctVal -ge 0 -and $pctVal -le 100) {
+                                    $latestPercentage = $pctVal
+                                    $displayPct = if ($pctVal -eq [Math]::Floor($pctVal)) { "$([int]$pctVal)" } else { ("{0:F1}" -f $pctVal) }
+                                    # Console live update
+                                    Write-Host -NoNewline ("`r [INFO   ] DISM /$Stage progress: $displayPct%  ")
+
+                                    # Milestone check: log every 10% on actual observed crossing without repetition
+                                    if ($pctVal -ge $highestObserved) {
+                                        $highestObserved = $pctVal
+                                    }
+                                    if ($pctVal -ge $nextMilestone) {
+                                        Write-Host -NoNewline "`r                                                                `r"
+                                        Write-ComponentLog "DISM /$Stage progress: $displayPct%" -Level "INFO"
+                                        $currentDecade = [int]([Math]::Floor($pctVal / 10.0) * 10)
+                                        $nextMilestone = $currentDecade + 10
+                                    }
+                                }
+                            }
+                            else {
+                                # Retain bounded tail of non-progress lines for error diagnostics
+                                $cappedLine = if ($trimmed.Length -gt 512) { $trimmed.Substring(0, 512) + "..." } else { $trimmed }
+                                if ($errorTail.Count -ge 15) { [void]$errorTail.Dequeue() }
+                                $errorTail.Enqueue($cappedLine)
+                            }
+                        }
+                    }
+
+                    $outTask = $proc.StandardOutput.ReadAsync($outBuf, 0, $outBuf.Length)
+                }
+            }
+            elseif ($errTask -and $completed.Id -eq $errTask.Id) {
+                $errCharsRead = $errTask.Result
+                if ($errCharsRead -le 0) {
+                    $errTask = $null
+                }
+                else {
+                    $pendingErr += New-Object string ($errBuf, 0, $errCharsRead)
+                    if ($pendingErr.Length -gt $maxErrCap) {
+                        $pendingErr = $pendingErr.Substring($pendingErr.Length - $maxErrCap)
+                    }
+                    $errTask = $proc.StandardError.ReadAsync($errBuf, 0, $errBuf.Length)
+                }
+            }
+        }
+
+        $proc.WaitForExit()
+        $exitCode = $proc.ExitCode
+        $stopwatch.Stop()
+        $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+
+        # Process any final trailing text
+        if ($pending.Trim()) {
+            $finalLine = $pending.Trim()
+            if ($finalLine -match $regex) {
+                $rawPct = $matches[1].Replace(',', '.')
+                $pctVal = [double]::Parse($rawPct, [System.Globalization.CultureInfo]::InvariantCulture)
+                if ($pctVal -ge 0 -and $pctVal -le 100) {
+                    $latestPercentage = $pctVal
+                    $displayPct = if ($pctVal -eq [Math]::Floor($pctVal)) { "$([int]$pctVal)" } else { ("{0:F1}" -f $pctVal) }
+                    if ($pctVal -ge $nextMilestone) {
+                        Write-ComponentLog "DISM /$Stage progress: $displayPct%" -Level "INFO"
+                    }
+                }
+            }
+            else {
+                $cappedFinal = if ($finalLine.Length -gt 512) { $finalLine.Substring(0, 512) + "..." } else { $finalLine }
+                if ($errorTail.Count -ge 15) { [void]$errorTail.Dequeue() }
+                $errorTail.Enqueue($cappedFinal)
+            }
+        }
+
+        # Clear live progress line on console
+        Write-Host -NoNewline "`r                                                                `r"
+
+        if (-not [string]::IsNullOrWhiteSpace($pendingErr)) {
+            $errorMessage = $pendingErr.Trim()
+        }
+        elseif ($errorTail.Count -gt 0) {
+            $errorMessage = ($errorTail.ToArray() -join " `n ")
+        }
+
+        if ($errorMessage.Length -gt 8192) {
+            $errorMessage = $errorMessage.Substring($errorMessage.Length - 8192)
+        }
+    }
+    catch {
+        $stopwatch.Stop()
+        $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+        $errorMessage = "Error during DISM execution: $($_.Exception.Message)"
+        if ($proc -and $proc.HasExited) {
+            $exitCode = $proc.ExitCode
+        }
+        else {
+            $exitCode = -1
+        }
+    }
+    finally {
+        if ($proc) {
+            try {
+                if (-not $proc.HasExited) {
+                    $proc.Kill()
+                }
+            }
+            catch {}
+            try {
+                $proc.Dispose()
+            }
+            catch {}
+        }
+    }
+
+    $hexCode = if ($exitCode -ge 0) { "0x{0:X8}" -f $exitCode } else { "0xFFFFFFFF" }
+    $isSuccess = ($exitCode -eq 0)
+
+    return [PSCustomObject]@{
+        Success          = $isSuccess
+        ExitCode         = $exitCode
+        ExitCodeHex      = $hexCode
+        DurationSeconds  = $durationSec
+        LatestPercentage = $latestPercentage
+        LogPath          = $NativeLogPath
+        Stage            = $Stage
+        ErrorMessage     = $errorMessage
+    }
+}
+
+function Get-LiteDeploySetupProgress {
+    <#
+    .SYNOPSIS
+        Reads Windows Setup progress and phase data from the MoSetup Volatile registry key.
+    .DESCRIPTION
+        Reads HKLM:\SYSTEM\Setup\MoSetup\Volatile (SetupProgress, SetupPhase, SetupSubPhase).
+        Strictly read-only; never writes to registry.
+        Validates progress is numeric between 0 and 100.
+        Returns null on missing key, missing progress, unreadable, or invalid values.
+        Missing optional properties or unreadable registry NEVER fail installation or fabricate 0%.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$RegistryPath = 'HKLM:\SYSTEM\Setup\MoSetup\Volatile'
+    )
+
+    try {
+        if (-not (Test-Path -LiteralPath $RegistryPath -ErrorAction SilentlyContinue)) {
+            return $null
+        }
+
+        $regItem = Get-ItemProperty -LiteralPath $RegistryPath -ErrorAction SilentlyContinue
+        if ($null -eq $regItem) {
+            return $null
+        }
+
+        # Validate SetupProgress (numeric 0..100)
+        $rawProgress = $null
+        if ($regItem.PSObject.Properties['SetupProgress'] -and ($null -ne $regItem.SetupProgress)) {
+            $val = $regItem.SetupProgress
+            if ($val -is [int] -or $val -is [long] -or ($val -as [double] -ne $null)) {
+                $numVal = [double]$val
+                if ($numVal -ge 0.0 -and $numVal -le 100.0) {
+                    $rawProgress = $numVal
+                }
+            }
+        }
+
+        if ($null -eq $rawProgress) {
+            return $null
+        }
+
+        # Optional SetupPhase (numeric raw context only, no guessed phase names)
+        $rawPhase = $null
+        if ($regItem.PSObject.Properties['SetupPhase'] -and ($null -ne $regItem.SetupPhase)) {
+            $pVal = $regItem.SetupPhase
+            if ($pVal -is [int] -or $pVal -is [long] -or ($pVal -as [int] -ne $null)) {
+                $rawPhase = [int]$pVal
+            }
+        }
+
+        # Optional SetupSubPhase (numeric raw context only)
+        $rawSubPhase = $null
+        if ($regItem.PSObject.Properties['SetupSubPhase'] -and ($null -ne $regItem.SetupSubPhase)) {
+            $spVal = $regItem.SetupSubPhase
+            if ($spVal -is [int] -or $spVal -is [long] -or ($spVal -as [int] -ne $null)) {
+                $rawSubPhase = [int]$spVal
+            }
+        }
+
+        return [PSCustomObject]@{
+            Progress = $rawProgress
+            Phase    = $rawPhase
+            SubPhase = $rawSubPhase
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
 function Invoke-SetupEngine {
     param(
         [Parameter(Mandatory = $true)]
@@ -1055,11 +1499,13 @@ function Invoke-SetupEngine {
         [string]$ResolvedImagePath = "",
         [int]$SelectedImageIndex = 0,
         [string]$DriverFolder = "",
-        [string[]]$ExtraArgs = @()
+        [string[]]$ExtraArgs = @(),
+        [scriptblock]$ProgressReader = $null,
+        [int]$PollIntervalMs = 1000
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    Write-ComponentLog "================================================================" -Level "INIT" -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
     Write-ComponentLog "Starting Windows Setup Engine (Setup.exe)..." -Level "INIT" -ForegroundColor Cyan
     Write-ComponentLog "Setup Binary : $ResolvedSetupPath" -Level "INFO"
 
@@ -1090,30 +1536,231 @@ function Invoke-SetupEngine {
         -DriverPath $DriverFolder `
         -ExtraArgs $ExtraArgs
 
-    Write-ComponentLog "Command Line : $ResolvedSetupPath $argumentsString" -Level "INFO"
+    Write-ComponentLog "Command Line : $ResolvedSetupPath $argumentsString" -Level "INFO" -NoConsole
     Write-ComponentLog "Launching Windows Setup process. Please wait..." -Level "INIT" -ForegroundColor Cyan
 
     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
     $processInfo.FileName = $ResolvedSetupPath
-    $processInfo.WorkingDirectory = Split-Path -Parent $ResolvedSetupPath
+    $parentDir = Split-Path -Parent $ResolvedSetupPath
+    if (-not [string]::IsNullOrWhiteSpace($parentDir) -and (Test-Path -LiteralPath $parentDir -ErrorAction SilentlyContinue)) {
+        $processInfo.WorkingDirectory = $parentDir
+    }
     $processInfo.Arguments = $argumentsString
     $processInfo.UseShellExecute = $false
 
-    $setupProcess = [System.Diagnostics.Process]::Start($processInfo)
-    $setupProcess.WaitForExit()
-    $exitCode = $setupProcess.ExitCode
+    $setupProcess = $null
+    $exitCode = -1
+    $durationSec = 0
+    $setupThrew = $null
+    $latestPercentage = $null
+    $latestPhase = $null
+    $latestSubPhase = $null
+    $nextMilestone = 10
+    $lastObservedPhase = $null
+    $hasRenderedProgress = $false
 
-    $stopwatch.Stop()
-    $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
-
-    $isSuccessCode = ($exitCode -eq 0 -or $exitCode -eq 3010)
-
-    if (-not $isSuccessCode) {
-        $hexCode = "0x{0:X8}" -f $exitCode
-        Write-ComponentLog "Windows Setup failed with exit code $exitCode ($hexCode) after $durationSec seconds." -Level "ERROR" -ForegroundColor Red
-        throw "Windows Setup failed with exit code $exitCode ($hexCode)."
+    $readProgress = {
+        if ($ProgressReader) {
+            return (& $ProgressReader)
+        }
+        return (Get-LiteDeploySetupProgress)
     }
 
+    # Baseline snapshot before launch to prevent stale pre-existing registry data from previous attempts
+    $baselineSnapshot = & $readProgress
+    $hasBaseline = ($null -ne $baselineSnapshot)
+    $baselineProgress = if ($hasBaseline -and $baselineSnapshot.PSObject.Properties['Progress']) { $baselineSnapshot.Progress } else { $null }
+    $baselinePhase    = if ($hasBaseline -and $baselineSnapshot.PSObject.Properties['Phase']) { $baselineSnapshot.Phase } else { $null }
+    $baselineSubPhase = if ($hasBaseline -and $baselineSnapshot.PSObject.Properties['SubPhase']) { $baselineSnapshot.SubPhase } else { $null }
+
+    $setupProcess = $null
+    $setupThrew = $null
+
+    try {
+        try {
+            $setupProcess = [System.Diagnostics.Process]::Start($processInfo)
+        }
+        catch {
+            $stopwatch.Stop()
+            $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+            $setupLogDir = Join-Path (Get-LiteDeployLocalWorkLogsPath) "Setup"
+            $progressDesc = "Progress unavailable (process launch failed)."
+            $failMsg = "Windows Setup failed to start: $($_.Exception.Message). $progressDesc Setup log directory: $setupLogDir."
+            Write-ComponentLog $failMsg -Level "ERROR" -ForegroundColor Red
+            throw "Windows Setup failed to start: $($_.Exception.Message). $progressDesc Setup log directory: $setupLogDir."
+        }
+
+        $pollTimeout = if ($PollIntervalMs -gt 0) { $PollIntervalMs } else { 1000 }
+
+        while ($true) {
+            $exited = $setupProcess.WaitForExit($pollTimeout)
+
+            $regData = & $readProgress
+
+            if ($hasBaseline) {
+                if ($null -ne $regData) {
+                    $regProg = if ($regData.PSObject.Properties['Progress']) { $regData.Progress } else { $null }
+                    $regPh   = if ($regData.PSObject.Properties['Phase']) { $regData.Phase } else { $null }
+                    $regSub  = if ($regData.PSObject.Properties['SubPhase']) { $regData.SubPhase } else { $null }
+
+                    $sameProg = ($regProg -eq $baselineProgress)
+                    $samePh   = ($regPh -eq $baselinePhase)
+                    $sameSub  = ($regSub -eq $baselineSubPhase)
+
+                    if ($sameProg -and $samePh -and $sameSub) {
+                        if ($exited) { break }
+                        continue
+                    }
+                    else {
+                        $hasBaseline = $false
+                    }
+                }
+                else {
+                    $hasBaseline = $false
+                }
+            }
+
+            if ($null -ne $regData) {
+                $pctVal = if ($regData.PSObject.Properties['Progress']) { $regData.Progress } else { $null }
+                if ($null -ne $pctVal) {
+                    $currPhase = if ($regData.PSObject.Properties['Phase']) { $regData.Phase } else { $null }
+                    $currSub   = if ($regData.PSObject.Properties['SubPhase']) { $regData.SubPhase } else { $null }
+
+                    $phaseChanged = ($null -ne $currPhase -and $null -ne $lastObservedPhase -and $currPhase -ne $lastObservedPhase)
+                    $progressReset = ($null -ne $latestPercentage -and $pctVal -lt $latestPercentage)
+
+                    if ($phaseChanged -or $progressReset) {
+                        $currentDecade = [int]([Math]::Floor($pctVal / 10.0) * 10)
+                        $nextMilestone = $currentDecade + 10
+                    }
+
+                    if ($null -ne $currPhase) {
+                        $lastObservedPhase = $currPhase
+                    }
+
+                    $latestPercentage = $pctVal
+                    $latestPhase = $currPhase
+                    $latestSubPhase = $currSub
+
+                    $displayPct = if ($pctVal -eq [Math]::Floor($pctVal)) { "$([int]$pctVal)" } else { ("{0:F1}" -f $pctVal) }
+                    $phaseContext = ""
+                    if ($null -ne $currPhase) {
+                        if ($null -ne $currSub) {
+                            $phaseContext = " (Phase: $currPhase, SubPhase: $currSub)"
+                        } else {
+                            $phaseContext = " (Phase: $currPhase)"
+                        }
+                    }
+
+                    Write-Host -NoNewline ("`r [INFO   ] Windows Setup progress: $displayPct%$phaseContext  ")
+                    $hasRenderedProgress = $true
+
+                    if ($pctVal -ge $nextMilestone) {
+                        Write-Host -NoNewline "`r                                                                `r"
+                        Write-ComponentLog "Windows Setup progress: $displayPct%$phaseContext" -Level "INFO"
+                        $currentDecade = [int]([Math]::Floor($pctVal / 10.0) * 10)
+                        $nextMilestone = $currentDecade + 10
+                    }
+                }
+            }
+
+            if ($exited) {
+                break
+            }
+        }
+
+        if ($hasRenderedProgress) {
+            Write-Host -NoNewline "`r                                                                `r"
+        }
+
+        $setupProcess.WaitForExit()
+        $exitCode = $setupProcess.ExitCode
+        $stopwatch.Stop()
+        $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+
+        $isSuccessCode = ($exitCode -eq 0 -or $exitCode -eq 3010)
+        if (-not $isSuccessCode) {
+            $hexCode = "0x{0:X8}" -f $exitCode
+            $setupLogDir = Join-Path (Get-LiteDeployLocalWorkLogsPath) "Setup"
+            $progressDesc = if ($null -ne $latestPercentage) {
+                $displayPct = if ($latestPercentage -eq [Math]::Floor($latestPercentage)) { "$([int]$latestPercentage)" } else { ("{0:F1}" -f $latestPercentage) }
+                $phaseContext = ""
+                if ($null -ne $latestPhase) {
+                    if ($null -ne $latestSubPhase) {
+                        $phaseContext = " (Phase: $latestPhase, SubPhase: $latestSubPhase)"
+                    } else {
+                        $phaseContext = " (Phase: $latestPhase)"
+                    }
+                }
+                "Last reported progress before failure: $displayPct%$phaseContext (note: last reported progress is an observation and may not be the exact error location)."
+            } else {
+                "Progress unavailable (no progress percentage reported before failure)."
+            }
+
+            Write-ComponentLog "Windows Setup failed with exit code $exitCode ($hexCode) after $durationSec seconds. $progressDesc Setup log directory: $setupLogDir." -Level "ERROR" -ForegroundColor Red
+            throw "Windows Setup failed with exit code $exitCode ($hexCode). $progressDesc Setup log directory: $setupLogDir."
+        }
+    }
+    catch {
+        $setupThrew = $_
+    }
+    finally {
+        if ($setupProcess) {
+            try {
+                $setupProcess.Dispose()
+            }
+            catch {}
+        }
+
+        # Collect available native Windows Setup logs after process completion on BOTH success/nonzero failure/exception
+        try {
+            Collect-LiteDeploySetupLogs -DestinationRoot $NormalizedDestination
+        }
+        catch {
+            Write-ComponentLog "Warning: Native Setup log collection encountered an error: $($_.Exception.Message)" -Level "WARNING" -ForegroundColor Yellow
+        }
+
+        # Mirror collected logs to share and OS volume if configured/available
+        $remoteLogDir = if (Get-Command Get-LiteDeployRemoteLogDirectory -ErrorAction SilentlyContinue) {
+            Get-LiteDeployRemoteLogDirectory
+        } else {
+            $global:LiteDeployRemoteLogDir
+        }
+        $osLogDir = if (Get-Command Get-LiteDeployOsLogDirectory -ErrorAction SilentlyContinue) {
+            Get-LiteDeployOsLogDirectory
+        } else {
+            $global:LiteDeployOsLogDir
+        }
+        $localLogs = Get-LiteDeployLocalWorkLogsPath
+        $localSetupLogs = Join-Path $localLogs "Setup"
+
+        try {
+            if (Get-Command Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue) {
+                if ($remoteLogDir) {
+                    Sync-LiteDeployLogsToShare -RuntimePaths ([PSCustomObject]@{ LocalLogDirectory = $localLogs }) -RemoteLogDir $remoteLogDir
+                }
+
+                if ($osLogDir -and (Test-Path -LiteralPath $osLogDir -PathType Container)) {
+                    Sync-LiteDeployLogsToShare -RuntimePaths ([PSCustomObject]@{ LocalLogDirectory = $localLogs }) -RemoteLogDir $osLogDir
+                }
+            }
+        }
+        catch {}
+
+        # Present technician-facing diagnostic log location
+        try {
+            if (Get-Command Write-LiteDeployDiagnosticLogLocation -ErrorAction SilentlyContinue) {
+                $null = Write-LiteDeployDiagnosticLogLocation -LocalPath $localSetupLogs -RemoteLogDir $remoteLogDir -RelativePath "Setup" -OsLogDir $osLogDir -Component "Image"
+            }
+        }
+        catch {}
+
+        if ($setupThrew) {
+            throw $setupThrew
+        }
+    }
+
+    Write-ComponentLog -Message ''
     Write-ComponentLog "Windows Setup completed with exit code $exitCode in $durationSec seconds." -Level "SUCCESS" -ForegroundColor Green
 
     # Validate offline Windows installation artifacts on target drive
@@ -1132,16 +1779,17 @@ function Invoke-SetupEngine {
     Write-ComponentLog "================================================================" -Level "SUCCESS" -ForegroundColor Green
 
     return [PSCustomObject]@{
-        Success         = $true
-        Engine          = "setup.exe"
-        SetupPath       = $ResolvedSetupPath
-        ImagePath       = $ResolvedImagePath
-        ImageIndex      = $displayIndex
-        UnattendPath    = $EffectiveUnattendPath
-        Destination     = $NormalizedDestination
-        ExitCode        = $exitCode
-        DurationSeconds = $durationSec
-        CompletedTime   = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        Success          = $true
+        Engine           = "setup.exe"
+        SetupPath        = $ResolvedSetupPath
+        ImagePath        = $ResolvedImagePath
+        ImageIndex       = $displayIndex
+        UnattendPath     = $EffectiveUnattendPath
+        Destination      = $NormalizedDestination
+        ExitCode         = $exitCode
+        DurationSeconds  = $durationSec
+        LatestPercentage = $latestPercentage
+        CompletedTime    = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
     }
 }
 
@@ -1165,7 +1813,7 @@ function Invoke-DismEngine {
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    Write-ComponentLog "================================================================" -Level "INIT" -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
     Write-ComponentLog "Starting Windows DISM Imaging Engine (dism.exe)..." -Level "INIT" -ForegroundColor Cyan
     Write-ComponentLog "Image File   : $ResolvedImagePath" -Level "INFO"
 
@@ -1179,123 +1827,186 @@ function Invoke-DismEngine {
         Write-ComponentLog "Driver Path  : $DriverFolder" -Level "INFO"
     }
 
-    # 1. Apply OS Image via dism.exe /Apply-Image
-    Write-ComponentLog "Applying OS image via DISM (/Apply-Image)..." -Level "INIT" -ForegroundColor Cyan
-    $cleanDest = $NormalizedDestination.TrimEnd('\')
-    $applyArgs = "/Apply-Image /ImageFile:`"$ResolvedImagePath`" /Index:$displayIndex /ApplyDir:$cleanDest\"
-    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
-        $applyArgs += " " + ($ExtraArgs -join " ")
-    }
-    Write-ComponentLog "Command Line : dism.exe $applyArgs" -Level "INFO"
-
-    $proc = Start-Process -FilePath "dism.exe" -ArgumentList $applyArgs -Wait -PassThru -NoNewWindow
-    $exitCode = $proc.ExitCode
-
-    if ($exitCode -ne 0) {
-        $hexCode = "0x{0:X8}" -f $exitCode
-        Write-ComponentLog "DISM /Apply-Image failed with exit code $exitCode ($hexCode)." -Level "ERROR" -ForegroundColor Red
-        throw "DISM Apply-Image failed with exit code $exitCode ($hexCode)."
-    }
-    Write-ComponentLog "DISM /Apply-Image completed successfully." -Level "SUCCESS" -ForegroundColor Green
-
-    # 2. Configure BCD Bootloader via bcdboot.exe
-    Write-ComponentLog "Configuring system bootloader (bcdboot.exe)..." -Level "INIT" -ForegroundColor Cyan
-    $windowsDir = Join-Path "$cleanDest\" "Windows"
-    $targetDiskNum = if ($DiskData -and $DiskData.PSObject.Properties['DiskNumber'] -and ($null -ne $DiskData.DiskNumber)) { [int]$DiskData.DiskNumber } else { 0 }
-    $sysPartNum = if ($DiskData -and $DiskData.PSObject.Properties['SystemPartitionNumber'] -and ($null -ne $DiskData.SystemPartitionNumber)) { [int]$DiskData.SystemPartitionNumber } else { 1 }
-    $bootMode = if ($DiskData -and $DiskData.PSObject.Properties['BootMode'] -and $DiskData.BootMode) { [string]$DiskData.BootMode } else { "UEFI" }
-    $firmware = if ($bootMode -ieq "UEFI") { "UEFI" } else { "BIOS" }
-
-    $tempBootDrive = "S:"
-    $bootLetterAssigned = $false
-    try {
-        $sysPart = Get-Partition -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -ErrorAction SilentlyContinue
-        if ($sysPart -and -not $sysPart.DriveLetter) {
-            $null = Set-Partition -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -NewDriveLetter "S" -ErrorAction Stop
-            $bootLetterAssigned = $true
-        }
-        elseif ($sysPart -and $sysPart.DriveLetter) {
-            $tempBootDrive = "$($sysPart.DriveLetter):"
-        }
-    }
-    catch {
-        Write-ComponentLog "Note: Could not assign drive letter S: to system partition ($($_.Exception.Message)). Attempting bcdboot with default volume." -Level "WARNING"
-    }
+    $workLogsRoot = Get-LiteDeployLocalWorkLogsPath
+    $dismLogDir = Join-Path $workLogsRoot "Dism"
+    $applyLogPath = Join-Path $dismLogDir "dism-apply.log"
+    $driverLogPath = Join-Path $dismLogDir "dism-driver.log"
 
     try {
-        $bcdArgs = "`"$windowsDir`" /s $tempBootDrive /f $firmware"
-        Write-ComponentLog "Command Line : bcdboot.exe $bcdArgs" -Level "INFO"
-        $bcdProc = Start-Process -FilePath "bcdboot.exe" -ArgumentList $bcdArgs -Wait -PassThru -NoNewWindow
-        if ($bcdProc.ExitCode -ne 0) {
-            Write-ComponentLog "bcdboot /f $firmware returned code $($bcdProc.ExitCode). Retrying with /f ALL..." -Level "WARNING"
-            $bcdProc = Start-Process -FilePath "bcdboot.exe" -ArgumentList "`"$windowsDir`" /s $tempBootDrive /f ALL" -Wait -PassThru -NoNewWindow
+        # 1. Apply OS Image via dism.exe /Apply-Image
+        Write-ComponentLog "Applying OS image via DISM (/Apply-Image)..." -Level "INIT" -ForegroundColor Cyan
+        $cleanDest = $NormalizedDestination.TrimEnd('\')
+        $destArg = if ($cleanDest -match '\s') { "`"$cleanDest\\`"" } else { "$cleanDest\" }
+        $applyArgs = "/Apply-Image /ImageFile:`"$ResolvedImagePath`" /Index:$displayIndex /ApplyDir:$destArg /LogPath:`"$applyLogPath`""
+        if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+            $applyArgs += " " + ($ExtraArgs -join " ")
         }
-        if ($bcdProc.ExitCode -ne 0) {
-            throw "bcdboot.exe failed with exit code $($bcdProc.ExitCode)."
-        }
-        Write-ComponentLog "Bootloader configuration completed successfully ($firmware mode)." -Level "SUCCESS" -ForegroundColor Green
-    }
-    finally {
-        if ($bootLetterAssigned) {
-            try {
-                $null = Remove-PartitionAccessPath -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -AccessPath "S:" -ErrorAction SilentlyContinue
+        Write-ComponentLog "Command Line : dism.exe $applyArgs" -Level "INFO" -NoConsole
+
+        $applyResult = Invoke-DismProcessStream -Stage "Apply-Image" -DismExecutable "dism.exe" -ArgumentString $applyArgs -NativeLogPath $applyLogPath
+
+        if (-not $applyResult.Success) {
+            $progressDesc = if ($null -ne $applyResult.LatestPercentage) {
+                "Last reported progress before failure: $($applyResult.LatestPercentage)% (note: last reported progress is an observation and may not be the exact error location)."
+            } else {
+                "Progress unavailable (no progress percentage reported before failure)."
             }
-            catch {}
+            $errDetail = if ($applyResult.ErrorMessage) { " Detail: $($applyResult.ErrorMessage)" } else { "" }
+            $failRecord = "DISM /Apply-Image failed with exit code $($applyResult.ExitCode) ($($applyResult.ExitCodeHex)) in $($applyResult.DurationSeconds) seconds. $progressDesc DISM log: $applyLogPath.$errDetail"
+            Write-ComponentLog $failRecord -Level "ERROR" -ForegroundColor Red
+            throw "DISM Apply-Image failed with exit code $($applyResult.ExitCode) ($($applyResult.ExitCodeHex)). $progressDesc DISM log: $applyLogPath."
         }
-    }
+        Write-ComponentLog "DISM /Apply-Image completed successfully in $($applyResult.DurationSeconds) seconds." -Level "SUCCESS" -ForegroundColor Green
 
-    # 3. Inject offline drivers if staged driver folder is present
-    if (-not [string]::IsNullOrWhiteSpace($DriverFolder) -and (Test-Path -LiteralPath $DriverFolder -PathType Container)) {
-        Write-ComponentLog "Injecting offline drivers via DISM (/Add-Driver)..." -Level "INIT" -ForegroundColor Cyan
-        $driverArgs = "/Image:$cleanDest\ /Add-Driver /Driver:`"$DriverFolder`" /Recurse"
-        Write-ComponentLog "Command Line : dism.exe $driverArgs" -Level "INFO"
-        $driverProc = Start-Process -FilePath "dism.exe" -ArgumentList $driverArgs -Wait -PassThru -NoNewWindow
-        if ($driverProc.ExitCode -eq 0) {
-            Write-ComponentLog "Offline drivers injected successfully." -Level "SUCCESS" -ForegroundColor Green
+        # 2. Configure BCD Bootloader via bcdboot.exe
+        Write-ComponentLog "Configuring system bootloader (bcdboot.exe)..." -Level "INIT" -ForegroundColor Cyan
+        $windowsDir = Join-Path "$cleanDest\" "Windows"
+        $targetDiskNum = if ($DiskData -and $DiskData.PSObject.Properties['DiskNumber'] -and ($null -ne $DiskData.DiskNumber)) { [int]$DiskData.DiskNumber } else { 0 }
+        $sysPartNum = if ($DiskData -and $DiskData.PSObject.Properties['SystemPartitionNumber'] -and ($null -ne $DiskData.SystemPartitionNumber)) { [int]$DiskData.SystemPartitionNumber } else { 1 }
+        $bootMode = if ($DiskData -and $DiskData.PSObject.Properties['BootMode'] -and $DiskData.BootMode) { [string]$DiskData.BootMode } else { "UEFI" }
+        $firmware = if ($bootMode -ieq "UEFI") { "UEFI" } else { "BIOS" }
+
+        $tempBootDrive = "S:"
+        $bootLetterAssigned = $false
+        try {
+            $sysPart = Get-Partition -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -ErrorAction SilentlyContinue
+            if ($sysPart -and -not $sysPart.DriveLetter) {
+                $null = Set-Partition -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -NewDriveLetter "S" -ErrorAction Stop
+                $bootLetterAssigned = $true
+            }
+            elseif ($sysPart -and $sysPart.DriveLetter) {
+                $tempBootDrive = "$($sysPart.DriveLetter):"
+            }
+        }
+        catch {
+            Write-ComponentLog "Note: Could not assign drive letter S: to system partition ($($_.Exception.Message)). Attempting bcdboot with default volume." -Level "WARNING"
+        }
+
+        try {
+            $bcdArgs = "`"$windowsDir`" /s $tempBootDrive /f $firmware"
+            Write-ComponentLog "Command Line : bcdboot.exe $bcdArgs" -Level "INFO" -NoConsole
+            $bcdProc = Start-Process -FilePath "bcdboot.exe" -ArgumentList $bcdArgs -Wait -PassThru -NoNewWindow
+            if ($bcdProc.ExitCode -ne 0) {
+                Write-ComponentLog "bcdboot /f $firmware returned code $($bcdProc.ExitCode). Retrying with /f ALL..." -Level "WARNING"
+                $bcdProc = Start-Process -FilePath "bcdboot.exe" -ArgumentList "`"$windowsDir`" /s $tempBootDrive /f ALL" -Wait -PassThru -NoNewWindow
+            }
+            if ($bcdProc.ExitCode -ne 0) {
+                throw "bcdboot.exe failed with exit code $($bcdProc.ExitCode)."
+            }
+            Write-ComponentLog "Bootloader configuration completed successfully ($firmware mode)." -Level "SUCCESS" -ForegroundColor Green
+        }
+        finally {
+            if ($bootLetterAssigned) {
+                try {
+                    $null = Remove-PartitionAccessPath -DiskNumber $targetDiskNum -PartitionNumber $sysPartNum -AccessPath "S:" -ErrorAction SilentlyContinue
+                }
+                catch {}
+            }
+        }
+
+        # 3. Inject offline drivers if staged driver folder is present
+        if (-not [string]::IsNullOrWhiteSpace($DriverFolder) -and (Test-Path -LiteralPath $DriverFolder -PathType Container)) {
+            Write-ComponentLog "Injecting offline drivers via DISM (/Add-Driver)..." -Level "INIT" -ForegroundColor Cyan
+            $cleanDriver = $DriverFolder.TrimEnd('\')
+            $driverArgs = "/Image:$destArg /Add-Driver /Driver:`"$cleanDriver`" /Recurse /LogPath:`"$driverLogPath`""
+            Write-ComponentLog "Command Line : dism.exe $driverArgs" -Level "INFO" -NoConsole
+
+            $driverResult = Invoke-DismProcessStream -Stage "Add-Driver" -DismExecutable "dism.exe" -ArgumentString $driverArgs -NativeLogPath $driverLogPath
+
+            if ($driverResult.Success) {
+                Write-ComponentLog "Offline drivers injected successfully in $($driverResult.DurationSeconds) seconds." -Level "SUCCESS" -ForegroundColor Green
+            }
+            else {
+                $progressDesc = if ($null -ne $driverResult.LatestPercentage) {
+                    "Last reported progress before failure: $($driverResult.LatestPercentage)% (note: last reported progress is an observation and may not be the exact error location)."
+                } else {
+                    "Progress unavailable (no progress percentage reported before failure)."
+                }
+                $driverWarn = "Warning: DISM /Add-Driver completed with exit code $($driverResult.ExitCode) ($($driverResult.ExitCodeHex)) in $($driverResult.DurationSeconds) seconds. $progressDesc DISM log: $driverLogPath."
+                Write-ComponentLog $driverWarn -Level "WARNING" -ForegroundColor Yellow
+            }
+        }
+
+        # 4. Stage unattended answer file for first boot (OOBE / Specialize) if present
+        if (-not [string]::IsNullOrWhiteSpace($EffectiveUnattendPath) -and (Test-Path -LiteralPath $EffectiveUnattendPath -PathType Leaf)) {
+            $pantherDir = Join-Path $windowsDir "Panther"
+            if (-not (Test-Path -LiteralPath $pantherDir -PathType Container)) {
+                $null = New-Item -Path $pantherDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+            }
+            $targetUnattend = Join-Path $pantherDir "unattend.xml"
+            Write-ComponentLog "Staging unattended answer file to '$targetUnattend'..." -Level "INFO"
+            Copy-Item -LiteralPath $EffectiveUnattendPath -Destination $targetUnattend -Force -ErrorAction SilentlyContinue
+        }
+
+        $stopwatch.Stop()
+        $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+
+        # 5. Validate offline Windows installation artifacts
+        $hasArtifacts = (Test-Path -LiteralPath $windowsDir)
+        if (-not $hasArtifacts) {
+            Write-ComponentLog "Warning: '$windowsDir' was not found on target destination '$NormalizedDestination'." -Level "WARNING" -ForegroundColor Yellow
         }
         else {
-            Write-ComponentLog "Warning: DISM /Add-Driver completed with exit code $($driverProc.ExitCode)." -Level "WARNING" -ForegroundColor Yellow
+            Write-ComponentLog "Verified offline Windows installation artifacts on target destination '$NormalizedDestination'." -Level "SUCCESS" -ForegroundColor Green
+        }
+
+        Write-ComponentLog -Message ''
+        Write-ComponentLog "OSInstallation (dism.exe) finished successfully in $durationSec seconds." -Level "SUCCESS" -ForegroundColor Green
+        Write-Host "================================================================" -ForegroundColor Green
+
+        return [PSCustomObject]@{
+            Success         = $true
+            Engine          = "dism.exe"
+            SetupPath       = $null
+            ImagePath       = $ResolvedImagePath
+            ImageIndex      = $displayIndex
+            UnattendPath    = $EffectiveUnattendPath
+            Destination     = $NormalizedDestination
+            ExitCode        = $applyResult.ExitCode
+            DurationSeconds = $durationSec
+            CompletedTime   = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         }
     }
-
-    # 4. Stage unattended answer file for first boot (OOBE / Specialize) if present
-    if (-not [string]::IsNullOrWhiteSpace($EffectiveUnattendPath) -and (Test-Path -LiteralPath $EffectiveUnattendPath -PathType Leaf)) {
-        $pantherDir = Join-Path $windowsDir "Panther"
-        if (-not (Test-Path -LiteralPath $pantherDir -PathType Container)) {
-            $null = New-Item -Path $pantherDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+    finally {
+        # Sync collected native DISM logs to deployment share and OS volume if configured/available
+        $remoteLogDir = if (Get-Command Get-LiteDeployRemoteLogDirectory -ErrorAction SilentlyContinue) {
+            Get-LiteDeployRemoteLogDirectory
+        } else {
+            $global:LiteDeployRemoteLogDir
         }
-        $targetUnattend = Join-Path $pantherDir "unattend.xml"
-        Write-ComponentLog "Staging unattended answer file to '$targetUnattend'..." -Level "INFO"
-        Copy-Item -LiteralPath $EffectiveUnattendPath -Destination $targetUnattend -Force -ErrorAction SilentlyContinue
-    }
+        $osLogDir = if (Get-Command Get-LiteDeployOsLogDirectory -ErrorAction SilentlyContinue) {
+            Get-LiteDeployOsLogDirectory
+        } else {
+            $global:LiteDeployOsLogDir
+        }
+        $localLogs = Get-LiteDeployLocalWorkLogsPath
+        $localDismDir = Join-Path $localLogs "Dism"
 
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $stopwatch.Stop()
-    $durationSec = [int]$stopwatch.Elapsed.TotalSeconds
+        try {
+            if (Get-Command Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue) {
+                if ($remoteLogDir) {
+                    Sync-LiteDeployLogsToShare -RuntimePaths ([PSCustomObject]@{ LocalLogDirectory = $localLogs }) -RemoteLogDir $remoteLogDir
+                }
 
-    # 5. Validate offline Windows installation artifacts
-    $hasArtifacts = (Test-Path -LiteralPath $windowsDir)
-    if (-not $hasArtifacts) {
-        Write-ComponentLog "Warning: '$windowsDir' was not found on target destination '$NormalizedDestination'." -Level "WARNING" -ForegroundColor Yellow
-    }
-    else {
-        Write-ComponentLog "Verified offline Windows installation artifacts on target destination '$NormalizedDestination'." -Level "SUCCESS" -ForegroundColor Green
-    }
+                if ($osLogDir -and (Test-Path -LiteralPath $osLogDir -PathType Container)) {
+                    Sync-LiteDeployLogsToShare -RuntimePaths ([PSCustomObject]@{ LocalLogDirectory = $localLogs }) -RemoteLogDir $osLogDir
+                }
+            }
+        }
+        catch {}
 
-    Write-ComponentLog "OSInstallation (dism.exe) finished successfully in $durationSec seconds." -Level "SUCCESS" -ForegroundColor Green
-    Write-ComponentLog "================================================================" -Level "SUCCESS" -ForegroundColor Green
-
-    return [PSCustomObject]@{
-        Success         = $true
-        Engine          = "dism.exe"
-        SetupPath       = $null
-        ImagePath       = $ResolvedImagePath
-        ImageIndex      = $displayIndex
-        UnattendPath    = $EffectiveUnattendPath
-        Destination     = $NormalizedDestination
-        ExitCode        = $exitCode
-        DurationSeconds = $durationSec
-        CompletedTime   = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        # Present technician-facing diagnostic log location
+        try {
+            if (Get-Command Write-LiteDeployDiagnosticLogLocation -ErrorAction SilentlyContinue) {
+                $dismRel = if (Test-Path -LiteralPath $applyLogPath -PathType Leaf) { "Dism\dism-apply.log" } else { "Dism" }
+                $dismLocal = if (Test-Path -LiteralPath $applyLogPath -PathType Leaf) { $applyLogPath } else { $localDismDir }
+                $null = Write-LiteDeployDiagnosticLogLocation -LocalPath $dismLocal -RemoteLogDir $remoteLogDir -RelativePath $dismRel -OsLogDir $osLogDir -Component "Image"
+                if (Test-Path -LiteralPath $driverLogPath -PathType Leaf) {
+                    $null = Write-LiteDeployDiagnosticLogLocation -LocalPath $driverLogPath -RemoteLogDir $remoteLogDir -RelativePath "Dism\dism-driver.log" -OsLogDir $osLogDir -Component "Image"
+                }
+            }
+        }
+        catch {}
     }
 }
 
@@ -1456,7 +2167,8 @@ function Start-LiteDeployImage {
         [string]$NormalizedDestination,
         [string]$ResolvedImagePath = "",
         [int]$SelectedImageIndex = 1,
-        [string[]]$ExtraArgs = @()
+        [string[]]$ExtraArgs = @(),
+        [scriptblock]$ProgressReader = $null
     )
 
     return Invoke-SetupEngine `
@@ -1465,7 +2177,8 @@ function Start-LiteDeployImage {
         -NormalizedDestination $NormalizedDestination `
         -ResolvedImagePath $ResolvedImagePath `
         -SelectedImageIndex $SelectedImageIndex `
-        -ExtraArgs $ExtraArgs
+        -ExtraArgs $ExtraArgs `
+        -ProgressReader $ProgressReader
 }
 
 function Test-LiteDeployImage {

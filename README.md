@@ -138,7 +138,7 @@ Lab checklist: [Project status](_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md)
 ```text
 LiteDeploy Core/
 ├── _Media/                  # brand art (master + GitHub light/dark README)
-├── Engine/                  # numbered Admin + Runtime (+ 110-UI) — edit here
+├── Engine/                  # numbered Admin + Runtime (+ 100-UI) — edit here
 ├── Engine/Tools/            # WinPECT, etc. → published to share Tools\
 ├── DeploymentShare/         # lab skeleton (flat Engine after Build)
 ├── _Templates/              # component blueprint + inventory
@@ -225,19 +225,18 @@ Native PowerShell share connect only. No SetupComplete / `auditUser` / Task Sche
 
 | Component | Dev folder | Published file | Role |
 | :--- | :--- | :--- | :--- |
-| Boot | `000-Boot` | `LiteDeploy.PE.Boot.ps1` | startnet parent; zero-dependency share connect; launch PE.Engine |
-| Logs | `010-Logs` | `LiteDeploy.Logs.ps1` | CMTrace + console; mirrors |
+| PE.Boot | `000-Boot` | `LiteDeploy.PE.Boot.ps1` | startnet parent; zero-dependency share connect; launch PE.Engine |
+| PE.Engine | `010-Engine` | `LiteDeploy.PE.Engine.ps1` | WinPE orchestrator |
+| OS.Engine | `010-Engine` | `LiteDeploy.OS.Engine.ps1` | Post-boot Session 1 resume; HKCU console handoff on load |
 | Environment | `020-Environment` | `LiteDeploy.Environment.ps1` | Named paths, mode, theme helpers |
-| Hardware | `030-Hardware` | `LiteDeploy.Hardware.ps1` | Inventory / readiness |
-| State | `040-State` | `LiteDeploy.State.ps1` | DeploymentState.json + RAM map |
+| Session | `030-Session` | `LiteDeploy.Session.ps1` | Deployment state JSON + RAM map, CMTrace + console logging, destinations & handoff sync |
+| Hardware | `040-Hardware` | `LiteDeploy.Hardware.ps1` | Inventory / readiness |
 | Workflow | `050-Workflow` | `LiteDeploy.Workflow.ps1` | Catalog / selection domain; edition title appends version only when the name omits it |
 | Disk | `060-Disk` | `LiteDeploy.Disk.ps1` | Wipe / partition / format |
 | Drivers | `070-Drivers` | `LiteDeploy.Drivers.ps1` | Catalog/hardware match (extract/stage stubs — not full apply yet) |
 | Image | `080-Image` | `LiteDeploy.Image.ps1` | DISM/Setup, unattend, bcdboot, drivers |
 | Packages | `090-Packages` | `LiteDeploy.Packages.ps1` | Package helpers (FullOS sequencing planned) |
-| Engine | `100-Engine` | `LiteDeploy.PE.Engine.ps1` | WinPE orchestrator |
-| FullOS | `100-Engine` | `LiteDeploy.OS.Engine.ps1` | Post-boot Session 1 resume; HKCU console handoff on load |
-| UI.* | `110-UI\...` | `Runtime\UI\LiteDeploy.UI.*` | Precheck, Selection, Progress, Theme, HostShell |
+| UI.* | `100-UI\...` | `Runtime\UI\LiteDeploy.UI.*` | Precheck, Selection, Progress, Theme, HostShell |
 
 ### Admin
 

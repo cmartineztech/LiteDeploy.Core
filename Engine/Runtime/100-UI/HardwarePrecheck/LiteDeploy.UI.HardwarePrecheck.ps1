@@ -50,7 +50,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Hardware")
+        Dependencies         = @("Session", "Hardware")
         Description          = "BootConfigPath-driven readiness WPF wizard; markup in LiteDeploy.UI.HardwarePrecheck.xaml; inventory via LiteDeploy.Hardware."
     }
 }
@@ -823,7 +823,7 @@ $window.Add_PreviewKeyDown({
         if ($e.Key -eq [System.Windows.Input.Key]::F5) {
             $e.Handled = $true
             if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-                Write-LiteDeployLog "Technician triggered manual refresh (F5). Rerunning Hardware PreCheck..." -Level "INFO" -Component "HardwarePreCheck"
+                Write-LiteDeployLog "Technician triggered manual refresh (F5). Rerunning Hardware PreCheck..." -Level "INFO" -Component "UI.HardwarePrecheck"
             }
             Invoke-HardwarePreCheck -ReloadFromDisk
         }

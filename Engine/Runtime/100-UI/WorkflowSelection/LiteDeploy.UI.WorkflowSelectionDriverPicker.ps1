@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [switch]$Metadata
@@ -10,7 +10,7 @@ param(
 
 function Get-LiteDeployComponentMetadata {
     return [PSCustomObject]@{
-        ComponentId          = "DriverPicker"
+        ComponentId          = "UI.DriverPicker"
         Name                 = "LiteDeploy Driver Folder Picker"
         Version              = "1.1.0"
         Category             = "Runtime"

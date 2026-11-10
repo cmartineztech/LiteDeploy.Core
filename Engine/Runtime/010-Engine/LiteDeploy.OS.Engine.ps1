@@ -14,13 +14,13 @@
     hand off to Windows Terminal. The window that already launched FullOS is unchanged.
 
     Responsibilities:
-      1. Loads FullOS dependencies (Logs, State, Hardware, Packages, HostShell).
+      1. Loads FullOS dependencies (Session, Hardware, Packages, HostShell).
       2. Loads and updates DeploymentState.json (increments resume count, sets Phase 5).
       3. Unseals WinPECT secrets in-memory (interactive admin context).
       4. Reconnects the DeploymentShare persistently as Z: with in-memory PSCredential.
       5. Configures remote log mirroring back to the deployment share under the deployment UID.
       6. Re-arms HKLM Run for reboot survival; kills sysprep.exe; clears Run on finish.
-      7. Starts Interactive Probe in a second independent PowerShell window.
+      7. Displays live interactive monitor in the current console at completion.
       8. Orchestrates package installations (LiteDeploy.Packages.ps1).
 
 .PARAMETER LocalRootName
@@ -65,16 +65,22 @@ $ErrorActionPreference = "Stop"
 
 function Get-LiteDeployComponentMetadata {
     return [PSCustomObject]@{
-        ComponentId          = "FullOS"
+        ComponentId          = "OS.Engine"
         Name                 = "LiteDeploy FullOS Engine"
-        Version              = "2.2.0"
+        Version              = "2.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "FullOS"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Environment", "Logs", "State", "Hardware", "Packages")
-        Description          = "Interactive FullOS orchestrator (HKLM Run at logon; specialize-staged): WinPECT unseal, Z: reconnect, log mirror, Interactive Probe, package install."
+        Dependencies         = @("Environment", "Session", "Hardware", "Packages")
+        Description          = "Interactive FullOS orchestrator (HKLM Run at logon; specialize-staged): WinPECT unseal, Z: reconnect, log mirror, live monitor, package install."
     }
+}
+
+$script:OSMetadata = Get-LiteDeployComponentMetadata
+
+function Get-LiteDeployOSMetadata {
+    return $script:OSMetadata
 }
 
 if ($Metadata) {
@@ -87,6 +93,8 @@ if (-not (Get-Command Get-LiteDeployRuntimePaths -ErrorAction SilentlyContinue))
     $environmentScript = Join-Path $PSScriptRoot 'LiteDeploy.Environment.ps1'
     if (Test-Path -LiteralPath $environmentScript -PathType Leaf) {
         . $environmentScript
+        # Prevent generic metadata function pollution from imported Environment
+        function script:Get-LiteDeployComponentMetadata { return $script:OSMetadata }
     }
 }
 
@@ -153,78 +161,325 @@ function Clear-LiteDeployFullOSLegacyScheduledTasks {
     }
 }
 
-function Test-LiteDeployFullOSInteractiveProbeRunning {
+function Collect-LiteDeployFullOSPantherLogs {
     <#
     .SYNOPSIS
-        True when the Interactive Probe named mutex already exists (probe window alive).
+        Best-effort collection of first-boot Windows Setup/Panther logs from running FullOS
+        ($env:windir\Panther\setupact.log & setuperr.log) into local WorkLogs\<Engine>\FullOS-Panther.
     #>
-    try {
-        $mutex = [System.Threading.Mutex]::OpenExisting('Global\LiteDeploy_InteractiveProbe_Mutex')
-        $mutex.Dispose()
-        return $true
-    }
-    catch [System.Threading.WaitHandleCannotBeOpenedException] {
-        return $false
-    }
-    catch {
-        return $false
-    }
-}
-
-function Start-LiteDeployFullOSInteractiveProbe {
-    <#
-    .SYNOPSIS
-        Starts FullOS Interactive Probe in a second independent PowerShell window.
-    .NOTES
-        Does not use scheduled tasks. Skips Start-Process when a probe is already running
-        (avoids a flash of a second window if FullOS is entered twice in one session).
-    #>
+    [CmdletBinding()]
     param(
-        [string]$LocalRootName = '~LiteDeploy',
-        [string]$OsDriveLetter = $env:SystemDrive,
-        [string]$ProbeScriptPath = '',
-        [string]$RuntimeRoot = ''
+        [Parameter(Mandatory = $false)]
+        [string]$LocalLogDir = "",
+        [Parameter(Mandatory = $false)]
+        [string]$PantherSourceDir = "",
+        [Parameter(Mandatory = $false)]
+        $DeploymentState = $null,
+        [Parameter(Mandatory = $false)]
+        [string]$Engine = ""
     )
 
-    $drive = ($OsDriveLetter -replace '[\\/]+$', '').Trim()
-    if ([string]::IsNullOrWhiteSpace($drive)) { $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' } }
-    if ($drive.Length -eq 1) { $drive += ':' }
-    $localRoot = Join-Path "$drive\" $LocalRootName
+    # Determine target imaging engine folder (Dism or Setup) case-insensitively
+    $targetEngineFolder = $null
+    $rawEngine = $Engine
+    if ([string]::IsNullOrWhiteSpace($rawEngine)) {
+        if ($DeploymentState) {
+            $osInstall = Get-LiteDeployStateProperty -InputObject $DeploymentState -Name 'OSInstall' -Default $null
+            if ($osInstall) {
+                $rawEngine = Get-LiteDeployStateProperty -InputObject $osInstall -Name 'Engine' -Default $null
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($rawEngine) -and (Get-Variable -Name LiteDeployDeployment -Scope Global -ValueOnly -ErrorAction SilentlyContinue)) {
+            $osInstall = Get-LiteDeployStateProperty -InputObject $global:LiteDeployDeployment -Name 'OSInstall' -Default $null
+            if ($osInstall) {
+                $rawEngine = Get-LiteDeployStateProperty -InputObject $osInstall -Name 'Engine' -Default $null
+            }
+        }
+    }
 
-    if ([string]::IsNullOrWhiteSpace($ProbeScriptPath)) {
-        if (-not [string]::IsNullOrWhiteSpace($RuntimeRoot)) {
-            $ProbeScriptPath = Join-Path $RuntimeRoot 'LiteDeploy.OS.InteractiveProbe.ps1'
+    if (-not [string]::IsNullOrWhiteSpace($rawEngine)) {
+        $trimmedEngine = $rawEngine.Trim()
+        if ($trimmedEngine -match '^(?i)dism(\.exe)?$') {
+            $targetEngineFolder = 'Dism'
+        }
+        elseif ($trimmedEngine -match '^(?i)setup(\.exe)?$') {
+            $targetEngineFolder = 'Setup'
         }
         else {
-            $ProbeScriptPath = Join-Path $localRoot 'Engine\Runtime\LiteDeploy.OS.InteractiveProbe.ps1'
+            Write-LiteDeployLog "Warning: Unknown OSInstall.Engine '$rawEngine'; skipping FullOS Panther collection to avoid misclassifying engine logs." -Level 'WARNING' -Component 'OS.Engine'
+            return $null
         }
     }
-    if (-not (Test-Path -LiteralPath $ProbeScriptPath -PathType Leaf)) {
-        throw "Interactive probe script missing: $ProbeScriptPath"
+    else {
+        Write-LiteDeployLog "Warning: No valid OSInstall.Engine found in deployment state; skipping FullOS Panther collection to avoid misclassifying engine logs." -Level 'WARNING' -Component 'OS.Engine'
+        return $null
     }
 
-    if (Test-LiteDeployFullOSInteractiveProbeRunning) {
-        return [pscustomobject]@{
-            Success     = $true
-            Skipped     = $true
-            Mode        = 'AlreadyRunning'
-            ProbeScript = $ProbeScriptPath
-            Message     = 'Interactive probe already running; skipped second Start-Process.'
-            Temporary   = $true
+    if ([string]::IsNullOrWhiteSpace($LocalLogDir)) {
+        $localRoot = if (Get-Variable -Name LiteDeployLocalRoot -Scope Global -ValueOnly -ErrorAction SilentlyContinue) {
+            $global:LiteDeployLocalRoot
+        } else {
+            $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "C:" }
+            Join-Path $sysDrive "~LiteDeploy"
+        }
+        $LocalLogDir = Join-Path $localRoot "WorkLogs"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($PantherSourceDir)) {
+        $overridePanther = Get-Variable -Name LiteDeployFullOSPantherSourceDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+        if ($overridePanther) {
+            $PantherSourceDir = [string]$overridePanther
+        } else {
+            $winDir = if ($env:windir) { $env:windir } elseif ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
+            $PantherSourceDir = Join-Path $winDir "Panther"
         }
     }
 
-    $powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $argument = '-NoExit -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Normal -File "{0}"' -f $ProbeScriptPath
-    $proc = Start-Process -FilePath $powerShell -ArgumentList $argument -WorkingDirectory (Split-Path -Parent $ProbeScriptPath) -PassThru -ErrorAction Stop
+    if (-not (Test-Path -LiteralPath $PantherSourceDir -PathType Container -ErrorAction SilentlyContinue)) {
+        return $null
+    }
 
-    return [pscustomobject]@{
-        Success     = $true
-        Skipped     = $false
-        Mode        = 'IndependentWindow'
-        ProcessId   = $proc.Id
-        ProbeScript = $ProbeScriptPath
-        Temporary   = $true
+    $destFolder = Join-Path (Join-Path $LocalLogDir $targetEngineFolder) "FullOS-Panther"
+    $destFolderCreated = (Test-Path -LiteralPath $destFolder -PathType Container -ErrorAction SilentlyContinue)
+    $collectedFiles = @()
+
+    foreach ($logName in @("setupact.log", "setuperr.log")) {
+        $sourceFile = Join-Path $PantherSourceDir $logName
+        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf -ErrorAction SilentlyContinue)) {
+            continue
+        }
+
+        try {
+            if (-not $destFolderCreated) {
+                if (-not (Test-Path -LiteralPath $destFolder)) {
+                    $null = New-Item -Path $destFolder -ItemType Directory -Force -ErrorAction Stop
+                }
+                $destFolderCreated = $true
+            }
+            $targetFile = Join-Path $destFolder $logName
+            Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force -ErrorAction Stop
+            $collectedFiles += $targetFile
+        }
+        catch {
+            Write-LiteDeployLog "Warning: Could not copy FullOS Panther log '$sourceFile': $($_.Exception.Message)" -Level 'WARNING' -Component 'OS.Engine'
+        }
+    }
+
+    if ($collectedFiles.Count -gt 0) {
+        Write-LiteDeployLog "Collected $($collectedFiles.Count) FullOS Panther log file(s) into '$destFolder'." -Level 'INFO' -Component 'OS.Engine'
+    }
+
+    return $destFolder
+}
+
+function Show-LiteDeployOSProbe {
+    <#
+    .SYNOPSIS
+        Displays the FullOS live interactive monitor in the current console.
+    .DESCRIPTION
+        Renders session context and deployment engine state directly in the current console.
+        Periodically terminates Audit Mode sysprep.exe so LiteDeploy owns the desktop.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [psobject]$DeploymentState = $null,
+
+        [Parameter(Mandatory = $false)]
+        [psobject]$ResumeResult = $null,
+
+        [Parameter(Mandatory = $false)]
+        [string]$LocalRoot = '',
+
+        [Parameter(Mandatory = $false)]
+        [string]$StatePath = '',
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Once,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RefreshSeconds = 2,
+
+        [Parameter(Mandatory = $false)]
+        [int]$MaxIterations = 0
+    )
+
+    $resolvedLocalRoot = if (-not [string]::IsNullOrWhiteSpace($LocalRoot)) {
+        $LocalRoot
+    } elseif ($ResumeResult -and $ResumeResult.PSObject.Properties['LocalRoot'] -and $ResumeResult.LocalRoot) {
+        $ResumeResult.LocalRoot
+    } else {
+        $drive = if ($env:SystemDrive) { $env:SystemDrive } else { 'C:' }
+        Join-Path "$($drive.TrimEnd('\'))\" '~LiteDeploy'
+    }
+
+    $resolvedStatePath = if (-not [string]::IsNullOrWhiteSpace($StatePath)) {
+        $StatePath
+    } elseif ($ResumeResult -and $ResumeResult.PSObject.Properties['StatePath'] -and $ResumeResult.StatePath) {
+        $ResumeResult.StatePath
+    } else {
+        Join-Path $resolvedLocalRoot 'DeploymentState.json'
+    }
+
+    $logDir = Join-Path $resolvedLocalRoot 'WorkLogs'
+    $executionLog = Join-Path $logDir 'LiteDeploy.Execution.log'
+
+    $who = try { [System.Security.Principal.WindowsIdentity]::GetCurrent() } catch { $null }
+    $sessionId = try { (Get-Process -Id $PID).SessionId } catch { 0 }
+    $userName = if ($who -and $who.Name) { $who.Name } elseif ($env:USERNAME) { $env:USERNAME } else { '(unknown)' }
+    $isInteractive = [Environment]::UserInteractive
+
+    try { Clear-Host } catch {}
+
+    $iteration = 0
+    while ($true) {
+        $iteration++
+
+        try { $null = Stop-LiteDeployAuditModeSysprep } catch {}
+
+        # Live refresh: read state file from disk on every tick
+        $st = $null
+        if (Test-Path -LiteralPath $resolvedStatePath -PathType Leaf) {
+            try {
+                $st = if (Get-Command Read-LiteDeployStateFile -ErrorAction SilentlyContinue) {
+                    Read-LiteDeployStateFile -Path $resolvedStatePath
+                } elseif (Get-Command Get-LiteDeployState -ErrorAction SilentlyContinue) {
+                    Get-LiteDeployState -Path $resolvedStatePath
+                } else {
+                    Get-Content -LiteralPath $resolvedStatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                }
+            } catch {
+                $st = $null
+            }
+        }
+
+        # Fallback to in-memory snapshot if state file is absent, unreadable, or invalid
+        if ($null -eq $st) {
+            if ($DeploymentState) {
+                $st = $DeploymentState
+            } elseif ($ResumeResult -and $ResumeResult.PSObject.Properties['DeploymentState'] -and $ResumeResult.DeploymentState) {
+                $st = $ResumeResult.DeploymentState
+            }
+        }
+
+        $uid = '(none)'
+        $status = '(none)'
+        $currentStep = '(none)'
+        $resumeCount = if ($ResumeResult -and $ResumeResult.PSObject.Properties['ResumeCount'] -and $null -ne $ResumeResult.ResumeCount) { [string]$ResumeResult.ResumeCount } else { '0' }
+        $deployType = if ($ResumeResult -and $ResumeResult.PSObject.Properties['DeploymentType'] -and $ResumeResult.DeploymentType) { [string]$ResumeResult.DeploymentType } else { '(unknown)' }
+        $networkPath = if ($ResumeResult -and $ResumeResult.PSObject.Properties['NetworkPath'] -and $ResumeResult.NetworkPath) { [string]$ResumeResult.NetworkPath } else { '(none)' }
+        $shareDrive = if ($ResumeResult -and $ResumeResult.PSObject.Properties['ShareDrive'] -and $ResumeResult.ShareDrive) { [string]$ResumeResult.ShareDrive } else { '(none)' }
+        $remoteLog = if ($ResumeResult -and $ResumeResult.PSObject.Properties['RemoteLogDir'] -and $ResumeResult.RemoteLogDir) { [string]$ResumeResult.RemoteLogDir } else { '(none)' }
+        $computerName = '(none)'
+        $workflowName = '(none)'
+        $osApplied = '(unknown)'
+
+        if ($st) {
+            if ($st.PSObject.Properties['DeploymentUid'] -and $st.DeploymentUid) { $uid = [string]$st.DeploymentUid }
+            if ($st.PSObject.Properties['Status'] -and $st.Status) { $status = [string]$st.Status }
+            $exec = if ($st.PSObject.Properties['Execution']) { $st.Execution } else { $null }
+            if ($exec) {
+                if ($exec.PSObject.Properties['CurrentStep'] -and $exec.CurrentStep) { $currentStep = [string]$exec.CurrentStep }
+                if ($exec.PSObject.Properties['ResumeCount']) { $resumeCount = [string]$exec.ResumeCount }
+                if ($exec.PSObject.Properties['RemoteLogDir'] -and $exec.RemoteLogDir) { $remoteLog = [string]$exec.RemoteLogDir }
+                $share = if ($exec.PSObject.Properties['FullOSShare']) { $exec.FullOSShare } else { $null }
+                if ($share) {
+                    if ($share.PSObject.Properties['DeploymentType'] -and $share.DeploymentType) { $deployType = [string]$share.DeploymentType }
+                    if ($share.PSObject.Properties['NetworkPath'] -and $share.NetworkPath) { $networkPath = [string]$share.NetworkPath }
+                    if ($share.PSObject.Properties['DriveLetter'] -and $share.DriveLetter) { $shareDrive = [string]$share.DriveLetter }
+                }
+            }
+            $boot = if ($st.PSObject.Properties['BootObject']) { $st.BootObject } else { $null }
+            if ($boot) {
+                if ($deployType -eq '(unknown)' -and $boot.PSObject.Properties['DeploymentType'] -and $boot.DeploymentType) {
+                    $deployType = [string]$boot.DeploymentType
+                }
+                if ($networkPath -eq '(none)' -and $boot.PSObject.Properties['NetworkPath'] -and $boot.NetworkPath) {
+                    $networkPath = [string]$boot.NetworkPath
+                }
+            }
+            $wf = if ($st.PSObject.Properties['Workflow']) { $st.Workflow } else { $null }
+            if ($wf -and $wf.PSObject.Properties['SelectionData'] -and $wf.SelectionData) {
+                $sel = $wf.SelectionData
+                if ($sel.PSObject.Properties['ComputerName'] -and $sel.ComputerName) { $computerName = [string]$sel.ComputerName }
+                if ($sel.PSObject.Properties['WorkflowName'] -and $sel.WorkflowName) { $workflowName = [string]$sel.WorkflowName }
+            }
+            if ($computerName -eq '(none)' -and $boot) {
+                if ($boot.PSObject.Properties['ComputerSetup'] -and $boot.ComputerSetup) {
+                    $cs = $boot.ComputerSetup
+                    if ($cs.PSObject.Properties['ComputerName'] -and $cs.ComputerName) { $computerName = [string]$cs.ComputerName }
+                }
+                elseif ($boot.PSObject.Properties['ComputerName'] -and $boot.ComputerName) {
+                    $computerName = [string]$boot.ComputerName
+                }
+            }
+            if ($computerName -eq '(none)' -and $st.PSObject.Properties['SelectionData'] -and $st.SelectionData) {
+                $sel = $st.SelectionData
+                if ($sel.PSObject.Properties['ComputerName'] -and $sel.ComputerName) { $computerName = [string]$sel.ComputerName }
+            }
+            $os = if ($st.PSObject.Properties['OSInstall']) { $st.OSInstall } else { $null }
+            if ($os -and $os.PSObject.Properties['Applied']) {
+                $osApplied = [string][bool]$os.Applied
+            }
+            if ($st.PSObject.Properties['LogLocations'] -and $st.LogLocations) {
+                if ($st.LogLocations.PSObject.Properties['RemoteLogDir'] -and $st.LogLocations.RemoteLogDir -and $remoteLog -eq '(none)') {
+                    $remoteLog = [string]$st.LogLocations.RemoteLogDir
+                }
+                if ($st.LogLocations.PSObject.Properties['LocalExecutionLog'] -and $st.LogLocations.LocalExecutionLog) {
+                    $executionLog = [string]$st.LogLocations.LocalExecutionLog
+                }
+            }
+        }
+
+        $zReady = $false
+        if ($shareDrive -ne '(none)') {
+            $zReady = Test-Path -LiteralPath (($shareDrive.TrimEnd('\') + '\')) -PathType Container -ErrorAction SilentlyContinue
+        }
+
+        if ($iteration -gt 1) {
+            try { Clear-Host } catch {}
+        }
+
+        try {
+            if ($host.UI.RawUI) {
+                $host.UI.RawUI.WindowTitle = ('LiteDeploy FullOS - Live Monitor | {0}' -f $uid)
+            }
+        } catch {}
+
+        Write-Host ''
+        Write-Host '  =====================================================================' -ForegroundColor Cyan
+        Write-Host '               LiteDeploy FullOS - Live Interactive Monitor            ' -ForegroundColor White
+        Write-Host '  =====================================================================' -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host '  Session Context:' -ForegroundColor Yellow
+        Write-Host ('    User Account : {0} (Session ID: {1})' -f $userName, $sessionId)
+        Write-Host ('    Interactive  : {0}' -f $isInteractive)
+        Write-Host ('    Sysprep Watch: Active (background sweep)' ) -ForegroundColor Green
+        Write-Host ''
+        Write-Host '  Deployment Engine State:' -ForegroundColor Yellow
+        Write-Host ('    UID          : {0}' -f $uid)
+        Write-Host ('    Status       : {0}' -f $status) -ForegroundColor $(if ($status -eq 'Completed') { 'Green' } else { 'Cyan' })
+        Write-Host ('    Current Step : {0}' -f $currentStep) -ForegroundColor White
+        Write-Host ('    Resume Count : {0}' -f $resumeCount)
+        Write-Host ('    Deploy Type  : {0}' -f $deployType)
+        Write-Host ('    Workflow     : {0}' -f $workflowName)
+        Write-Host ('    ComputerName : {0}' -f $computerName)
+        Write-Host ('    OS Applied   : {0}' -f $osApplied)
+        Write-Host ('    Share Mount  : {0} -> {1} (Accessible: {2})' -f $shareDrive, $networkPath, $zReady) -ForegroundColor $(if ($zReady) { 'Green' } else { 'DarkYellow' })
+        Write-Host ('    Remote Logs  : {0}' -f $remoteLog)
+        Write-Host ('    State File   : {0}' -f $resolvedStatePath)
+        Write-Host ('    Local Root   : {0}' -f $resolvedLocalRoot)
+        Write-Host ('    Execution Log: {0}' -f $executionLog)
+        Write-Host ''
+        Write-Host '  ---------------------------------------------------------------------' -ForegroundColor DarkGray
+        Write-Host '  [Shell kept OPEN for inspection. Press Ctrl+C for interactive prompt]' -ForegroundColor Green
+        Write-Host ('  Last update  : {0}' -f (Get-Date -Format 'HH:mm:ss')) -ForegroundColor DarkGray
+
+        if ($Once -or ($MaxIterations -gt 0 -and $iteration -ge $MaxIterations)) {
+            break
+        }
+
+        Start-Sleep -Seconds $RefreshSeconds
     }
 }
 
@@ -769,7 +1024,7 @@ function Start-LiteDeployFullOSResume {
     $localRoot = Join-Path "$drive\" $LocalRootName
     $null = New-Item -Path (Join-Path $localRoot 'WorkLogs') -ItemType Directory -Force -ErrorAction SilentlyContinue
 
-    foreach ($name in @('Logs', 'State', 'Hardware', 'Packages', 'HostShell')) {
+    foreach ($name in @('Session', 'Hardware', 'Packages', 'HostShell')) {
         Import-LiteDeployFullOSComponent -Name $name -RuntimeRoot $RuntimeRoot
     }
 
@@ -777,16 +1032,33 @@ function Start-LiteDeployFullOSResume {
         $StatePath = Join-Path $localRoot 'DeploymentState.json'
     }
 
-    function Write-FullOSLog([string]$Message, [string]$Level = 'INFO') {
+    function Write-FullOSLog {
+        param(
+            [string]$Message,
+            [string]$Level = 'INFO',
+            [switch]$NoConsole,
+            [switch]$NoPrefix,
+            [string]$Component = 'OS.Engine'
+        )
         if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-            Write-LiteDeployLog -Message $Message -Level $Level -Component 'Engine.FullOS'
+            Write-LiteDeployLog -Message $Message -Level $Level -Component $Component -NoConsole:$NoConsole -NoPrefix:$NoPrefix
         }
         else {
-            Write-Host ('[{0}] [{1}] {2}' -f (Get-Date -Format 'o'), $Level, $Message)
+            if (-not $NoConsole) {
+                Write-Host ('[{0}] [{1}] {2}' -f (Get-Date -Format 'o'), $Level, $Message)
+            }
         }
     }
 
-    Write-FullOSLog "FullOS resume starting. StatePath=$StatePath RuntimeRoot=$RuntimeRoot"
+    $meta = if ($script:OSMetadata) { $script:OSMetadata } else { Get-LiteDeployOSMetadata }
+    if ($null -eq $meta) {
+        $meta = Get-LiteDeployComponentMetadata
+    }
+
+    Write-FullOSLog "$($meta.Name) v$($meta.Version)" -Level 'INIT'
+
+    Write-FullOSLog "FullOS initialization starting." -Level 'INFO'
+    Write-FullOSLog "StatePath=$StatePath RuntimeRoot=$RuntimeRoot" -Level 'INFO' -NoConsole
 
     # Leave stock Setup\CmdLine (sysprep) alone. Only clear a legacy LiteDeploy FullOS hijack.
     try {
@@ -873,8 +1145,10 @@ function Start-LiteDeployFullOSResume {
     }
     $global:LiteDeployDeployment = $deployment
     Save-LiteDeployDeploymentState -DeploymentState $deployment
-    Write-FullOSLog ("State active UID={0} previousStatus={1} resume#{2} type={3}" -f `
-            $ctx.DeploymentUid, $previousStatus, $resumeCount, $ctx.DeploymentType) -Level 'SUCCESS'
+    $entryType = if ($resumeCount -le 1 -or $previousStatus -eq 'Completed') { 'InitialEntry' } else { 'ReEntry' }
+    $reason = 'Unknown'
+    Write-FullOSLog ("State active: Entry={0} (resume #{1}, Reason={2}) UID={3} previousStatus={4} type={5}" -f `
+            $entryType, $resumeCount, $reason, $ctx.DeploymentUid, $previousStatus, $ctx.DeploymentType) -Level 'SUCCESS'
 
     # 2) WinPECT in-memory readiness (zero disk footprint)
     $credDir = Join-Path $localRoot 'Content\Credentials'
@@ -950,7 +1224,7 @@ function Start-LiteDeployFullOSResume {
 
         $runtimePaths = Get-LiteDeployRuntimePaths `
             -BootObject $fullOsBoot `
-            -RequiredComponents @('Environment', 'BootConfig', 'Logs', 'State', 'Hardware', 'Packages', 'HostShell')
+            -RequiredComponents @('Environment', 'BootConfig', 'Session', 'Hardware', 'Packages', 'HostShell')
         $global:LiteDeployRuntimeRoot = $runtimePaths.RuntimeRoot
         Write-FullOSLog ("RuntimePaths ready. DeploymentRoot={0} RuntimeRoot={1} LocalLogs={2}" -f `
                 $runtimePaths.DeploymentRoot, $runtimePaths.RuntimeRoot, $runtimePaths.LocalLogDirectory)
@@ -986,9 +1260,25 @@ function Start-LiteDeployFullOSResume {
             }
             $global:LiteDeployDeployment = $deployment
             Save-LiteDeployDeploymentState -DeploymentState $deployment
+
+            # Best-effort collection of first-boot Panther logs before sync
+            $fullOsPantherDir = Collect-LiteDeployFullOSPantherLogs -LocalLogDir $runtimePaths.LocalLogDirectory -DeploymentState $deployment
+
             Sync-LiteDeployLogsToShare -RuntimePaths $runtimePaths -RemoteLogDir $remoteLogDir
             $logsMirrored = $true
             Write-FullOSLog "Share log mirror enabled from state: $($runtimePaths.LocalLogDirectory) -> $remoteLogDir" -Level 'SUCCESS'
+
+            if ($fullOsPantherDir -and (Test-Path -LiteralPath $fullOsPantherDir -PathType Container)) {
+                $engineRel = Split-Path -Leaf (Split-Path -Parent $fullOsPantherDir)
+                $relSubPath = Join-Path $engineRel "FullOS-Panther"
+                if (Get-Command Write-LiteDeployDiagnosticLogLocation -ErrorAction SilentlyContinue) {
+                    $null = Write-LiteDeployDiagnosticLogLocation `
+                        -LocalPath $fullOsPantherDir `
+                        -RemoteLogDir $remoteLogDir `
+                        -RelativePath $relSubPath `
+                        -Component "OS.Engine"
+                }
+            }
         }
         catch {
             Write-FullOSLog "Share connected but log mirror failed: $_. Local logs remain at $($runtimePaths.LocalLogDirectory)." -Level 'WARNING'
@@ -996,38 +1286,24 @@ function Start-LiteDeployFullOSResume {
         }
     }
 
-    if (Get-Command Get-LiteDeployPackages -ErrorAction SilentlyContinue) {
-        Write-FullOSLog 'Packages component loaded (orchestration pending; use state Workflow / future action list).'
+    if (-not $logsMirrored) {
+        $localLogDir = if ($runtimePaths) { $runtimePaths.LocalLogDirectory } else { Join-Path $localRoot 'WorkLogs' }
+        $fullOsPantherDir = Collect-LiteDeployFullOSPantherLogs -LocalLogDir $localLogDir -DeploymentState $deployment
+        if ($fullOsPantherDir -and (Test-Path -LiteralPath $fullOsPantherDir -PathType Container)) {
+            $engineRel = Split-Path -Leaf (Split-Path -Parent $fullOsPantherDir)
+            $relSubPath = Join-Path $engineRel "FullOS-Panther"
+            if (Get-Command Write-LiteDeployDiagnosticLogLocation -ErrorAction SilentlyContinue) {
+                $null = Write-LiteDeployDiagnosticLogLocation `
+                    -LocalPath $fullOsPantherDir `
+                    -RemoteLogDir "" `
+                    -RelativePath $relSubPath `
+                    -Component "OS.Engine"
+            }
+        }
     }
 
-    # 4) Interactive probe in a second independent window
-    $interactiveProbe = $null
-    try {
-        $interactiveProbe = Start-LiteDeployFullOSInteractiveProbe `
-            -LocalRootName $LocalRootName `
-            -OsDriveLetter $drive `
-            -RuntimeRoot $RuntimeRoot
-        if ($execution) {
-            $execution | Add-Member -NotePropertyName FullOSInteractiveProbe -NotePropertyValue ([pscustomobject]@{
-                    Mode              = $interactiveProbe.Mode
-                    ProcessId         = $(if ($interactiveProbe.PSObject.Properties['ProcessId']) { $interactiveProbe.ProcessId } else { $null })
-                    ProbeScript       = $interactiveProbe.ProbeScript
-                    Skipped           = [bool]($interactiveProbe.PSObject.Properties['Skipped'] -and $interactiveProbe.Skipped)
-                    Temporary         = $true
-                    StartedTimeUtc    = [DateTime]::UtcNow.ToString('o')
-                }) -Force
-            $global:LiteDeployDeployment = $deployment
-            Save-LiteDeployDeploymentState -DeploymentState $deployment
-        }
-        if ($interactiveProbe.PSObject.Properties['Skipped'] -and $interactiveProbe.Skipped) {
-            Write-FullOSLog $interactiveProbe.Message -Level 'INFO'
-        }
-        else {
-            Write-FullOSLog ("Interactive probe started in second window (PID {0}): {1}" -f $interactiveProbe.ProcessId, $interactiveProbe.ProbeScript) -Level 'SUCCESS'
-        }
-    }
-    catch {
-        Write-FullOSLog "Failed to start interactive probe window: $_" -Level 'WARNING'
+    if (Get-Command Get-LiteDeployPackages -ErrorAction SilentlyContinue) {
+        Write-FullOSLog 'Packages component loaded (orchestration pending; use state Workflow / future action list).'
     }
 
     if ($execution -and $runKey) {
@@ -1044,7 +1320,8 @@ function Start-LiteDeployFullOSResume {
     # Final sweep against Audit Mode sysprep GUI
     $null = Stop-LiteDeployAuditModeSysprep
 
-    Write-FullOSLog 'FullOS resume complete (state-driven). HKLM Run remains armed for mid-deploy reboots; call Clear-LiteDeployFullOSRunKey on final success.' -Level 'SUCCESS'
+    Write-FullOSLog 'FullOS initialization completed. Package orchestration is pending.' -Level 'SUCCESS'
+    Write-FullOSLog 'HKLM Run remains armed for mid-deploy reboots; package runner will clear on final success.' -Level 'INFO' -NoConsole
     return [pscustomobject]@{
         Success          = $true
         Context          = $ctx
@@ -1059,7 +1336,6 @@ function Start-LiteDeployFullOSResume {
         RemoteLogDir     = $remoteLogDir
         LogsMirrored     = $logsMirrored
         RunKey           = $runKey
-        InteractiveProbe = $interactiveProbe
         RuntimePaths     = $runtimePaths
         DeploymentUid    = $ctx.DeploymentUid
         ResumeCount      = $resumeCount
@@ -1069,22 +1345,111 @@ function Start-LiteDeployFullOSResume {
 }
 
 # ==============================================================================
-# ENTRY POINT
+# 7. OS PROBE GUARD & ENTRY ORCHESTRATION
 # ==============================================================================
 
-if ($MyInvocation.InvocationName -ne '.') {
-    # Hand the console host to Windows Terminal for this user before resume work starts.
-    try {
-        $Path = 'HKCU:\Console\%%Startup'
-        $GUID = '{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}'
-        New-Item -Path $Path -Force | Out-Null
-        Set-ItemProperty -Path $Path -Name DelegationConsole -Value $GUID
-        Set-ItemProperty -Path $Path -Name DelegationTerminal -Value $GUID
-    }
-    catch {}
+function Test-LiteDeployShouldLaunchOSProbe {
+    <#
+    .SYNOPSIS
+        Evaluates whether the interactive OS Probe monitor should launch after FullOS resume.
+    .DESCRIPTION
+        Returns $true only when:
+          1) Resume succeeded ($ResumeResult.Success is $true).
+          2) Resume was NOT deferred ($ResumeResult.Deferred is not $true).
+          3) Host session is interactive ([Environment]::UserInteractive is $true).
+          4) Process is NOT running as NT AUTHORITY\SYSTEM (SID S-1-5-18).
+        Safely evaluates optional properties under Set-StrictMode -Version 2.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        $ResumeResult,
 
+        [Parameter(Mandatory = $false)]
+        $Identity = $null,
+
+        [Parameter(Mandatory = $false)]
+        $UserInteractive = $null
+    )
+
+    if ($null -eq $ResumeResult) { return $false }
+
+    # StrictMode-safe check for Success
+    $isSuccess = $false
+    if ($ResumeResult -is [System.Management.Automation.PSObject] -or $ResumeResult -is [hashtable]) {
+        if ($ResumeResult.PSObject.Properties['Success'] -and $ResumeResult.Success) {
+            $isSuccess = $true
+        }
+    }
+    if (-not $isSuccess) { return $false }
+
+    # StrictMode-safe check for Deferred
+    if ($ResumeResult.PSObject.Properties['Deferred'] -and $ResumeResult.Deferred) {
+        return $false
+    }
+
+    # UserInteractive check
+    $interactive = if ($null -ne $UserInteractive) { [bool]$UserInteractive } else { [Environment]::UserInteractive }
+    if (-not $interactive) { return $false }
+
+    # Real Windows identity check
     try {
-        Start-LiteDeployFullOSResume -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -RuntimeRoot $PSScriptRoot -ForceDirect:$ForceDirect
+        $current = if ($null -ne $Identity) { $Identity } else { [System.Security.Principal.WindowsIdentity]::GetCurrent() }
+        if ($null -ne $current) {
+            $isSys = $false
+            if ($current.PSObject.Properties['IsSystem'] -and $current.IsSystem) {
+                $isSys = $true
+            }
+            elseif ($current.PSObject.Properties['User'] -and $current.User -and $current.User.Value -eq 'S-1-5-18') {
+                $isSys = $true
+            }
+            elseif ($current.PSObject.Properties['Sid'] -and $current.Sid -eq 'S-1-5-18') {
+                $isSys = $true
+            }
+            elseif ($current.PSObject.Properties['Name'] -and $current.Name -match '(?i)SYSTEM') {
+                $isSys = $true
+            }
+            if ($isSys) { return $false }
+        }
+    }
+    catch {
+        return $false
+    }
+
+    return $true
+}
+
+function Invoke-LiteDeployFullOSResumeEntryPoint {
+    <#
+    .SYNOPSIS
+        Orchestrates FullOS resume entry sequence: terminal delegation, resume execution,
+        mandatory cleanup (finally), and conditional probe launch.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$LocalRootName = '~LiteDeploy',
+        [string]$OsDriveLetter = $env:SystemDrive,
+        [string]$StatePath = '',
+        [string]$RuntimeRoot = $PSScriptRoot,
+        [switch]$ForceDirect,
+        [switch]$SkipTerminalDelegation
+    )
+
+    if (-not $SkipTerminalDelegation) {
+        # Hand the console host to Windows Terminal for this user before resume work starts.
+        try {
+            $Path = 'HKCU:\Console\%%Startup'
+            $GUID = '{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}'
+            New-Item -Path $Path -Force | Out-Null
+            Set-ItemProperty -Path $Path -Name DelegationConsole -Value $GUID
+            Set-ItemProperty -Path $Path -Name DelegationTerminal -Value $GUID
+        }
+        catch {}
+    }
+
+    $resumeResult = $null
+    try {
+        $resumeResult = Start-LiteDeployFullOSResume -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -RuntimeRoot $RuntimeRoot -ForceDirect:$ForceDirect
     }
     finally {
         # Only strip a LiteDeploy-owned Setup CmdLine hijack — never wipe stock sysprep.
@@ -1092,4 +1457,20 @@ if ($MyInvocation.InvocationName -ne '.') {
         # Keep sysprep GUI from reclaiming the desktop if it respawned during the run.
         try { $null = Stop-LiteDeployAuditModeSysprep } catch {}
     }
+
+    if (Test-LiteDeployShouldLaunchOSProbe -ResumeResult $resumeResult) {
+        $localRootArg = if ($resumeResult.PSObject.Properties['LocalRoot']) { $resumeResult.LocalRoot } else { '' }
+        $statePathArg = if ($resumeResult.PSObject.Properties['StatePath']) { $resumeResult.StatePath } else { '' }
+        Show-LiteDeployOSProbe -ResumeResult $resumeResult -LocalRoot $localRootArg -StatePath $statePathArg
+    }
+
+    return $resumeResult
+}
+
+# ==============================================================================
+# ENTRY POINT
+# ==============================================================================
+
+if ($MyInvocation.InvocationName -ne '.') {
+    Invoke-LiteDeployFullOSResumeEntryPoint -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter -StatePath $StatePath -RuntimeRoot $PSScriptRoot -ForceDirect:$ForceDirect
 }

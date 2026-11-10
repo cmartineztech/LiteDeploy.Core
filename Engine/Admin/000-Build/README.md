@@ -9,14 +9,14 @@
 Publishes from numbered **dev** folders into the share layout:
 
 ```text
-Engine\Runtime\          # flat LiteDeploy.PE.Boot / Logs / … / PE.Engine / OS.Engine.ps1
+Engine\Runtime\          # flat LiteDeploy.PE.Boot / Session / … / PE.Engine / OS.Engine.ps1
 Engine\Runtime\UI\       # LiteDeploy.UI.* + .xaml
 Engine\Admin\            # flat LiteDeploy.Admin.*
 Engine\Admin\UI\         # LiteDeploy.Admin.UI.*
 Engine\Tools\            # from repo Engine\Tools\ (WinPECT, …)
 ```
 
-Numbered folders (`000-Boot`, `110-UI`, …) stay in the git repo only. Edit tools under repo `Engine\Tools\`, not only on the share. Always target the **live** lab share path (e.g. `C:\DeploymentShare`) — never hardcode a personal profile path in docs or config samples.
+Numbered folders (`000-Boot`, `100-UI`, …) stay in the git repo only. Edit tools under repo `Engine\Tools\`, not only on the share. Always target the **live** lab share path (e.g. `C:\DeploymentShare`) — never hardcode a personal profile path in docs or config samples.
 
 ## Usage
 
@@ -49,7 +49,7 @@ Synchronizes immediately, even when dot-sourced. Clean removes destination scrip
 
 ### Results and failures
 
-Console status, not structured deployment result. Bootstrap has Boot/Logs/Environment/Hardware. Copy success does not validate bootability; source/I/O errors can stop publishing.
+Console status, not structured deployment result. Bootstrap has Boot/Session/Environment/Hardware. Copy success does not validate bootability; source/I/O errors can stop publishing.
 
 ### Script parameters
 

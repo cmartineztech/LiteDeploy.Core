@@ -1,51 +1,122 @@
 <#
 .SYNOPSIS
-    LiteDeploy State - deployment state object, persistence, resume, and validation (architecture v2).
+    LiteDeploy Session - unified deployment state, RAM IPC, logging, and artifact synchronization (architecture v2).
 
 .DESCRIPTION
-    Owns the deployment state document (DeploymentState.json) used by the Engine and the Progress UI.
+    Owns the deployment state document (DeploymentState.json), RAM memory-map IPC for the Progress UI,
+    console output, Microsoft CMTrace logging, destination resolution (local / share / OS volume), and
+    artifact synchronization and verification across WinPE and FullOS.
 
-    Extracted and adapted from LiteDeploy.PE.Engine.ps1 / LiteDeploy.PE.Engine.ps1:
-      - New-LiteDeployDeploymentObject   Creates the deployment state object (same structure as Engine).
-      - Save-LiteDeployDeploymentState   Writes DeploymentState.json locally and mirrors it to the share log dir.
+    Console format (tag padded to a fixed column so Level scans easily):
+        [BOOT]     Initializing environment
+        [SUCCESS]  Hardware check passed
+        [WARNING]  Retrying network
+
+    Messages that already begin with whitespace or a [TAG] are printed as-is (legacy callers
+    and continuation lines). An empty Message prints a blank spacer line and is not written to the log.
 
     Public API:
-      Get-LiteDeployState [-Path] [-FromFile]       Read the live state (global) or a state file.
-      Update-LiteDeployState                        Patch status/phase/step/percent/errors/properties, then save.
-      Set-LiteDeployState                           Alias of Update-LiteDeployState.
-      Save-LiteDeployState                          Alias of Save-LiteDeployDeploymentState.
-      Resume-LiteDeployState                        Locate, validate, and re-activate a saved state.
-      Test-LiteDeployState                          Validate a state object or state file.
-      Get-DeploymentStateFromFile                   Compatibility reader for the Progress UI (returns a hashtable).
+      Logging & Mirrors:
+        Write-LiteDeployLog [-Message] [-Level] [-Component] ...
+        Clear-LiteDeployLog [-LogPath] [-LogFileName]
+        Get-LiteDeployLogPath [-CustomPath] [-FileName]
+        Initialize-LiteDeployDeploymentShareLogDir -RuntimePaths -DeploymentUid
+        Sync-LiteDeployLogsToShare -RuntimePaths [-RemoteLogDir]
+        Resolve-LiteDeployShareUncPath [-Path]
+        Verify-LiteDeployLogSync -LocalPath -RemoteDirectory [-SubPath]
+        Write-LiteDeployDiagnosticLogLocation -LocalPath [-RemoteLogDir] [-RelativePath] [-OsLogDir] [-Component]
+        Sync-LiteDeployArtifactsToOsVolume -RuntimePaths -OsDriveLetter [-DeploymentState] [-LocalRootName]
 
-    SECURITY: Credentials are NEVER persisted or logged. When serializing, BootObject.Credential (and any
-    property named like Credential / Password / Secret / Token, plus SecureString / PSCredential values) is
-    omitted from the written JSON. The in-memory object is never modified by serialization. Log messages
-    are passed through a redaction filter.
+      State & Progress:
+        New-LiteDeployDeploymentObject [-Uid] [-BootCtx] [-RemoteLogDir] [-DeferUid]
+        Save-LiteDeployDeploymentState -DeploymentState [-Path] [-NoRemote] [-PassThru]
+        Save-LiteDeployState                           # Alias of Save-LiteDeployDeploymentState
+        Get-LiteDeployState [-Path] [-FromFile]
+        Update-LiteDeployState [-Status] [-CurrentPhase] [-CurrentStep] [-PercentComplete] [-AddError] [-Property] ...
+        Set-LiteDeployState                            # Alias of Update-LiteDeployState
+        Resume-LiteDeployState [-Path] [-DeploymentUid] [-BootObject] [-Force] ...
+        Test-LiteDeployState [-State] [-Path] [-Persisted] [-Detailed]
+        Get-DeploymentStateFromFile [-Path] [-DefaultState]
+
+    SECURITY:
+      Credentials and sensitive tokens are NEVER persisted or logged. Serialization omits any property
+      matching sensitive patterns (Password, Secret, Token, Key, Credential) as well as PSCredential and
+      SecureString instances. The in-memory object is never mutated by serialization. All logged error and
+      state texts pass through a regex redaction filter.
 
     Usage:
-        . "Z:\Engine\Runtime\LiteDeploy.State.ps1"     # load the API
-        .\LiteDeploy.State.ps1                                 # show the local state file if present
-        .\LiteDeploy.State.ps1 -StatePath Z:\WorkLogs\Deployments\260806-A3F1\DeploymentState.json
-        .\LiteDeploy.State.ps1 -Metadata                       # component metadata only
+        . "Z:\Engine\Runtime\LiteDeploy.Session.ps1"    # load logging & state functions
+        .\LiteDeploy.Session.ps1 -Message "Hello" -Level SUCCESS
+        .\LiteDeploy.Session.ps1                       # non-destructive summary
+        .\LiteDeploy.Session.ps1 -Metadata             # component metadata only
 
-    ComponentId: State
+    ComponentId: Session
+
+.PARAMETER Message
+    Log message text. Empty string prints a console spacer only.
+
+.PARAMETER Level
+    INFO, SUCCESS, INIT, CHECK, NOTICE, WARNING, RETRY, ERROR, BOOT, NETWORK, ENGINE.
+
+.PARAMETER Component
+    Subsystem name recorded in the CMTrace component attribute.
+
+.PARAMETER ForegroundColor
+    Console color. When White (default) the color is chosen from -Level.
+
+.PARAMETER LogFileName
+    Log file name. Defaults to LiteDeploy.Execution.log.
+
+.PARAMETER LogPath
+    Target directory override. Defaults to $env:SystemDrive\~LiteDeploy\WorkLogs.
+
+.PARAMETER NoConsole
+    Write to the log file only.
+
+.PARAMETER NoPrefix
+    Suppress the [LEVEL] console prefix for this entry.
 
 .PARAMETER StatePath
-    Standalone only: state file to display. Defaults to $env:SystemDrive\~LiteDeploy\DeploymentState.json.
+    State file to inspect (standalone mode). Defaults to $env:SystemDrive\~LiteDeploy\DeploymentState.json.
 
 .PARAMETER Metadata
-    Outputs the standardized component metadata PSCustomObject and exits immediately.
+    Outputs standardized component metadata and exits immediately.
 
 .NOTES
     LiteDeploy Component Standard v2.0
-    Target Environment: WinPE / FullOS
+    Target Environment: Universal (WinPE / FullOS)
     PowerShell Version: 5.1+
     Strict Mode: Version 2.0
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false, Position = 0)]
+    [AllowEmptyString()]
+    [string]$Message = "",
+
+    [Parameter(Mandatory = $false, Position = 1)]
+    [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "NOTICE", "WARNING", "RETRY", "ERROR", "BOOT", "NETWORK", "ENGINE")]
+    [string]$Level = "INFO",
+
+    [Parameter(Mandatory = $false, Position = 2)]
+    [string]$Component = "Session",
+
+    [Parameter(Mandatory = $false)]
+    [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White,
+
+    [Parameter(Mandatory = $false)]
+    [string]$LogFileName = "LiteDeploy.Execution.log",
+
+    [Parameter(Mandatory = $false)]
+    [string]$LogPath = "",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$NoConsole,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$NoPrefix,
+
     [Parameter(Mandatory = $false)]
     [string]$StatePath = "",
 
@@ -53,7 +124,6 @@ param(
     [switch]$Metadata
 )
 
-# Enforce strict execution discipline across the runtime
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
@@ -67,27 +137,29 @@ function Get-LiteDeployComponentMetadata {
         Returns standardized component metadata for inventory discovery and version management.
     #>
     return [PSCustomObject]@{
-        ComponentId          = "State"
-        Name                 = "LiteDeploy State"
+        ComponentId          = "Session"
+        Name                 = "LiteDeploy Session"
         Version              = "2.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Environment")
-        Description          = "Deployment state object, RAM memory-map + credential-safe DeploymentState.json persistence, resume, and validation."
+        Dependencies         = @()
+        Description          = "Unified session controller: deployment state JSON, RAM IPC, console and CMTrace logging, and artifact synchronization across WinPE and FullOS."
     }
 }
 
-# Fast-exit for automated inventory scanners or version queries
 if ($Metadata) {
     Get-LiteDeployComponentMetadata
     return
 }
 
 # ==============================================================================
-# 2. CONSTANTS
+# 2. CONSTANTS & GLOBALS
 # ==============================================================================
+
+# Console tag column width: longest tag "[SUCCESS]" / "[WARNING]" (9) + 2 spaces.
+$global:LiteDeployLogTagWidth = 11
 
 $global:LiteDeployStateFileName = "DeploymentState.json"
 
@@ -129,9 +201,10 @@ $global:LiteDeployStatePhaseStatus = @{
 $global:LiteDeployStateSensitiveNamePattern = '^(credentials?|ps?credential|networkcredential|[a-z_]*password|[a-z_]*secret|[a-z_]*token|apikey|privatekey)$'
 
 $global:LiteDeployStateMaxDepth = 8
+$script:InSyncLiteDeployLogsToShare = $false
 
 # ==============================================================================
-# 3. INTERNAL HELPERS
+# 3. INTERNAL HELPERS: REDACTION, LOGGING FORMAT, PROPERTY ACCESS
 # ==============================================================================
 
 function Protect-LiteDeployStateText {
@@ -156,36 +229,48 @@ function Protect-LiteDeployStateText {
     return $clean
 }
 
-function Write-LiteDeployStateLog {
+function Get-LiteDeployLogColor {
+    param([string]$Level)
+    switch ($Level.ToUpper()) {
+        "SUCCESS" { return [System.ConsoleColor]::Green }
+        "INIT"    { return [System.ConsoleColor]::DarkGray }
+        "CHECK"   { return [System.ConsoleColor]::Cyan }
+        "NOTICE"  { return [System.ConsoleColor]::Yellow }
+        "WARNING" { return [System.ConsoleColor]::Yellow }
+        "RETRY"   { return [System.ConsoleColor]::DarkYellow }
+        "ERROR"   { return [System.ConsoleColor]::Red }
+        "BOOT"    { return [System.ConsoleColor]::Cyan }
+        "NETWORK" { return [System.ConsoleColor]::Magenta }
+        "ENGINE"  { return [System.ConsoleColor]::Gray }
+        default   { return [System.ConsoleColor]::White }
+    }
+}
+
+function Format-LiteDeployLogLine {
+    <#
+    .SYNOPSIS
+        Builds the console line: "[LEVEL]" padded to a fixed column followed by the message.
+    #>
     param(
-        [Parameter(Mandatory = $true)]
-        [AllowEmptyString()]
-        [string]$Message,
-
-        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR")]
+        [AllowEmptyString()][string]$Message = "",
         [string]$Level = "INFO",
-
-        [switch]$NoConsole
+        [switch]$NoPrefix
     )
 
-    $text = Protect-LiteDeployStateText -Text $Message
-
-    if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-        try {
-            Write-LiteDeployLog -Message $text -Level $Level -Component "State" -NoConsole:$NoConsole
-        }
-        catch {
-            # Logging must never break state handling.
-        }
-        return
+    # Blank spacer, pre-indented/continuation lines pass through unchanged.
+    if ($NoPrefix -or [string]::IsNullOrWhiteSpace($Message) -or $Message -match '^\s{2,}[^\[]') {
+        return $Message
     }
 
-    if ($NoConsole) { return }
-    switch ($Level) {
-        "WARNING" { Write-Warning $text }
-        "ERROR"   { Write-Warning $text }
-        default   { Write-Verbose $text }
+    # Strip manual [TAG] prefix from console line only for known levels (retain domain tags like [UEFI]/[LEGACY])
+    $clean = $Message -replace '(?i)^\s*\[(INFO|SUCCESS|INIT|CHECK|NOTICE|WARNING|RETRY|ERROR|DEBUG|BOOT|NETWORK|ENGINE)\]\s*', ''
+
+    $tag = "[{0}]" -f $Level.ToUpper()
+    $width = 11
+    if (Get-Variable -Name LiteDeployLogTagWidth -Scope Global -ErrorAction SilentlyContinue) {
+        $width = [int]$global:LiteDeployLogTagWidth
     }
+    return ($tag.PadRight($width) + $clean)
 }
 
 function Get-LiteDeployStateProperty {
@@ -312,12 +397,10 @@ function Set-LiteDeployStateValue {
 }
 
 function Get-LiteDeployStateTimestamp {
-    # Same format the Engine stamps into StartTime / EndTime / CompletedTime fields.
     return (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 }
 
 function New-LiteDeployStateUid {
-    # Fallback UID (e.g. 260806-A3F1) when the caller does not supply one.
     $bytes = New-Object byte[] 2
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
@@ -338,6 +421,314 @@ function Get-LiteDeployStateFilePath {
     #>
     return ("{0}\~LiteDeploy\{1}" -f (Get-LiteDeployStateSystemDrive), $global:LiteDeployStateFileName)
 }
+
+function Get-LiteDeployLiveState {
+    $live = Get-Variable -Name LiteDeployDeployment -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    if ($null -ne $live) { return $live }
+    return $null
+}
+
+# ==============================================================================
+# 4. CONSOLIDATED DESTINATIONS (LOCAL, SHARE, OS VOLUME)
+# ==============================================================================
+
+function Get-LiteDeployStateRemoteDirectory {
+    <#
+    .SYNOPSIS
+        Returns the share-side log directory recorded in a state object or global variable ('' when none).
+    #>
+    param($State = $null)
+
+    if ($State) {
+        $logLocations = Get-LiteDeployStateProperty -InputObject $State -Name "LogLocations"
+        $remote = Get-LiteDeployStateProperty -InputObject $logLocations -Name "RemoteLogDir"
+        if (-not [string]::IsNullOrWhiteSpace([string]$remote)) { return [string]$remote }
+
+        $execution = Get-LiteDeployStateProperty -InputObject $State -Name "Execution"
+        $remote = Get-LiteDeployStateProperty -InputObject $execution -Name "RemoteLogDir"
+        if (-not [string]::IsNullOrWhiteSpace([string]$remote)) { return [string]$remote }
+    }
+
+    $g = Get-Variable -Name LiteDeployRemoteLogDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    if ($g) { return [string]$g }
+
+    $dep = Get-Variable -Name LiteDeployDeployment -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    if ($dep -and $dep.PSObject.Properties['LogLocations'] -and $dep.LogLocations -and
+        $dep.LogLocations.PSObject.Properties['RemoteLogDir'] -and $dep.LogLocations.RemoteLogDir) {
+        return [string]$dep.LogLocations.RemoteLogDir
+    }
+    return ""
+}
+
+function Get-LiteDeployRemoteLogDirectory {
+    <#
+    .SYNOPSIS
+        Deployment share / media mirror directory (consolidated with Get-LiteDeployStateRemoteDirectory).
+    #>
+    param($State = $null)
+    return (Get-LiteDeployStateRemoteDirectory -State $State)
+}
+
+function Get-LiteDeployStateOsPaths {
+    <#
+    .SYNOPSIS
+        Resolves offline Windows OS volume paths for state/log mirroring (e.g. W:\~LiteDeploy).
+    #>
+    param($State = $null)
+
+    $result = [PSCustomObject]@{
+        Root      = ""
+        LogDir    = ""
+        StatePath = ""
+    }
+
+    $gRoot = Get-Variable -Name LiteDeployOsRoot -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    $gLogs = Get-Variable -Name LiteDeployOsLogDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    $gState = Get-Variable -Name LiteDeployOsStatePath -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+    if ($gRoot) { $result.Root = [string]$gRoot }
+    if ($gLogs) { $result.LogDir = [string]$gLogs }
+    if ($gState) { $result.StatePath = [string]$gState }
+
+    if (-not $State) {
+        $State = Get-LiteDeployLiveState
+    }
+
+    if ($State) {
+        $logLocations = Get-LiteDeployStateProperty -InputObject $State -Name "LogLocations"
+        if ($logLocations) {
+            $root = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsRoot"
+            $logs = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsLogDir"
+            $statePath = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsDeploymentState"
+            if (-not $result.Root -and $root) { $result.Root = [string]$root }
+            if (-not $result.LogDir -and $logs) { $result.LogDir = [string]$logs }
+            if (-not $result.StatePath -and $statePath) { $result.StatePath = [string]$statePath }
+        }
+    }
+
+    if (-not $result.StatePath -and $result.Root) {
+        $result.StatePath = Join-Path $result.Root $global:LiteDeployStateFileName
+    }
+    if (-not $result.LogDir -and $result.Root) {
+        $result.LogDir = Join-Path $result.Root "WorkLogs"
+    }
+
+    return $result
+}
+
+function Get-LiteDeployOsLogDirectory {
+    <#
+    .SYNOPSIS
+        Offline Windows OS volume mirror directory (consolidated with Get-LiteDeployStateOsPaths).
+    #>
+    param($State = $null)
+    $paths = Get-LiteDeployStateOsPaths -State $State
+    return [string]$paths.LogDir
+}
+
+function Write-LiteDeployLogMirrorEntry {
+    param(
+        [string]$Directory,
+        [string]$FileName,
+        [string]$LogEntry
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Directory) -or [string]::IsNullOrWhiteSpace($LogEntry)) {
+        return
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $Directory -ErrorAction SilentlyContinue)) {
+            $null = New-Item -Path $Directory -ItemType Directory -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $Directory -ErrorAction SilentlyContinue) {
+            $target = Join-Path $Directory $FileName
+            Add-Content -Path $target -Value $LogEntry -Encoding utf8 -ErrorAction SilentlyContinue
+        }
+    }
+    catch {}
+}
+
+# ==============================================================================
+# 5. CORE LOGGING ENGINE
+# ==============================================================================
+
+function Get-LiteDeployLogPath {
+    <#
+    .SYNOPSIS
+        Returns the full log file path, creating the target directory when needed.
+    #>
+    param(
+        [string]$CustomPath = "",
+        [string]$FileName = "LiteDeploy.Execution.log"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CustomPath)) {
+        $overrideDir = Get-Variable -Name LiteDeploySessionLogDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+        if (-not [string]::IsNullOrWhiteSpace($overrideDir)) {
+            $CustomPath = [string]$overrideDir
+        } else {
+            $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
+            $CustomPath = Join-Path $sysDrive "~LiteDeploy\WorkLogs"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $CustomPath)) {
+        $null = New-Item -Path $CustomPath -ItemType Directory -Force -ErrorAction SilentlyContinue
+    }
+    return (Join-Path $CustomPath $FileName)
+}
+
+function Write-LiteDeployLog {
+    <#
+    .SYNOPSIS
+        Writes an aligned console line and a CMTrace XML entry (plus remote mirrors when configured).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false, Position = 0)]
+        [AllowEmptyString()]
+        [string]$Message = "",
+
+        [Parameter(Mandatory = $false, Position = 1)]
+        [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "NOTICE", "WARNING", "RETRY", "ERROR", "BOOT", "NETWORK", "ENGINE")]
+        [string]$Level = "INFO",
+
+        [Parameter(Mandatory = $false, Position = 2)]
+        [string]$Component = "Session",
+
+        [Parameter(Mandatory = $false)]
+        [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White,
+
+        [Parameter(Mandatory = $false)]
+        [string]$LogFileName = "LiteDeploy.Execution.log",
+
+        [Parameter(Mandatory = $false)]
+        [string]$LogPath = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$NoConsole,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$NoPrefix
+    )
+
+    Set-StrictMode -Version 2.0
+
+    $selectedColor = $ForegroundColor
+    if ($ForegroundColor -eq [System.ConsoleColor]::White) {
+        $selectedColor = Get-LiteDeployLogColor -Level $Level
+    }
+
+    # Empty Message still prints a blank spacer; CMTrace skips whitespace-only entries below.
+    if (-not $NoConsole) {
+        Write-Host (Format-LiteDeployLogLine -Message $Message -Level $Level -NoPrefix:$NoPrefix) -ForegroundColor $selectedColor
+    }
+
+    try {
+        $cleanMsg = $Message.Trim() -replace '[\r\n]+', ' '
+        $cleanMsg = $cleanMsg.Replace(']LOG]!>', ']LOG] !>')
+        if ([string]::IsNullOrWhiteSpace($cleanMsg)) {
+            return
+        }
+
+        # Do not decorate CMTrace log with banner divider lines (====)
+        if ($cleanMsg -match '^={5,}') {
+            return
+        }
+
+        # Strip manual [TAG] prefix from persisted log entry only for known levels (retain domain tags like [UEFI]/[LEGACY])
+        $cleanMsg = $cleanMsg -replace '(?i)^\s*\[(INFO|SUCCESS|INIT|CHECK|NOTICE|WARNING|RETRY|ERROR|DEBUG|BOOT|NETWORK|ENGINE)\]\s*', ''
+        if ([string]::IsNullOrWhiteSpace($cleanMsg)) {
+            return
+        }
+
+        $targetLogFile = Get-LiteDeployLogPath -CustomPath $LogPath -FileName $LogFileName
+
+        $now = Get-Date
+        $utcOffsetMinutes = [int][System.TimeZoneInfo]::Local.GetUtcOffset($now).TotalMinutes
+        $offsetSign = if ($utcOffsetMinutes -ge 0) { "+" } else { "-" }
+        $timeStr = $now.ToString("HH:mm:ss.fff") + $offsetSign + [math]::Abs($utcOffsetMinutes).ToString()
+        $dateStr = $now.ToString("MM-dd-yyyy")
+
+        $typeCode = switch ($Level.ToUpper()) {
+            "ERROR"   { "3" }
+            "WARNING" { "2" }
+            "RETRY"   { "2" }
+            "NOTICE"  { "1" }
+            default   { "1" }
+        }
+
+        $callingFile = "LiteDeploy.Session.ps1"
+        if ($MyInvocation.ScriptName) {
+            $callingFile = Split-Path -Leaf $MyInvocation.ScriptName
+        }
+
+        $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""$PID"" file=""$callingFile"">"
+
+        # 1) Local RAM / system drive (primary)
+        Add-Content -Path $targetLogFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
+
+        # 2) Deployment share / media
+        Write-LiteDeployLogMirrorEntry -Directory (Get-LiteDeployRemoteLogDirectory) -FileName $LogFileName -LogEntry $logEntry
+
+        # 3) Windows OS volume (W:\~LiteDeploy\WorkLogs) when mounted
+        Write-LiteDeployLogMirrorEntry -Directory (Get-LiteDeployOsLogDirectory) -FileName $LogFileName -LogEntry $logEntry
+    }
+    catch {
+        # Logging must never break the caller.
+    }
+}
+
+function Clear-LiteDeployLog {
+    <#
+    .SYNOPSIS
+        Deletes the local log file (remote mirrors are left untouched).
+    #>
+    param(
+        [string]$LogPath = "",
+        [string]$LogFileName = "LiteDeploy.Execution.log"
+    )
+
+    try {
+        $targetFile = Get-LiteDeployLogPath -CustomPath $LogPath -FileName $LogFileName
+        if (Test-Path -LiteralPath $targetFile) {
+            Remove-Item -LiteralPath $targetFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch {
+        # Ignore
+    }
+}
+
+function Write-LiteDeployStateLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Message,
+
+        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR")]
+        [string]$Level = "INFO",
+
+        [switch]$NoConsole
+    )
+
+    $text = Protect-LiteDeployStateText -Text $Message
+    try {
+        Write-LiteDeployLog -Message $text -Level $Level -Component "Session" -NoConsole:$NoConsole
+    }
+    catch {
+        if (-not $NoConsole) {
+            switch ($Level) {
+                "WARNING" { Write-Warning $text }
+                "ERROR"   { Write-Warning $text }
+                default   { Write-Verbose $text }
+            }
+        }
+    }
+}
+
+# ==============================================================================
+# 6. MEMORY-MAP IPC (RAM TRANSPORT FOR PROGRESS UI)
+# ==============================================================================
 
 function Get-LiteDeployStateMemoryMapName {
     return [string]$global:LiteDeployStateMemoryMapName
@@ -366,9 +757,6 @@ function Write-LiteDeployStateToMemory {
     <#
     .SYNOPSIS
         Publishes credential-free state JSON into a named memory-mapped region (RAM IPC for Progress).
-    .DESCRIPTION
-        Layout: Int32 length (UTF-8 byte count) at offset 0, then payload bytes.
-        CreateOrOpen keeps the map alive for the Engine process lifetime so Progress can OpenExisting.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -408,8 +796,6 @@ function Read-LiteDeployStateFromMemory {
     <#
     .SYNOPSIS
         Reads the latest state JSON from the named RAM map (Progress / secondary readers).
-    .OUTPUTS
-        UTF-8 JSON string, or empty string when the map is missing/empty.
     #>
     param(
         [string]$MapName = ""
@@ -442,80 +828,14 @@ function Read-LiteDeployStateFromMemory {
     }
 }
 
-function Get-LiteDeployStateRemoteDirectory {
-    <#
-    .SYNOPSIS
-        Returns the share-side log directory recorded in a state object ('' when none).
-    #>
-    param($State)
-
-    $logLocations = Get-LiteDeployStateProperty -InputObject $State -Name "LogLocations"
-    $remote = Get-LiteDeployStateProperty -InputObject $logLocations -Name "RemoteLogDir"
-    if (-not [string]::IsNullOrWhiteSpace([string]$remote)) { return [string]$remote }
-
-    $execution = Get-LiteDeployStateProperty -InputObject $State -Name "Execution"
-    $remote = Get-LiteDeployStateProperty -InputObject $execution -Name "RemoteLogDir"
-    if (-not [string]::IsNullOrWhiteSpace([string]$remote)) { return [string]$remote }
-
-    return ""
-}
-
-function Get-LiteDeployStateOsPaths {
-    <#
-    .SYNOPSIS
-        Resolves offline Windows OS volume paths for state/log mirroring (e.g. W:\~LiteDeploy).
-    #>
-    param($State)
-
-    $result = [PSCustomObject]@{
-        Root      = ""
-        LogDir    = ""
-        StatePath = ""
-    }
-
-    $gRoot = Get-Variable -Name LiteDeployOsRoot -Scope Global -ValueOnly -ErrorAction SilentlyContinue
-    $gLogs = Get-Variable -Name LiteDeployOsLogDir -Scope Global -ValueOnly -ErrorAction SilentlyContinue
-    $gState = Get-Variable -Name LiteDeployOsStatePath -Scope Global -ValueOnly -ErrorAction SilentlyContinue
-    if ($gRoot) { $result.Root = [string]$gRoot }
-    if ($gLogs) { $result.LogDir = [string]$gLogs }
-    if ($gState) { $result.StatePath = [string]$gState }
-
-    $logLocations = Get-LiteDeployStateProperty -InputObject $State -Name "LogLocations"
-    if ($logLocations) {
-        $root = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsRoot"
-        $logs = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsLogDir"
-        $statePath = Get-LiteDeployStateProperty -InputObject $logLocations -Name "OfflineOsDeploymentState"
-        if (-not $result.Root -and $root) { $result.Root = [string]$root }
-        if (-not $result.LogDir -and $logs) { $result.LogDir = [string]$logs }
-        if (-not $result.StatePath -and $statePath) { $result.StatePath = [string]$statePath }
-    }
-
-    if (-not $result.StatePath -and $result.Root) {
-        $result.StatePath = Join-Path $result.Root $global:LiteDeployStateFileName
-    }
-    if (-not $result.LogDir -and $result.Root) {
-        $result.LogDir = Join-Path $result.Root "WorkLogs"
-    }
-
-    return $result
-}
-
-function Get-LiteDeployLiveState {
-    # In-memory deployment published by the Engine ($global:LiteDeployDeployment), or $null.
-    $live = Get-Variable -Name LiteDeployDeployment -Scope Global -ValueOnly -ErrorAction SilentlyContinue
-    if ($null -ne $live) { return $live }
-    return $null
-}
+# ==============================================================================
+# 7. SERIALIZATION, PERSISTENCE & FILE I/O
+# ==============================================================================
 
 function ConvertTo-LiteDeploySerializableObject {
     <#
     .SYNOPSIS
         Builds a credential-free, JSON-safe copy of an object graph (the original is never modified).
-
-    .DESCRIPTION
-        Omits SecureString / PSCredential / NetworkCredential values and any property whose name matches
-        the sensitive-name pattern (Credential, Password, Secret, Token, ...). Non-trivial .NET objects are
-        reduced to strings; depth is capped to guard against cycles.
     #>
     param(
         $InputObject,
@@ -546,7 +866,6 @@ function ConvertTo-LiteDeploySerializableObject {
         foreach ($key in @($InputObject.Keys)) {
             $keyName = [string]$key
             if ($keyName -match $global:LiteDeployStateSensitiveNamePattern) { continue }
-            # Optional registration, domain, and workgroup values have no meaning when null, empty, or whitespace.
             if ($keyName -in @('RegisteredOrganization', 'RegisteredOwner', 'JoinWorkGroup', 'JoinWorkgroup', 'JoinDomain', 'MachineObjectOU') -and
                 [string]::IsNullOrWhiteSpace([string]$InputObject[$key])) { continue }
             $dictOut[$keyName] = ConvertTo-LiteDeploySerializableObject -InputObject $InputObject[$key] -Depth ($Depth + 1)
@@ -587,10 +906,6 @@ function ConvertTo-LiteDeploySerializableObject {
 }
 
 function Write-LiteDeployStateFile {
-    <#
-    .SYNOPSIS
-        Writes UTF-8 (no BOM) text; uses temp-file + move so readers never see a half-written file.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -610,7 +925,6 @@ function Write-LiteDeployStateFile {
         Move-Item -LiteralPath $tempPath -Destination $Path -Force
     }
     catch {
-        # Target may be held open by the Progress UI reader; fall back to an in-place write.
         if (Test-Path -LiteralPath $tempPath) {
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
         }
@@ -619,11 +933,6 @@ function Write-LiteDeployStateFile {
 }
 
 function Read-LiteDeployStateFile {
-    <#
-    .SYNOPSIS
-        Reads and parses a state JSON file with shared read access (the Engine may be writing).
-        Returns $null for a missing or empty file; throws on invalid JSON.
-    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
@@ -649,10 +958,6 @@ function Read-LiteDeployStateFile {
 }
 
 function Get-LiteDeployStateNextPhase {
-    <#
-    .SYNOPSIS
-        Determines the first incomplete pipeline phase (1-4), or 5 when every phase has completed.
-    #>
     param($State)
 
     $preCheck = Get-LiteDeployStateProperty -InputObject $State -Name "HardwarePreCheck"
@@ -671,23 +976,18 @@ function Get-LiteDeployStateNextPhase {
 }
 
 # ==============================================================================
-# 4. STATE OBJECT & PERSISTENCE (extracted from Engine)
+# 8. DEPLOYMENT OBJECT & LIFECYCLE
 # ==============================================================================
 
 function New-LiteDeployDeploymentObject {
     <#
     .SYNOPSIS
         Creates the deployment state object (structure identical to the Engine's).
-
-    .NOTES
-        BootObject holds the live in-memory boot context (including Credential). It is never written to
-        disk with credentials: Save-LiteDeployDeploymentState strips them during serialization.
     #>
     param(
         [string]$Uid = "",
         [psobject]$BootCtx = $null,
         [string]$RemoteLogDir = "",
-        # Engine uses local pre-check state before assigning a deployment ID.
         [switch]$DeferUid
     )
 
@@ -698,7 +998,7 @@ function New-LiteDeployDeploymentObject {
 
     return [PSCustomObject]@{
         DeploymentUid = $Uid
-        Status        = "Initializing"    # Initializing, HardwarePreCheck, WorkflowSelection, ReadyForDeployment, Staging, Completed, Cancelled, Failed
+        Status        = "Initializing"
         CurrentPhase  = 0
         StartTime     = (Get-LiteDeployStateTimestamp)
         EndTime       = $null
@@ -754,7 +1054,7 @@ function New-LiteDeployDeploymentObject {
             Errors          = @()
         }
         Ui            = [PSCustomObject]@{
-            Theme = "Light"   # BootConfig.Ui.Theme (Light|Dark) — shared across Runtime UI hosts
+            Theme = "Light"
         }
     }
 }
@@ -762,24 +1062,8 @@ function New-LiteDeployDeploymentObject {
 function Save-LiteDeployDeploymentState {
     <#
     .SYNOPSIS
-        Serializes the deployment state to DeploymentState.json (local) and mirrors it to the share log dir.
-
-    .DESCRIPTION
-        Credential-safe: BootObject.Credential and other sensitive members are omitted from the JSON.
-        Never throws and (like the Engine original) emits nothing unless -PassThru is supplied, so existing
-        call sites do not pollute the pipeline.
-
-    .PARAMETER DeploymentState
-        State object from New-LiteDeployDeploymentObject.
-
-    .PARAMETER Path
-        Override for the local state file. Defaults to <SystemDrive>\~LiteDeploy\DeploymentState.json.
-
-    .PARAMETER NoRemote
-        Skip the mirror copy under LogLocations.RemoteLogDir.
-
-    .PARAMETER PassThru
-        Return a result object (Saved, LocalPath, RemoteSaved, RemotePath, Error).
+        Serializes deployment state to DeploymentState.json (local), RAM memory-map IPC,
+        and mirrors it to the share log dir and offline OS volume.
     #>
     [CmdletBinding()]
     param(
@@ -848,7 +1132,7 @@ function Save-LiteDeployDeploymentState {
             }
         }
 
-        # 3) Windows OS volume (W:\~LiteDeploy\DeploymentState.json) when Disk has mounted it
+        # 3) Windows OS volume (W:\~LiteDeploy\DeploymentState.json) when mounted
         try {
             $osPaths = Get-LiteDeployStateOsPaths -State $DeploymentState
             if ($osPaths.StatePath) {
@@ -871,26 +1155,10 @@ function Save-LiteDeployDeploymentState {
     if ($PassThru) { return $result }
 }
 
-# ==============================================================================
-# 5. PUBLIC API
-# ==============================================================================
-
 function Get-LiteDeployState {
     <#
     .SYNOPSIS
         Returns the deployment state.
-
-    .DESCRIPTION
-        -Path       reads that state file.
-        (no -Path)  returns the live in-memory state ($global:LiteDeployDeployment) when present,
-                    otherwise reads the default local state file.
-        -FromFile   forces reading the file even when a live state exists.
-
-        Returns $null when no state is available or the file is unreadable.
-
-    .EXAMPLE
-        $state = Get-LiteDeployState
-        $state = Get-LiteDeployState -Path Z:\WorkLogs\Deployments\260806-A3F1\DeploymentState.json
     #>
     [CmdletBinding()]
     param(
@@ -928,17 +1196,6 @@ function Update-LiteDeployState {
     <#
     .SYNOPSIS
         Patches the deployment state and (by default) saves it. Alias: Set-LiteDeployState.
-
-    .DESCRIPTION
-        Target is -State, else the live global state, else the default local state file.
-        Terminal statuses (Completed / Failed / Cancelled) stamp EndTime when it is empty.
-        Error text is redacted before it is stored. Sensitive property names are refused.
-
-    .PARAMETER Property
-        Hashtable of dotted-path updates, e.g. @{ 'Disk.Formatted' = $true; 'Disk.DiskNumber' = 0 }.
-
-    .EXAMPLE
-        Update-LiteDeployState -Status "DiskPreparation" -CurrentPhase 3 -CurrentStep "FormattingTargetDisk" -PercentComplete 25
     #>
     [CmdletBinding()]
     param(
@@ -1028,19 +1285,6 @@ function Resume-LiteDeployState {
     <#
     .SYNOPSIS
         Locates, validates, and re-activates a saved deployment state so the pipeline can continue.
-
-    .DESCRIPTION
-        Search order when -Path is not given: the local state file, the live state's RemoteLogDir copy, and
-        (with -DeploymentUid) <Drive>\WorkLogs\Deployments\<Uid> / <Drive>\<LocalRoot>\WorkLogs\Deployments\<Uid>
-        on the boot share/media drive. The newest valid candidate wins.
-
-        On success the state becomes $global:LiteDeployDeployment (unless -NoActivate), the live BootObject
-        (with its in-memory credential) is re-attached, a Failed/Cancelled status is rewound to the next
-        incomplete phase, and the result is saved. Completed deployments are not resumed without -Force.
-
-    .OUTPUTS
-        PSCustomObject: Resumed, Reason, State, Path, DeploymentUid, PreviousStatus, Status, CurrentPhase,
-        NextPhase, NextPhaseName, CompletedPhases, ResumeCount.
     #>
     [CmdletBinding()]
     param(
@@ -1078,7 +1322,6 @@ function Resume-LiteDeployState {
         ResumeCount     = 0
     }
 
-    # Live boot context (credential stays in memory only).
     $liveBoot = $BootObject
     if ($null -eq $liveBoot) {
         $liveBoot = Get-Variable -Name LiteDeployBootObject -Scope Global -ValueOnly -ErrorAction SilentlyContinue
@@ -1233,14 +1476,6 @@ function Test-LiteDeployState {
     <#
     .SYNOPSIS
         Validates a deployment state object or state file.
-
-    .DESCRIPTION
-        Returns $true/$false, or a result object (IsValid, Errors, Warnings, Source) with -Detailed.
-        -Persisted treats the input as something read from disk: a stored BootObject.Credential is then an
-        error (in-memory state legitimately holds the credential and only produces a warning).
-
-    .EXAMPLE
-        Test-LiteDeployState -Path "X:\~LiteDeploy\DeploymentState.json" -Detailed
     #>
     [CmdletBinding()]
     param(
@@ -1363,18 +1598,6 @@ function Get-DeploymentStateFromFile {
     <#
     .SYNOPSIS
         Compatibility reader for the Progress UI: returns a UI-state hashtable built from a state file.
-
-    .DESCRIPTION
-        Accepts either the Progress schema (camelCase keys such as status / overallPercent) or the full
-        DeploymentState.json schema written by Save-LiteDeployDeploymentState (mapped onto the same UI keys).
-        Starts from a clone of -DefaultState, never throws, and never surfaces credentials.
-
-    .PARAMETER Path
-        State file. Defaults to <SystemDrive>\~LiteDeploy\DeploymentState.json. Relative paths resolve
-        against the current location.
-
-    .PARAMETER DefaultState
-        Baseline hashtable; its values remain when the file lacks a field.
     #>
     [CmdletBinding()]
     param(
@@ -1503,78 +1726,574 @@ function Get-DeploymentStateFromFile {
         }
     }
     catch {
-        # Compatibility reader: unreadable input yields the defaults.
+        # Compatibility reader: unreadable input yields defaults
     }
 
     return $state
 }
 
-# Aliases (resolved in the same scope as the functions above)
+# Aliases
 Set-Alias -Name Save-LiteDeployState -Value Save-LiteDeployDeploymentState
 Set-Alias -Name Set-LiteDeployState -Value Update-LiteDeployState
 
 # ==============================================================================
-# 6. STANDALONE EXECUTION (read-only: display the state file if present)
+# 9. ARTIFACT SYNCHRONIZATION AND OS HANDOFF
+# ==============================================================================
+
+function Initialize-LiteDeployDeploymentShareLogDir {
+    param(
+        [Parameter(Mandatory = $true)][psobject]$RuntimePaths,
+        [Parameter(Mandatory = $true)][string]$DeploymentUid
+    )
+
+    $deploymentLogDirectory = Join-Path $RuntimePaths.DeploymentLogRoot $DeploymentUid
+    $localLogDir = if ($RuntimePaths -and $RuntimePaths.PSObject.Properties['LocalLogDirectory'] -and $RuntimePaths.LocalLogDirectory) {
+        [string]$RuntimePaths.LocalLogDirectory
+    } else { "" }
+
+    try {
+        $null = New-Item -Path $deploymentLogDirectory -ItemType Directory -Force -ErrorAction Stop
+        Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $deploymentLogDirectory
+        Write-LiteDeployLog "Deployment logs: $deploymentLogDirectory" -Level SUCCESS -Component "Session" -LogPath $localLogDir
+        return $deploymentLogDirectory
+    }
+    catch {
+        Write-LiteDeployLog "Cannot write deployment logs to '$deploymentLogDirectory': $_. Local logs remain at '$($RuntimePaths.LocalLogDirectory)'." -Level WARNING -Component "Session" -LogPath $localLogDir
+        return $null
+    }
+}
+
+function Sync-LiteDeployLogsToShare {
+    param(
+        [Parameter(Mandatory = $true)][psobject]$RuntimePaths,
+        [string]$RemoteLogDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RemoteLogDir)) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $RemoteLogDir -ErrorAction SilentlyContinue)) {
+        Write-LiteDeployLog "Warning: Remote deployment log directory '$RemoteLogDir' is inaccessible. Share log sync skipped." -Level WARNING -Component "Session"
+        return
+    }
+
+    if (Get-Variable -Name InSyncLiteDeployLogsToShare -Scope Script -ValueOnly -ErrorAction SilentlyContinue) { return }
+    $script:InSyncLiteDeployLogsToShare = $true
+    $firstCopyError = $null
+
+    try {
+        $localLogDir = $RuntimePaths.LocalLogDirectory
+        if (Test-Path -LiteralPath $localLogDir) {
+            Get-ChildItem -Path $localLogDir -File -Filter "LiteDeploy.*" -ErrorAction SilentlyContinue | ForEach-Object {
+                $targetFile = Join-Path $RemoteLogDir $_.Name
+                try {
+                    Copy-Item -LiteralPath $_.FullName -Destination $targetFile -Force -ErrorAction Stop
+                }
+                catch {
+                    if (-not $firstCopyError) {
+                        $firstCopyError = "Failed to copy '$($_.Name)' to '$RemoteLogDir': $($_.Exception.Message)"
+                    }
+                }
+            }
+
+            foreach ($subfolder in @('Setup', 'Dism')) {
+                $localSub = Join-Path $localLogDir $subfolder
+                if (Test-Path -LiteralPath $localSub -PathType Container) {
+                    $remoteSub = Join-Path $RemoteLogDir $subfolder
+                    if (-not (Test-Path -LiteralPath $remoteSub -PathType Container)) {
+                        try {
+                            $null = New-Item -Path $remoteSub -ItemType Directory -Force -ErrorAction Stop
+                        }
+                        catch {
+                            if (-not $firstCopyError) {
+                                $firstCopyError = "Failed to create directory '$remoteSub': $($_.Exception.Message)"
+                            }
+                            continue
+                        }
+                    }
+                    Get-ChildItem -LiteralPath $localSub -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+                        $relPath = $_.FullName.Substring($localSub.Length).TrimStart('\', '/')
+                        $destFile = Join-Path $remoteSub $relPath
+                        $destParent = Split-Path -Parent $destFile
+                        if ($destParent -and -not (Test-Path -LiteralPath $destParent)) {
+                            try {
+                                $null = New-Item -Path $destParent -ItemType Directory -Force -ErrorAction Stop
+                            }
+                            catch {
+                                if (-not $firstCopyError) {
+                                    $firstCopyError = "Failed to create directory '$destParent': $($_.Exception.Message)"
+                                }
+                                return
+                            }
+                        }
+                        try {
+                            Copy-Item -LiteralPath $_.FullName -Destination $destFile -Force -ErrorAction Stop
+                        }
+                        catch {
+                            if (-not $firstCopyError) {
+                                $firstCopyError = "Failed to copy '$($_.FullName)' to '$destFile': $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($firstCopyError) {
+            Write-LiteDeployLog "Warning: Log sync to '$RemoteLogDir' encountered an error: $firstCopyError" -Level WARNING -Component "Session"
+        }
+    }
+    catch {
+        Write-LiteDeployLog "Warning: Log sync to '$RemoteLogDir' failed: $($_.Exception.Message)" -Level WARNING -Component "Session"
+    }
+    finally {
+        $script:InSyncLiteDeployLogsToShare = $false
+    }
+}
+
+function Resolve-LiteDeployShareUncPath {
+    <#
+    .SYNOPSIS
+        Resolves a remote log directory or path to its UNC path (\\server\share\...)
+        using mapped drive definitions or configured boot/deployment state.
+        Preserves existing UNC paths and never invents server/share names.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Path = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+
+    # Already a UNC path?
+    if ($Path -match '^\\\\') {
+        if (Get-Command Format-LiteDeployUNCPath -ErrorAction SilentlyContinue) {
+            return (Format-LiteDeployUNCPath -Path $Path)
+        }
+        $clean = $Path.Trim() -replace '/', '\'
+        return $clean.TrimEnd('\')
+    }
+
+    # Mapped drive letter (e.g. Z:\...)
+    if ($Path -match '^([A-Za-z]):\\?(.*)$') {
+        $driveLetter = $matches[1]
+        $relative = $matches[2]
+
+        # 1. Try Get-PSDrive DisplayRoot or Root
+        try {
+            $psDrive = Get-PSDrive -Name $driveLetter -PSProvider FileSystem -ErrorAction SilentlyContinue
+            if ($psDrive) {
+                $rootCandidate = ""
+                if ($psDrive.DisplayRoot -and [string]$psDrive.DisplayRoot -match '^\\\\') {
+                    $rootCandidate = [string]$psDrive.DisplayRoot
+                }
+                elseif ($psDrive.Root -and [string]$psDrive.Root -match '^\\\\') {
+                    $rootCandidate = [string]$psDrive.Root
+                }
+
+                if ($rootCandidate) {
+                    $cleanRoot = $rootCandidate.Trim() -replace '/', '\'
+                    $cleanRoot = $cleanRoot.TrimEnd('\')
+                    if ($relative) {
+                        return (Join-Path $cleanRoot $relative)
+                    } else {
+                        return $cleanRoot
+                    }
+                }
+            }
+        }
+        catch {}
+
+        # 2. Check configured network root safely from boot context / deployment state
+        $configuredNet = ""
+        $dep = Get-Variable -Name LiteDeployDeployment -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+        $boot = Get-Variable -Name LiteDeployBootObject -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+        if (-not $boot) {
+            $boot = Get-Variable -Name LiteDeployBootContext -Scope Global -ValueOnly -ErrorAction SilentlyContinue
+        }
+
+        if ($boot) {
+            $netVal = Get-LiteDeployStateProperty -InputObject $boot -Name "NetworkPath" -Default ""
+            if ($netVal) { $configuredNet = [string]$netVal }
+        }
+        if (-not $configuredNet -and $dep) {
+            $exec = Get-LiteDeployStateProperty -InputObject $dep -Name "Execution"
+            if ($exec) {
+                $netVal = Get-LiteDeployStateProperty -InputObject $exec -Name "NetworkPath" -Default ""
+                if ($netVal) { $configuredNet = [string]$netVal }
+            }
+        }
+
+        if ($configuredNet -and $configuredNet -match '^\\\\') {
+            $bootDrive = ""
+            if ($boot) {
+                $bDrive = Get-LiteDeployStateProperty -InputObject $boot -Name "DriveLetter" -Default ""
+                if ($bDrive) { $bootDrive = [string]$bDrive }
+            }
+            $bootLetter = $bootDrive -replace '[:\\]', ''
+            if (-not $bootLetter -or $bootLetter -ieq $driveLetter -or $driveLetter -ieq 'Z') {
+                $cleanNet = $configuredNet.Trim() -replace '/', '\'
+                $cleanNet = $cleanNet.TrimEnd('\')
+                if ($relative) {
+                    return (Join-Path $cleanNet $relative)
+                } else {
+                    return $cleanNet
+                }
+            }
+        }
+
+        # If UNC cannot be resolved, do not invent. Return path as-is.
+        return $Path.TrimEnd('\')
+    }
+
+    return $Path.TrimEnd('\')
+}
+
+function Verify-LiteDeployLogSync {
+    <#
+    .SYNOPSIS
+        Verifies that relevant current local native log files were actually copied
+        to the destination directory and are not stale, using SHA256 hash checks.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LocalPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RemoteDirectory,
+        [Parameter(Mandatory = $false)]
+        [string]$SubPath = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RemoteDirectory) -or -not (Test-Path -LiteralPath $RemoteDirectory -ErrorAction SilentlyContinue)) {
+        return [PSCustomObject]@{
+            Success         = $false
+            Inaccessible    = $true
+            VerifiedCount   = 0
+            TotalLocalFiles = 0
+            Missing         = @()
+            Mismatched      = @()
+            Reason          = "Remote directory is inaccessible or unconfigured"
+        }
+    }
+
+    $targetRemoteDir = if ($SubPath) { Join-Path $RemoteDirectory $SubPath } else { $RemoteDirectory }
+
+    # Determine local files to verify
+    $localFiles = @()
+    if (Test-Path -LiteralPath $LocalPath -PathType Leaf -ErrorAction SilentlyContinue) {
+        $localFiles = @(Get-Item -LiteralPath $LocalPath -ErrorAction SilentlyContinue)
+    }
+    elseif (Test-Path -LiteralPath $LocalPath -PathType Container -ErrorAction SilentlyContinue) {
+        $localFiles = @(Get-ChildItem -LiteralPath $LocalPath -File -Recurse -ErrorAction SilentlyContinue)
+    }
+
+    if ($localFiles.Count -eq 0) {
+        return [PSCustomObject]@{
+            Success         = $false
+            Inaccessible    = $false
+            VerifiedCount   = 0
+            TotalLocalFiles = 0
+            Missing         = @()
+            Mismatched      = @()
+            Reason          = "No current local native log files exist"
+        }
+    }
+
+    $verifiedCount = 0
+    $mismatched = @()
+    $missing = @()
+
+    foreach ($file in $localFiles) {
+        $destFile = if (Test-Path -LiteralPath $LocalPath -PathType Leaf -ErrorAction SilentlyContinue) {
+            if (Test-Path -LiteralPath $targetRemoteDir -PathType Leaf -ErrorAction SilentlyContinue) {
+                $targetRemoteDir
+            } else {
+                Join-Path $targetRemoteDir $file.Name
+            }
+        }
+        else {
+            $rel = $file.FullName.Substring($LocalPath.Length).TrimStart('\', '/')
+            Join-Path $targetRemoteDir $rel
+        }
+
+        if (-not (Test-Path -LiteralPath $destFile -PathType Leaf -ErrorAction SilentlyContinue)) {
+            $missing += $destFile
+            continue
+        }
+
+        # SHA256 Hash verification to guard against stale files
+        try {
+            $localHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+            $remoteHash = (Get-FileHash -LiteralPath $destFile -Algorithm SHA256 -ErrorAction Stop).Hash
+            if ($localHash -eq $remoteHash) {
+                $verifiedCount++
+            } else {
+                $mismatched += $destFile
+            }
+        }
+        catch {
+            $mismatched += $destFile
+        }
+    }
+
+    $allVerified = ($verifiedCount -gt 0 -and $missing.Count -eq 0 -and $mismatched.Count -eq 0)
+
+    return [PSCustomObject]@{
+        Success         = $allVerified
+        Inaccessible    = $false
+        VerifiedCount   = $verifiedCount
+        TotalLocalFiles = $localFiles.Count
+        Missing         = $missing
+        Mismatched      = $mismatched
+        Reason          = if ($allVerified) { "All files verified" } else { "Verification failed or stale" }
+    }
+}
+
+function Write-LiteDeployDiagnosticLogLocation {
+    <#
+    .SYNOPSIS
+        Presents technician-facing diagnostic log location after sync.
+        Derives UNC path from configured share/drive mapping without hardcoding.
+        Only confirms share save after verifying relevant files actually copied.
+        Provides clear warnings and valid local/OS fallback on share failure or offline media.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LocalPath,
+        [Parameter(Mandatory = $false)]
+        [string]$RemoteLogDir = "",
+        [Parameter(Mandatory = $false)]
+        [string]$RelativePath = "",
+        [Parameter(Mandatory = $false)]
+        [string]$OsLogDir = "",
+        [Parameter(Mandatory = $false)]
+        [string]$Component = "Session"
+    )
+
+    $isWinPE = ($env:SystemDrive -ieq 'X:')
+    if (Get-Command Test-LiteDeployWinPE -ErrorAction SilentlyContinue) {
+        try { $isWinPE = (Test-LiteDeployWinPE) } catch {}
+    }
+
+    # If RemoteLogDir was configured
+    if (-not [string]::IsNullOrWhiteSpace($RemoteLogDir)) {
+        $remoteAccessible = Test-Path -LiteralPath $RemoteLogDir -ErrorAction SilentlyContinue
+        if (-not $remoteAccessible) {
+            $uncRemote = Resolve-LiteDeployShareUncPath -Path $RemoteLogDir
+            Write-LiteDeployLog "Warning: Remote deployment log directory '$uncRemote' is inaccessible. Diagnostic logs could not be saved to share." -Level "WARNING" -Component $Component
+        }
+        else {
+            $verifyResult = Verify-LiteDeployLogSync -LocalPath $LocalPath -RemoteDirectory $RemoteLogDir -SubPath $RelativePath
+            if ($verifyResult.Success) {
+                $sharePath = if ($RelativePath) { Join-Path $RemoteLogDir $RelativePath } else { $RemoteLogDir }
+                $uncLocation = Resolve-LiteDeployShareUncPath -Path $sharePath
+                Write-LiteDeployLog "Diagnostic logs saved to share: $uncLocation" -Level "SUCCESS" -ForegroundColor Green -Component $Component
+                return $uncLocation
+            }
+            elseif ($verifyResult.VerifiedCount -gt 0 -and ($verifyResult.Missing.Count -gt 0 -or $verifyResult.Mismatched.Count -gt 0)) {
+                Write-LiteDeployLog "Warning: Diagnostic log copy to share was partial ($($verifyResult.VerifiedCount)/$($verifyResult.TotalLocalFiles) files verified). Stale or missing files detected on share." -Level "WARNING" -Component $Component
+            }
+            elseif ($verifyResult.Reason -eq "No current local native log files exist") {
+                Write-LiteDeployLog "Notice: No native diagnostic log files were found to save." -Level "NOTICE" -Component $Component
+            }
+            else {
+                Write-LiteDeployLog "Warning: Diagnostic logs could not be verified on share (no current files copied or remote files stale)." -Level "WARNING" -Component $Component
+            }
+        }
+    }
+
+    # Fallback: check OS volume if available and verified
+    if (-not [string]::IsNullOrWhiteSpace($OsLogDir) -and (Test-Path -LiteralPath $OsLogDir -PathType Container -ErrorAction SilentlyContinue)) {
+        $osVerify = Verify-LiteDeployLogSync -LocalPath $LocalPath -RemoteDirectory $OsLogDir -SubPath $RelativePath
+        if ($osVerify.Success) {
+            $osPath = if ($RelativePath) { Join-Path $OsLogDir $RelativePath } else { $OsLogDir }
+            $level = if ([string]::IsNullOrWhiteSpace($RemoteLogDir)) { "SUCCESS" } else { "INFO" }
+            $msgPrefix = if ([string]::IsNullOrWhiteSpace($RemoteLogDir)) { "Diagnostic logs saved to OS volume:" } else { "Fallback diagnostic logs saved to OS volume:" }
+            Write-LiteDeployLog "$msgPrefix $osPath" -Level $level -ForegroundColor Green -Component $Component
+            return $osPath
+        }
+    }
+
+    # Local fallback
+    $rebootNotice = if ($isWinPE -or $LocalPath -like 'X:*') {
+        " (Note: WinPE X: drive ramdisk does not persist after reboot)"
+    } else { "" }
+    $localMsgPrefix = if ([string]::IsNullOrWhiteSpace($RemoteLogDir)) { "Diagnostic logs available locally:" } else { "Fallback diagnostic logs available locally:" }
+    Write-LiteDeployLog "$localMsgPrefix $LocalPath$rebootNotice" -Level "INFO" -Component $Component
+    return $LocalPath
+}
+
+function Sync-LiteDeployArtifactsToOsVolume {
+    <#
+    .SYNOPSIS
+        Copies local logs and fresh sanitized state to the selected OS volume and verifies them.
+    .NOTES
+        The OS volume can be W: in WinPE and C: after boot. Never infer it from the host C:.
+        Success requires the execution log, all enumerated local logs, and readable state.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][psobject]$RuntimePaths,
+        [Parameter(Mandatory = $true)][string]$OsDriveLetter,
+        [psobject]$DeploymentState = $null,
+        [string]$LocalRootName = '~LiteDeploy'
+    )
+
+    $result = [pscustomobject]@{Success=$false; TargetRoot=''; LogsCopied=0; StateCopied=$false; Message=''}
+    try {
+        $drive = ($OsDriveLetter -replace '[\\/]+$', '').Trim()
+        if ($drive -notmatch '^[A-Za-z]:?$') { throw "Invalid OS drive letter '$OsDriveLetter'." }
+        if ($drive.Length -eq 1) { $drive += ':' }
+        if (-not (Test-Path -LiteralPath "$drive\" -PathType Container)) { throw "OS volume '$drive' is not mounted." }
+        if ([string]::IsNullOrWhiteSpace($LocalRootName) -or $LocalRootName -match '[\\/:]' -or $LocalRootName -in @('.', '..')) {
+            throw 'LocalRootName must be one directory name.'
+        }
+        $targetRoot = Join-Path "$drive\" $LocalRootName
+        $targetLogs = Join-Path $targetRoot 'WorkLogs'
+        $stateDest = Join-Path $targetRoot 'DeploymentState.json'
+        $result.TargetRoot = $targetRoot
+        $null = New-Item -Path $targetLogs -ItemType Directory -Force -ErrorAction Stop
+
+        $localLogDir = $RuntimePaths.LocalLogDirectory
+        $executionLog = Join-Path $localLogDir 'LiteDeploy.Execution.log'
+        if (-not (Test-Path -LiteralPath $executionLog -PathType Leaf)) { throw 'Local execution log is missing; handoff is incomplete.' }
+
+        foreach ($file in Get-ChildItem -LiteralPath $localLogDir -File -Filter 'LiteDeploy.*' -ErrorAction Stop) {
+            $destination = Join-Path $targetLogs $file.Name
+            if ($file.FullName -ine $destination) {
+                Copy-Item -LiteralPath $file.FullName -Destination $destination -Force -ErrorAction Stop
+            }
+            if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash -ne
+                (Get-FileHash -LiteralPath $destination -Algorithm SHA256 -ErrorAction Stop).Hash) {
+                throw "Log verification failed: $($file.Name)."
+            }
+            $result.LogsCopied++
+        }
+
+        foreach ($subfolder in @('Setup', 'Dism')) {
+            $localSub = Join-Path $localLogDir $subfolder
+            if (Test-Path -LiteralPath $localSub -PathType Container) {
+                $osSub = Join-Path $targetLogs $subfolder
+                if (-not (Test-Path -LiteralPath $osSub -PathType Container)) {
+                    $null = New-Item -Path $osSub -ItemType Directory -Force -ErrorAction Stop
+                }
+                foreach ($subFile in Get-ChildItem -LiteralPath $localSub -File -Recurse -ErrorAction Stop) {
+                    $relPath = $subFile.FullName.Substring($localSub.Length).TrimStart('\', '/')
+                    $destFile = Join-Path $osSub $relPath
+                    $destParent = Split-Path -Parent $destFile
+                    if ($destParent -and -not (Test-Path -LiteralPath $destParent)) {
+                        $null = New-Item -Path $destParent -ItemType Directory -Force -ErrorAction Stop
+                    }
+                    if ($subFile.FullName -ine $destFile) {
+                        Copy-Item -LiteralPath $subFile.FullName -Destination $destFile -Force -ErrorAction Stop
+                    }
+                    if ((Get-FileHash -LiteralPath $subFile.FullName -Algorithm SHA256 -ErrorAction Stop).Hash -ne
+                        (Get-FileHash -LiteralPath $destFile -Algorithm SHA256 -ErrorAction Stop).Hash) {
+                        throw "Log verification failed: $($subFile.Name)."
+                    }
+                    $result.LogsCopied++
+                }
+            }
+        }
+
+        if ($DeploymentState) {
+            $DeploymentState.LogLocations.OfflineOsRoot = $targetRoot
+            $DeploymentState.LogLocations.OfflineOsLogDir = $targetLogs
+            $DeploymentState.LogLocations.OfflineOsDeploymentState = $stateDest
+            $safeState = ConvertTo-LiteDeploySerializableObject -InputObject $DeploymentState
+            $stateJson = $safeState | ConvertTo-Json -Depth 10
+        }
+        else {
+            $stateJson = Get-Content -LiteralPath $RuntimePaths.StatePath -Raw -ErrorAction Stop
+        }
+
+        $expected = $stateJson | ConvertFrom-Json -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace([string]$expected.DeploymentUid)) { throw 'State has no deployment ID.' }
+        Set-Content -LiteralPath $stateDest -Value $stateJson -Encoding UTF8 -Force -ErrorAction Stop
+        $storedJson = Get-Content -LiteralPath $stateDest -Raw -ErrorAction Stop
+        $null = $storedJson | ConvertFrom-Json -ErrorAction Stop
+        if ($storedJson.TrimEnd() -cne $stateJson.TrimEnd()) { throw 'OS-volume state verification failed.' }
+        $result.StateCopied = $true
+        $result.Success = $result.LogsCopied -gt 0
+        $result.Message = "Verified $($result.LogsCopied) local log file(s) and deployment state at $targetRoot."
+    }
+    catch { $result.Message = $_.Exception.Message }
+    return $result
+}
+
+# ==============================================================================
+# 10. STANDALONE EXECUTION
 # ==============================================================================
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $meta = Get-LiteDeployComponentMetadata
-    $displayPath = if ([string]::IsNullOrWhiteSpace($StatePath)) { Get-LiteDeployStateFilePath } else { $StatePath }
-
-    Write-Host ""
-    Write-Host ("{0} v{1} ({2})" -f $meta.Name, $meta.Version, $meta.ComponentId) -ForegroundColor Cyan
-    Write-Host ("  State file : {0}" -f $displayPath)
-
-    if (-not (Test-Path -LiteralPath $displayPath -PathType Leaf)) {
-        Write-Host "  Exists     : False (no deployment state recorded yet)" -ForegroundColor Yellow
-        Write-Host ""
-        return
+    if ($PSBoundParameters.ContainsKey('Message')) {
+        Write-LiteDeployLog -Message $Message -Level $Level -Component $Component -ForegroundColor $ForegroundColor `
+            -LogFileName $LogFileName -LogPath $LogPath -NoConsole:$NoConsole -NoPrefix:$NoPrefix
     }
+    else {
+        # Non-destructive summary
+        $meta = Get-LiteDeployComponentMetadata
+        $logFile = Get-LiteDeployLogPath -CustomPath $LogPath -FileName $LogFileName
+        $remote = Get-LiteDeployRemoteLogDirectory
+        $displayStatePath = if ([string]::IsNullOrWhiteSpace($StatePath)) { Get-LiteDeployStateFilePath } else { $StatePath }
 
-    Write-Host "  Exists     : True"
-    $shown = Get-LiteDeployState -Path $displayPath
-    if ($null -eq $shown) {
-        Write-Host "  The state file could not be read or is not valid JSON." -ForegroundColor Red
         Write-Host ""
-        return
-    }
+        Write-Host ("{0} v{1} ({2})" -f $meta.Name, $meta.Version, $meta.ComponentId) -ForegroundColor Cyan
+        Write-Host ("  Log file   : {0}" -f $logFile)
+        Write-Host ("  Log exists : {0}" -f (Test-Path -LiteralPath $logFile))
+        Write-Host ("  Remote dir : {0}" -f $(if ($remote) { $remote } else { "(not set)" }))
+        Write-Host ("  State file : {0}" -f $displayStatePath)
+        $hasState = Test-Path -LiteralPath $displayStatePath -PathType Leaf
+        Write-Host ("  State exist: {0}" -f $hasState)
 
-    $check = Test-LiteDeployState -State $shown -Persisted -Detailed
-    $execution = Get-LiteDeployStateProperty -InputObject $shown -Name "Execution"
-    $workflow = Get-LiteDeployStateProperty -InputObject $shown -Name "Workflow"
-    $selection = Get-LiteDeployStateProperty -InputObject $workflow -Name "SelectionData"
-    $disk = Get-LiteDeployStateProperty -InputObject $shown -Name "Disk"
-    $osInstall = Get-LiteDeployStateProperty -InputObject $shown -Name "OSInstall"
-    $logLocations = Get-LiteDeployStateProperty -InputObject $shown -Name "LogLocations"
-    $phaseNumber = 0
-    [void][int]::TryParse([string](Get-LiteDeployStateProperty -InputObject $shown -Name "CurrentPhase" -Default 0), [ref]$phaseNumber)
-    $phaseLabel = if ($global:LiteDeployStatePhaseNames.ContainsKey($phaseNumber)) { " ($($global:LiteDeployStatePhaseNames[$phaseNumber]))" } else { "" }
+        if ($hasState) {
+            $shown = Get-LiteDeployState -Path $displayStatePath
+            if ($null -ne $shown) {
+                $check = Test-LiteDeployState -State $shown -Persisted -Detailed
+                $execution = Get-LiteDeployStateProperty -InputObject $shown -Name "Execution"
+                $workflow = Get-LiteDeployStateProperty -InputObject $shown -Name "Workflow"
+                $selection = Get-LiteDeployStateProperty -InputObject $workflow -Name "SelectionData"
+                $disk = Get-LiteDeployStateProperty -InputObject $shown -Name "Disk"
+                $osInstall = Get-LiteDeployStateProperty -InputObject $shown -Name "OSInstall"
+                $logLocations = Get-LiteDeployStateProperty -InputObject $shown -Name "LogLocations"
+                $phaseNumber = 0
+                [void][int]::TryParse([string](Get-LiteDeployStateProperty -InputObject $shown -Name "CurrentPhase" -Default 0), [ref]$phaseNumber)
+                $phaseLabel = if ($global:LiteDeployStatePhaseNames.ContainsKey($phaseNumber)) { " ($($global:LiteDeployStatePhaseNames[$phaseNumber]))" } else { "" }
 
-    Write-Host ""
-    Write-Host ("  Deployment : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "DeploymentUid" -Default "-"))
-    Write-Host ("  Status     : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "Status" -Default "-"))
-    Write-Host ("  Phase      : {0}{1}" -f $phaseNumber, $phaseLabel)
-    Write-Host ("  Step       : {0} ({1}%)" -f (Get-LiteDeployStateProperty -InputObject $execution -Name "CurrentStep" -Default "-"), (Get-LiteDeployStateProperty -InputObject $execution -Name "PercentComplete" -Default 0))
-    Write-Host ("  Started    : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "StartTime" -Default "-"))
-    Write-Host ("  Ended      : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "EndTime" -Default "-"))
-    Write-Host ("  Workflow   : {0}" -f (Get-LiteDeployStateProperty -InputObject $selection -Name "WorkflowName" -Default "-"))
-    Write-Host ("  Computer   : {0}" -f (Get-LiteDeployStateProperty -InputObject $selection -Name "ComputerName" -Default "-"))
-    Write-Host ("  Disk       : formatted={0}, disk={1}, mode={2}" -f (Get-LiteDeployStateProperty -InputObject $disk -Name "Formatted" -Default $false), (Get-LiteDeployStateProperty -InputObject $disk -Name "DiskNumber" -Default "-"), (Get-LiteDeployStateProperty -InputObject $disk -Name "BootMode" -Default "-"))
-    Write-Host ("  OS install : applied={0}, exit code={1}" -f (Get-LiteDeployStateProperty -InputObject $osInstall -Name "Applied" -Default $false), (Get-LiteDeployStateProperty -InputObject $osInstall -Name "ExitCode" -Default "-"))
-    Write-Host ("  Remote logs: {0}" -f (Get-LiteDeployStateProperty -InputObject $logLocations -Name "RemoteLogDir" -Default "(none)"))
-    Write-Host ("  Next phase : {0}" -f (Get-LiteDeployStateNextPhase -State $shown))
-    Write-Host ("  Valid      : {0}" -f $check.IsValid) -ForegroundColor $(if ($check.IsValid) { "Green" } else { "Red" })
+                Write-Host ""
+                Write-Host ("  Deployment : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "DeploymentUid" -Default "-"))
+                Write-Host ("  Status     : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "Status" -Default "-"))
+                Write-Host ("  Phase      : {0}{1}" -f $phaseNumber, $phaseLabel)
+                Write-Host ("  Step       : {0} ({1}%)" -f (Get-LiteDeployStateProperty -InputObject $execution -Name "CurrentStep" -Default "-"), (Get-LiteDeployStateProperty -InputObject $execution -Name "PercentComplete" -Default 0))
+                Write-Host ("  Started    : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "StartTime" -Default "-"))
+                Write-Host ("  Ended      : {0}" -f (Get-LiteDeployStateProperty -InputObject $shown -Name "EndTime" -Default "-"))
+                Write-Host ("  Workflow   : {0}" -f (Get-LiteDeployStateProperty -InputObject $selection -Name "WorkflowName" -Default "-"))
+                Write-Host ("  Computer   : {0}" -f (Get-LiteDeployStateProperty -InputObject $selection -Name "ComputerName" -Default "-"))
+                Write-Host ("  Disk       : formatted={0}, disk={1}, mode={2}" -f (Get-LiteDeployStateProperty -InputObject $disk -Name "Formatted" -Default $false), (Get-LiteDeployStateProperty -InputObject $disk -Name "DiskNumber" -Default "-"), (Get-LiteDeployStateProperty -InputObject $disk -Name "BootMode" -Default "-"))
+                Write-Host ("  OS install : applied={0}, exit code={1}" -f (Get-LiteDeployStateProperty -InputObject $osInstall -Name "Applied" -Default $false), (Get-LiteDeployStateProperty -InputObject $osInstall -Name "ExitCode" -Default "-"))
+                Write-Host ("  Remote logs: {0}" -f (Get-LiteDeployStateProperty -InputObject $logLocations -Name "RemoteLogDir" -Default "(none)"))
+                Write-Host ("  Next phase : {0}" -f (Get-LiteDeployStateNextPhase -State $shown))
+                Write-Host ("  Valid      : {0}" -f $check.IsValid) -ForegroundColor $(if ($check.IsValid) { "Green" } else { "Red" })
 
-    foreach ($problem in @($check.Errors)) { Write-Host ("    ERROR   {0}" -f (Protect-LiteDeployStateText -Text $problem)) -ForegroundColor Red }
-    foreach ($note in @($check.Warnings)) { Write-Host ("    WARNING {0}" -f (Protect-LiteDeployStateText -Text $note)) -ForegroundColor Yellow }
+                foreach ($problem in @($check.Errors)) { Write-Host ("    ERROR   {0}" -f (Protect-LiteDeployStateText -Text $problem)) -ForegroundColor Red }
+                foreach ($note in @($check.Warnings)) { Write-Host ("    WARNING {0}" -f (Protect-LiteDeployStateText -Text $note)) -ForegroundColor Yellow }
 
-    $recordedErrors = @(Get-LiteDeployStateProperty -InputObject $execution -Name "Errors" -Default @())
-    if ($recordedErrors.Count -gt 0) {
-        Write-Host "  Errors recorded:" -ForegroundColor Yellow
-        foreach ($recorded in $recordedErrors) {
-            Write-Host ("    - {0}" -f (Protect-LiteDeployStateText -Text ([string]$recorded))) -ForegroundColor Yellow
+                $recordedErrors = @(Get-LiteDeployStateProperty -InputObject $execution -Name "Errors" -Default @())
+                if ($recordedErrors.Count -gt 0) {
+                    Write-Host "  Errors recorded:" -ForegroundColor Yellow
+                    foreach ($recorded in $recordedErrors) {
+                        Write-Host ("    - {0}" -f (Protect-LiteDeployStateText -Text ([string]$recorded))) -ForegroundColor Yellow
+                    }
+                }
+            }
         }
+        Write-Host ("  Target env : {0}   PowerShell >= {1}" -f $meta.TargetEnvironment, $meta.MinPowerShellVersion)
+        Write-Host "  Usage      : .\LiteDeploy.Session.ps1 [-Message ""text"" -Level SUCCESS] [-StatePath path]"
+        Write-Host ""
     }
-    Write-Host ""
 }
-

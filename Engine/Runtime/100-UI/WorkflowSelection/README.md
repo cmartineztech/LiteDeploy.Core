@@ -6,7 +6,7 @@ missing or has no usable capacity, confirmation is blocked. True uses the select
 The folder browser has a separate [DriverPicker contract](DRIVER_PICKER.md).
 
 **ComponentId:** `UI.WorkflowSelection`  
-**Dev:** `110-UI/WorkflowSelection`  
+**Dev:** `100-UI/WorkflowSelection`  
 **Published:** `Engine\Runtime\UI\LiteDeploy.UI.WorkflowSelection.ps1` (+ `.xaml`, DriverPicker)
 
 Phase 2 technician wizard (identity, workflow, disk, drivers). Theme follows Engine / `BootConfig.Ui.Theme`. Diagram: `Docs/SELECTWORKFLOW_DIAGRAM.md`.
@@ -60,7 +60,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1'
+$component = '.\Engine\Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1'
 $selection = & $component -BootConfigPath 'C:\LiteDeploy-Staging\Config\BootConfig.json' -DeploymentSharePath 'C:\LiteDeploy-Staging'
 $selection | Select-Object Passed, Status, TargetDiskIndex
 ~~~

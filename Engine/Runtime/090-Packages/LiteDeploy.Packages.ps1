@@ -84,7 +84,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs")
+        Dependencies         = @("Session")
         Description          = "Package catalog from Content\Packages, validation, payload staging, and Script/Command execution with exit-code capture."
     }
 }

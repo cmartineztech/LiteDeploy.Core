@@ -80,45 +80,99 @@ if ($Metadata) {
 # 2. HELPERS & GUI DIALOGS
 # ==============================================================================
 
+function Format-LiteDeployBootLogLine {
+    <#
+    .SYNOPSIS
+        Autonomous console formatter for PE.Boot. Formats [LEVEL] tag with fixed padding.
+    #>
+    param(
+        [AllowEmptyString()][string]$Message = "",
+        [string]$Level = "INFO",
+        [switch]$NoPrefix
+    )
+
+    if ($NoPrefix -or [string]::IsNullOrWhiteSpace($Message) -or $Message -match '^\s{2,}[^\[]') {
+        return $Message
+    }
+
+    $clean = $Message -replace '(?i)^\s*\[(INFO|SUCCESS|INIT|CHECK|NOTICE|WARNING|RETRY|ERROR|DEBUG|BOOT|NETWORK|ENGINE)\]\s*', ''
+    $tag = "[{0}]" -f $Level.ToUpper()
+    return ($tag.PadRight(11) + $clean)
+}
+
 function Write-LiteDeployLog {
     param(
-        [string]$Message,
+        [string]$Message = "",
         [string]$Level = "INFO",
         [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
         [string]$Component = "PE.Boot",
-        [switch]$NoConsole
+        [switch]$NoConsole,
+        [switch]$NoPrefix
     )
+
+    if ($ForegroundColor -eq [ConsoleColor]::White) {
+        $ForegroundColor = switch ($Level.ToUpper()) {
+            "SUCCESS" { [ConsoleColor]::Green }
+            "INIT"    { [ConsoleColor]::DarkGray }
+            "CHECK"   { [ConsoleColor]::Cyan }
+            "NOTICE"  { [ConsoleColor]::Yellow }
+            "WARNING" { [ConsoleColor]::Yellow }
+            "RETRY"   { [ConsoleColor]::DarkYellow }
+            "ERROR"   { [ConsoleColor]::Red }
+            default   { [ConsoleColor]::White }
+        }
+    }
+
     # Empty Message ("") still prints a blank console spacer; CMTrace skips whitespace-only below.
     if (-not $NoConsole) {
-        Write-Host $Message -ForegroundColor $ForegroundColor
+        Write-Host (Format-LiteDeployBootLogLine -Message $Message -Level $Level -NoPrefix:$NoPrefix) -ForegroundColor $ForegroundColor
     }
     try {
-        $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
-        $logDir = Join-Path $sysDrive "~LiteDeploy\WorkLogs"
+        $cleanMsg = $Message.Trim() -replace '[\r\n]+', ' '
+        $cleanMsg = $cleanMsg.Replace(']LOG]!>', ']LOG] !>')
+        if ([string]::IsNullOrWhiteSpace($cleanMsg)) {
+            return
+        }
+
+        # Do not decorate CMTrace log with banner divider lines (====)
+        if ($cleanMsg -match '^={5,}') {
+            return
+        }
+
+        # Strip manual [TAG] prefix from persisted log entry only for known levels (retain domain tags like [UEFI]/[LEGACY])
+        $cleanMsg = $cleanMsg -replace '(?i)^\s*\[(INFO|SUCCESS|INIT|CHECK|NOTICE|WARNING|RETRY|ERROR|DEBUG|BOOT|NETWORK|ENGINE)\]\s*', ''
+        if ([string]::IsNullOrWhiteSpace($cleanMsg)) {
+            return
+        }
+
+        $logDir = if (Get-Variable -Name LiteDeployBootLogDir -Scope Global -ErrorAction SilentlyContinue) {
+            $global:LiteDeployBootLogDir
+        } else {
+            $sysDrive = if ($env:SystemDrive) { $env:SystemDrive } else { "X:" }
+            Join-Path $sysDrive "~LiteDeploy\WorkLogs"
+        }
         if (-not (Test-Path -LiteralPath $logDir)) {
             $null = New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue
         }
         $logFile = Join-Path $logDir "LiteDeploy.Execution.log"
-        $cleanMsg = $Message.Trim() -replace '[\r\n]+', ' '
-        $cleanMsg = $cleanMsg.Replace(']LOG]!>', ']LOG] !>')
-        if (-not [string]::IsNullOrWhiteSpace($cleanMsg)) {
-            $now = Get-Date
-            # CMTrace time uses local clock + UTC offset in minutes (e.g. -240 for EDT)
-            $utcOffsetMinutes = [int][System.TimeZoneInfo]::Local.GetUtcOffset($now).TotalMinutes
-            $offsetSign = if ($utcOffsetMinutes -ge 0) { "+" } else { "-" }
-            $timeStr = $now.ToString("HH:mm:ss.fff") + $offsetSign + [math]::Abs($utcOffsetMinutes).ToString()
-            $dateStr = $now.ToString("MM-dd-yyyy")
-            $typeCode = switch ($Level.ToUpper()) {
-                "ERROR" { "3" }
-                "WARNING" { "2" }
-                "RETRY" { "2" }
-                default { "1" }
-            }
-            $scriptFile = if ($PSCommandPath) { Split-Path -Leaf $PSCommandPath } else { "LiteDeploy.PE.Boot.ps1" }
-            # Official Microsoft CMTrace.exe XML Log Structure (UTF-8, PID thread, safe message)
-            $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""$PID"" file=""$scriptFile"">"
-            Add-Content -Path $logFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
+
+        $now = Get-Date
+        # CMTrace time uses local clock + UTC offset in minutes (e.g. -240 for EDT)
+        $utcOffsetMinutes = [int][System.TimeZoneInfo]::Local.GetUtcOffset($now).TotalMinutes
+        $offsetSign = if ($utcOffsetMinutes -ge 0) { "+" } else { "-" }
+        $timeStr = $now.ToString("HH:mm:ss.fff") + $offsetSign + [math]::Abs($utcOffsetMinutes).ToString()
+        $dateStr = $now.ToString("MM-dd-yyyy")
+        $typeCode = switch ($Level.ToUpper()) {
+            "ERROR"   { "3" }
+            "WARNING" { "2" }
+            "RETRY"   { "2" }
+            "NOTICE"  { "1" }
+            default   { "1" }
         }
+        $scriptFile = if ($PSCommandPath) { Split-Path -Leaf $PSCommandPath } else { "LiteDeploy.PE.Boot.ps1" }
+        # Official Microsoft CMTrace.exe XML Log Structure (UTF-8, PID thread, safe message)
+        $logEntry = "<![LOG[$cleanMsg]LOG]!><time=""$timeStr"" date=""$dateStr"" component=""$Component"" context="""" type=""$typeCode"" thread=""$PID"" file=""$scriptFile"">"
+        Add-Content -Path $logFile -Value $logEntry -Encoding utf8 -ErrorAction SilentlyContinue
     }
     catch {}
 }
@@ -437,6 +491,105 @@ function Test-LiteDeployDeploymentShare {
     }
 }
 
+function Protect-LiteDeployBootText {
+    <#
+    .SYNOPSIS
+        Redacts credentials, password values, and token-shaped patterns before logging or console display.
+    #>
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Text,
+        [System.Management.Automation.PSCredential]$Credential = $null
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return "" }
+    $clean = $Text
+
+    # Redact actual secret if credential object is provided
+    if ($Credential -and $Credential.Password) {
+        try {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+            $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            if (-not [string]::IsNullOrEmpty($plain)) {
+                $clean = $clean.Replace($plain, '***')
+            }
+        }
+        catch {}
+    }
+
+    # Redact credential-shaped password/token fields
+    $clean = [regex]::Replace(
+        $clean,
+        '(?i)((?:pass(?:word|wd)?|pwd|secret|token|api[-_ ]?key|credential)\s*[=:]\s*)("[^"]*"|''[^'']*''|[^\s;,]+)',
+        '$1***')
+    $clean = [regex]::Replace(
+        $clean,
+        '(?i)(-(?:password|passwd|pwd|secret|token|apikey)\s+)("[^"]*"|''[^'']*''|\S+)',
+        '$1***')
+    return $clean
+}
+
+function Get-LiteDeployErrorDiagnostic {
+    <#
+    .SYNOPSIS
+        Extracts structured diagnostics (NativeErrorCode, HResult, ErrorId, Type, safe Message) and failure classification.
+    #>
+    param(
+        $ErrorRecord,
+        [System.Management.Automation.PSCredential]$Credential = $null
+    )
+    $ex = if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) { $ErrorRecord.Exception } elseif ($ErrorRecord -is [System.Exception]) { $ErrorRecord } else { $null }
+    $errType = if ($ex) { $ex.GetType().Name } else { "Unknown" }
+    $rawMsg = if ($ex) { $ex.Message.Trim() } else { "Unknown error" }
+    $cleanMsg = Protect-LiteDeployBootText -Text $rawMsg -Credential $Credential
+    $errIdRaw = if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) { [string]$ErrorRecord.FullyQualifiedErrorId } else { "None" }
+    $errId = Protect-LiteDeployBootText -Text $errIdRaw -Credential $Credential
+
+    $hresultInt = if ($ex) { $ex.HResult } else { 0 }
+    $hresultHex = if ($ex) { "0x{0:X8}" -f $hresultInt } else { "None" }
+
+    $nativeCode = $null
+    $curr = $ex
+    while ($curr) {
+        if ($curr -is [System.ComponentModel.Win32Exception]) {
+            $nativeCode = [int]$curr.NativeErrorCode
+            break
+        }
+        $curr = $curr.InnerException
+    }
+
+    $isLogon = $false
+    $isAccessDenied = $false
+
+    # Genuine logon failure codes (Win32 ERROR_LOGON_FAILURE 1326 / HResult 0x8007052E / etc.)
+    if ($nativeCode -in @(1326, 1330, 1331, 1328, 1329, 1907, 1909)) {
+        $isLogon = $true
+    }
+    elseif ($hresultInt -in @(-2147023570, -2147023566, -2147023565)) {
+        $isLogon = $true
+    }
+    elseif ($errIdRaw -match '(?i)LogonFailure' -or $cleanMsg -match '(?i)\b(logon failure|bad user name or password|unknown user name or bad password)\b') {
+        $isLogon = $true
+    }
+
+    if (-not $isLogon) {
+        # Genuine access denied codes (ERROR_ACCESS_DENIED 5 / HResult 0x80070005 / UnauthorizedAccessException)
+        if ($nativeCode -eq 5 -or $hresultInt -eq -2147024891 -or $ex -is [System.UnauthorizedAccessException] -or $errIdRaw -match '(?i)(AccessDenied|UnauthorizedAccess)' -or $cleanMsg -match '(?i)\baccess is denied\b') {
+            $isAccessDenied = $true
+        }
+    }
+
+    return [PSCustomObject]@{
+        Type            = $errType
+        Message         = $cleanMsg
+        ErrorId         = $errId
+        HResult         = $hresultHex
+        HResultInt      = $hresultInt
+        NativeErrorCode = $nativeCode
+        IsLogonFailure  = $isLogon
+        IsAccessDenied  = $isAccessDenied
+    }
+}
+
 function Connect-LiteDeployDeploymentShare {
     param(
         [Parameter(Mandatory = $true)]
@@ -464,10 +617,13 @@ function Connect-LiteDeployDeploymentShare {
 
     $mounted = $false
     $userCred = $null
+    $attempt = 0
+    $hadPreviousFailure = $false
 
     while (-not $mounted) {
+        $attempt++
         try {
-            # Keep CredUI short — full UNC is already shown on the console CHECK line above
+            # Keep CredUI short - full UNC is already shown on the console CHECK line above
             $userCred = Get-Credential -Message "Please enter your username and password to connect to the deployment share." -ErrorAction Stop
         }
         catch {
@@ -477,36 +633,81 @@ function Connect-LiteDeployDeploymentShare {
         }
         if ($null -eq $userCred) { break }
 
-        # Native PowerShell persistent global drive mapping (Out-Null keeps the success stream clean)
+        $attemptedErrors = [System.Collections.Generic.List[psobject]]::new()
+
         try {
             $null = New-PSDrive -Name $driveName -PSProvider FileSystem -Root $NetworkPath -Credential $userCred -Persist -Scope Global -ErrorAction Stop
             $mounted = $true
         }
         catch {
-            try {
-                if (Get-Command New-SmbMapping -ErrorAction SilentlyContinue) {
+            $diagPsDrive = Get-LiteDeployErrorDiagnostic -ErrorRecord $_ -Credential $userCred
+            $attemptedErrors.Add([PSCustomObject]@{ Method = "New-PSDrive"; Diag = $diagPsDrive })
+
+            if (Get-Command New-SmbMapping -ErrorAction SilentlyContinue) {
+                try {
                     $null = New-SmbMapping -LocalPath $cleanDrive -RemotePath $NetworkPath -Credential $userCred -ErrorAction Stop
                     $mounted = $true
                 }
+                catch {
+                    $diagSmb = Get-LiteDeployErrorDiagnostic -ErrorRecord $_ -Credential $userCred
+                    $attemptedErrors.Add([PSCustomObject]@{ Method = "New-SmbMapping"; Diag = $diagSmb })
+                }
             }
-            catch {}
         }
 
         if ($mounted -or (Test-Path -Path "$($cleanDrive)\")) {
             $mounted = $true
             $global:LiteDeployCredential = $userCred
             $global:LiteDeployShareMounted = $true
-            Write-LiteDeployLog " [SUCCESS] Connected to deployment share '$NetworkPath' on $($cleanDrive)\." -Level "SUCCESS" -ForegroundColor Green
+            if ($hadPreviousFailure) {
+                Write-LiteDeployLog "Deployment share connection recovered on attempt $attempt." -Level "INFO" -Component "PE.Boot"
+            }
+            Write-LiteDeployLog "Connected to deployment share '$NetworkPath' on $($cleanDrive)\." -Level "SUCCESS" -ForegroundColor Green
             break
         }
 
-        Write-LiteDeployLog " [ERROR]   Authentication failed for user '$($userCred.UserName)' on share '$($NetworkPath)'." -Level "ERROR" -ForegroundColor Red
+        $hadPreviousFailure = $true
+
+        # Determine classification from attempted errors: prioritize genuine logon failure, then access denied, else last error
+        $logonAtt = $null
+        $accessAtt = $null
+        foreach ($att in $attemptedErrors) {
+            if ($att.Diag.IsLogonFailure -and -not $logonAtt) { $logonAtt = $att }
+            if ($att.Diag.IsAccessDenied -and -not $accessAtt) { $accessAtt = $att }
+        }
+        $primaryDiag = if ($logonAtt) {
+            $logonAtt.Diag
+        } elseif ($accessAtt) {
+            $accessAtt.Diag
+        } elseif ($attemptedErrors.Count -gt 0) {
+            $attemptedErrors[$attemptedErrors.Count - 1].Diag
+        } else {
+            $null
+        }
+
+        if ($primaryDiag -and $primaryDiag.IsLogonFailure) {
+            Write-LiteDeployLog "Authentication failed for user '$($userCred.UserName)' on share '$NetworkPath'." -Level "ERROR" -ForegroundColor Red
+        }
+        elseif ($primaryDiag -and $primaryDiag.IsAccessDenied) {
+            Write-LiteDeployLog "Access denied to share '$NetworkPath' for user '$($userCred.UserName)' ($($primaryDiag.Message))." -Level "ERROR" -ForegroundColor Red
+        }
+        else {
+            $errMsg = if ($primaryDiag) { $primaryDiag.Message } else { "Unknown error" }
+            Write-LiteDeployLog "Connection to share '$NetworkPath' failed ($errMsg)." -Level "ERROR" -ForegroundColor Red
+        }
+
+        # Detailed diagnostics to log for each actually attempted method (sanitized, zero password exposure)
+        foreach ($att in $attemptedErrors) {
+            $d = $att.Diag
+            $nativeStr = if ($null -ne $d.NativeErrorCode) { ", NativeError=$($d.NativeErrorCode)" } else { "" }
+            Write-LiteDeployLog "Share connection attempt $attempt failed (Method=$($att.Method), Type=$($d.Type), ErrorId=$($d.ErrorId), Code=$($d.HResult)$nativeStr): $($d.Message)" -Level "ERROR" -Component "PE.Boot" -NoConsole
+        }
 
         if ($isWinPE) {
             try { $null = & wpeutil.exe InitializeNetwork 2>$null } catch {}
         }
         try { [System.Console]::Out.Flush() } catch {}
-        Write-LiteDeployLog " [RETRY]   Re-prompting for Credentials for $($NetworkPath)..." -Level "RETRY" -ForegroundColor DarkYellow
+        Write-LiteDeployLog "Re-prompting for Credentials for $($NetworkPath)..." -Level "RETRY" -ForegroundColor DarkYellow
     }
 
     return [PSCustomObject]@{ Mounted = $mounted; DriveLetter = $cleanDrive; NetworkPath = $NetworkPath; Credential = $userCred }
@@ -848,12 +1049,12 @@ if ($MyInvocation.InvocationName -ne '.') {
     $Host.UI.RawUI.WindowTitle = "LiteDeploy v$componentVersion"
     Clear-Host
 
-    Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
-    Write-LiteDeployLog "            $componentName Component v$componentVersion            " -Level "INFO" -ForegroundColor White
-    Write-LiteDeployLog "==========================================================================" -Level "INFO" -ForegroundColor Cyan
-    Write-LiteDeployLog "" -Level "INFO"
+    Write-Host "==========================================================================" -ForegroundColor Cyan
+    Write-LiteDeployLog "$componentName Component v$componentVersion" -Level "INIT" -ForegroundColor Cyan
+    Write-Host "==========================================================================" -ForegroundColor Cyan
+    Write-LiteDeployLog -Message ''
     if ($isWinPE) {
-        Write-LiteDeployLog " [INIT]    WinPE Environment & High Performance Power Plan initialized." -Level "INIT" -ForegroundColor DarkGray
+        Write-LiteDeployLog "WinPE Environment & High Performance Power Plan initialized." -Level "INIT" -ForegroundColor DarkGray
     }
 
     $bootObj = Get-LiteDeployBootConfig -ConfigPath $ExplicitConfigPath -MountShare -ShowGuiError
@@ -871,12 +1072,12 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
 
         if ($enginePath -and (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
-            Write-LiteDeployLog " [INFO]    Launching LiteDeploy.PE.Engine.ps1..." -Level "INFO" -ForegroundColor Cyan
+            Write-LiteDeployLog "Launching LiteDeploy.PE.Engine.ps1..." -Level "INFO" -ForegroundColor Cyan
             try {
                 $null = & $enginePath -BootObject $bootObj
             }
             catch {
-                Write-LiteDeployLog " [ERROR] Execution failed for '$($enginePath)': $_" -Level "ERROR" -ForegroundColor Red
+                Write-LiteDeployLog "Execution failed for '$($enginePath)': $_" -Level "ERROR" -ForegroundColor Red
                 Write-Warning "Engine script execution failed: $_"
                 if ($isWinPE -or $ShowGuiError) {
                     # Discard dialog return ($false for OK) so it does not print to the host.
@@ -887,7 +1088,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         else {
             $targetPath = if ($enginePath) { $enginePath } else { "Z:\Engine\Runtime\LiteDeploy.PE.Engine.ps1" }
-            Write-LiteDeployLog " [ERROR]   LiteDeploy.PE.Engine.ps1 was not found on the deployment source." -Level "ERROR" -ForegroundColor Red
+            Write-LiteDeployLog "LiteDeploy.PE.Engine.ps1 was not found on the deployment source." -Level "ERROR" -ForegroundColor Red
             if ($isWinPE -or $ShowGuiError) {
                 $null = Show-LiteDeployGuiError -Message "Unable to locate LiteDeploy.PE.Engine.ps1.`n`nPath: $($targetPath)`n`nConfirm the file exists on the share or USB media." -Title "LiteDeploy - Script Missing"
             }

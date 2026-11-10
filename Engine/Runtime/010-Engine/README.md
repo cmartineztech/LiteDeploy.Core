@@ -13,7 +13,7 @@ The `REQUIREMENTS BY ENVIRONMENT` block near the top declares **Shared**, **WinP
 
 | List | Components |
 | --- | --- |
-| Shared | Environment, BootConfig, Logs, State |
+| Shared | Environment, BootConfig, Session |
 | WinPE | HostShell, Hardware, Drivers, HardwarePrecheck, WorkflowSelection, DriverPicker, their XAML views, Progress, Disk, Image |
 | FullOS | Shared + Hardware, Packages, HostShell; Progress optional for interactive sessions |
 
@@ -22,10 +22,10 @@ entry is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** wh
 has actions (not `auditUser`). Interactive session = Audit Admin (Standard) or AutoLogon
 (Domain Join; temporary `EnableLUA=0` when no Audit marker). FullOS may re-arm the same Run key
 for mid-deploy reboots, kills `sysprep.exe` (stock Setup CmdLine left intact), restores UAC on
-cleanup when bypassed, and starts Interactive Probe in a second window. On direct
+cleanup when bypassed, and displays the live interactive monitor in the console. On direct
 execution, before resume, FullOS sets `HKCU\Console\%%Startup` `DelegationConsole` and
 `DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` so consoles started after
-that (including the probe) hand off to Windows Terminal. The already-open FullOS window
+that hand off to Windows Terminal. The already-open FullOS window
 is unchanged. A registry failure does not stop resume. Engine `-ResumeFullOS`
 remains for compat. `-ValidateOnly` checks the WinPE profile (`ValidationProfile = WinPE`) and
 still returns `RequirementsByEnvironment` for inspection.
@@ -37,7 +37,7 @@ component inputs/results, the execution sequence, and safe inspection examples.
 
 ## Source and publish
 
-- Development: `Runtime/100-Engine/LiteDeploy.PE.Engine.ps1` (preload Environment with `-Mode Development`).
+- Development: `Runtime/010-Engine/LiteDeploy.PE.Engine.ps1` (preload Environment with `-Mode Development`).
 - Published: `Engine\Runtime\LiteDeploy.PE.Engine.ps1` (Environment defaults to `-Mode Production`).
 - Boot supplies the source context; Environment owns the selected layout. Engine does not search alternate roots.
 
@@ -148,7 +148,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1'
+$component = '.\Engine\Runtime\010-Engine\LiteDeploy.PE.Engine.ps1'
 $plan = & $component -BootObject $global:LiteDeployBootObject -ValidateOnly
 $plan.RequiredFiles | Format-List
 ~~~
@@ -173,7 +173,7 @@ Interactive Session 1 resume after imaging: on direct execution, set `HKCU\Conso
 
 ### Dependencies
 
-Environment, Logs, State, Hardware, Packages (from staged Runtime on the OS volume).
+Environment, Session, Hardware, Packages (from staged Runtime on the OS volume).
 
 ### Script parameters
 
@@ -191,7 +191,7 @@ Environment, Logs, State, Hardware, Packages (from staged Runtime on the OS volu
 ~~~powershell
 # Typical live path: launched by HKLM Run after interactive logon (no manual args).
 # Compat / lab:
-& '.\Engine\Runtime\100-Engine\LiteDeploy.OS.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
+& '.\Engine\Runtime\010-Engine\LiteDeploy.OS.Engine.ps1' -ResumeFullOS -LocalRootName '~LiteDeploy'
 ~~~
 
 ## Interactive Probe (`LiteDeploy.OS.InteractiveProbe.ps1`)

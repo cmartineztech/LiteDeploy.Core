@@ -14,7 +14,7 @@ $$\text{Boot} \longrightarrow \text{Environment} \longrightarrow \text{Hardware}
 ### Core Architectural Strengths
 - **Disk & Image Separation**: [LiteDeploy.Disk.ps1](../../Engine/Runtime/060-Disk/LiteDeploy.Disk.ps1) exclusively formats, partitions, and labels volumes (`W:`, `S:`). [LiteDeploy.Image.ps1](../../Engine/Runtime/080-Image/LiteDeploy.Image.ps1) applies the OS image (WIM/ESD) and writes bootloader records without altering disk geometry or partitioning.
 - **Drivers & Image Separation**: [LiteDeploy.Drivers.ps1](../../Engine/Runtime/070-Drivers/LiteDeploy.Drivers.ps1) handles model detection, SHA-256 validation against `Drivers.json`, and archive extraction into staging. It leaves offline DISM driver injection (`/Add-Driver`) to the Image component.
-- **Security & Redaction**: [LiteDeploy.State.ps1](../../Engine/Runtime/040-State/LiteDeploy.State.ps1) and [LiteDeploy.Logs.ps1](../../Engine/Runtime/010-Logs/LiteDeploy.Logs.ps1) enforce strict property filtering and redaction routines, ensuring passwords and sensitive credentials are never written to disk or logs.
+- **Security & Redaction**: [LiteDeploy.Session.ps1](../../Engine/Runtime/030-Session/LiteDeploy.Session.ps1) enforces strict property filtering and redaction routines, ensuring passwords and sensitive credentials are never written to disk or logs.
 - **Path Resolution Contract**: [LiteDeploy.Environment.ps1](../../Engine/Runtime/020-Environment/LiteDeploy.Environment.ps1) is the **only** component that normalizes Development/Production layouts and maps required component **names** to files (`Get-LiteDeployComponentPath`, `Get-LiteDeployRuntimePaths`, `Resolve-LiteDeployContentPath`). Engine declares names; Environment resolves. Missing files fail closed—no alternate-layout search, no speculative directory creation.
 
 Canonical rule (also in [architecture v2](LITEDEPLOY_COMPONENT_REFACTOR_V2.md)):
@@ -28,22 +28,22 @@ $$\text{Engine declares names} \;\longrightarrow\; \text{Environment maps paths}
 The audit identified **4 primary areas** where responsibilities overlap or logic is duplicated across components:
 
 ### 1. Catalog & Workflow Business Logic Duplication
-- **Affected Components**: `050-Workflow` ([LiteDeploy.Workflow.ps1](../../Engine/Runtime/050-Workflow/LiteDeploy.Workflow.ps1)) vs `110-UI\WorkflowSelection` ([LiteDeploy.UI.WorkflowSelection.ps1](../../Engine/Runtime/110-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1))
+- **Affected Components**: `050-Workflow` ([LiteDeploy.Workflow.ps1](../../Engine/Runtime/050-Workflow/LiteDeploy.Workflow.ps1)) vs `100-UI\WorkflowSelection` ([LiteDeploy.UI.WorkflowSelection.ps1](../../Engine/Runtime/100-UI/WorkflowSelection/LiteDeploy.UI.WorkflowSelection.ps1))
 - **Finding**:
   - `050-Workflow` was designed as the domain component to validate and parse `catalog.json` and `WorkFlows\*.json` (`Get-LiteDeployOperatingSystemsCatalog`, `New-LiteDeployWorkflowSelectionResult`, `Save-LiteDeployWorkflowSelectionJson`).
-  - `110-UI\WorkflowSelection` re-implemented and embedded identical versions of these functions directly inside the UI script to support standalone STA execution.
+  - `100-UI\WorkflowSelection` re-implemented and embedded identical versions of these functions directly inside the UI script to support standalone STA execution.
 - **Impact**:
   - `LiteDeploy.PE.Engine.ps1` bypasses loading `Workflow.ps1` during WinPE execution because the UI script already contains the embedded domain logic.
   - Two distinct sources of truth exist for workflow and OS catalog schema validation.
 
 ### 2. Network Reachability & TCP Probing Proliferation
-- **Affected Components**: `000-Boot`, `030-Hardware`, `070-Drivers`, `110-UI\HardwarePrecheck`
+- **Affected Components**: `000-Boot`, `040-Hardware`, `070-Drivers`, `100-UI\HardwarePrecheck`
 - **Finding**:
   - Four independent implementations instantiate `[System.Net.Sockets.TcpClient]` to test network connectivity:
     1. **`000-Boot`** ([LiteDeploy.PE.Boot.ps1](../../Engine/Runtime/000-Boot/LiteDeploy.PE.Boot.ps1)): Probes TCP 445 on the deployment share server.
-    2. **`030-Hardware`** ([LiteDeploy.Hardware.ps1](../../Engine/Runtime/030-Hardware/LiteDeploy.Hardware.ps1)): Implements `Test-LiteDeployNetworkServer` for remote server probing.
+    2. **`040-Hardware`** ([LiteDeploy.Hardware.ps1](../../Engine/Runtime/040-Hardware/LiteDeploy.Hardware.ps1)): Implements `Test-LiteDeployNetworkServer` for remote server probing.
     3. **`070-Drivers`** ([LiteDeploy.Drivers.ps1](../../Engine/Runtime/070-Drivers/LiteDeploy.Drivers.ps1)): Implements `Test-LiteDeployInternetConnection` probing `1.1.1.1:443` and `8.8.8.8:53`.
-    4. **`110-UI\HardwarePrecheck`** ([LiteDeploy.UI.HardwarePrecheck.ps1](../../Engine/Runtime/110-UI/HardwarePrecheck/LiteDeploy.UI.HardwarePrecheck.ps1)): Performs embedded TCP socket checks during pre-flight checks.
+    4. **`100-UI\HardwarePrecheck`** ([LiteDeploy.UI.HardwarePrecheck.ps1](../../Engine/Runtime/100-UI/HardwarePrecheck/LiteDeploy.UI.HardwarePrecheck.ps1)): Performs embedded TCP socket checks during pre-flight checks.
 - **Impact**:
   - The `Hardware` component has assumed network application reachability responsibilities outside its primary domain of local hardware inventory (CPU, RAM, Disks, TPM, Firmware).
 
@@ -56,7 +56,7 @@ The audit identified **4 primary areas** where responsibilities overlap or logic
   - `Environment` functions for share connection are largely unused in the live pipeline because `Boot` owns the actual network bootstrap and transport layer.
 
 ### 4. UI Theming & Styling Fragmentation
-- **Affected Components**: `110-UI\Theme` ([LiteDeploy.UI.Theme.xaml](../../Engine/Runtime/110-UI/Theme/LiteDeploy.UI.Theme.xaml)), `110-UI\HostShell` ([LiteDeploy.UI.HostShell.ps1](../../Engine/Runtime/110-UI/HostShell/LiteDeploy.UI.HostShell.ps1)), `110-UI\Progress` ([LiteDeploy.UI.Progress.ps1](../../Engine/Runtime/110-UI/Progress/LiteDeploy.UI.Progress.ps1))
+- **Affected Components**: `100-UI\Theme` ([LiteDeploy.UI.Theme.xaml](../../Engine/Runtime/100-UI/Theme/LiteDeploy.UI.Theme.xaml)), `100-UI\HostShell` ([LiteDeploy.UI.HostShell.ps1](../../Engine/Runtime/100-UI/HostShell/LiteDeploy.UI.HostShell.ps1)), `100-UI\Progress` ([LiteDeploy.UI.Progress.ps1](../../Engine/Runtime/100-UI/Progress/LiteDeploy.UI.Progress.ps1))
 - **Finding**:
   - `Theme.xaml` establishes the central WPF resource dictionary for interactive screens (`HardwarePrecheck`, `WorkflowSelection`, `DriverPicker`).
   - `Progress.ps1` generates its own inline XAML and color brushes in a separate process rather than referencing `Theme.xaml`.
@@ -71,17 +71,16 @@ The audit identified **4 primary areas** where responsibilities overlap or logic
 | Component | Canonical Single Responsibility | Detected Extra / Overlapping Scope |
 | :--- | :--- | :--- |
 | **`000-Boot`** | WinPE bootstrap, network stack init, SMB share mounting, BootObject generation. | None (appropriately owns initial transport). |
-| **`010-Logs`** | Standardized console/file logging, log synchronization. | None. |
+| **`010-Engine`** | Declare required names; phase orchestration; result gates. | Must not re-resolve component files outside Environment’s RequiredFiles. |
 | **`020-Environment`** | Normalize environment; component layout map; content path join; WinPE detection; process helper; theme read. | SMB helpers (`Connect-LiteDeployShare`) overlap Boot’s live mount path. |
-| **`030-Hardware`** | Local hardware inventory WMI/CIM (CPU, RAM, Disks, TPM, Firmware); LiteDeploy readiness helpers. | Remote TCP probing (`Test-LiteDeployNetworkServer`) outside local inventory. |
-| **`040-State`** | Deployment state lifecycle, JSON serialization, credential filtering. | None. |
+| **`030-Session`** | Deployment state lifecycle, JSON serialization, credential filtering, CMTrace/console logging, and log/artifact synchronization. | None. |
+| **`040-Hardware`** | Local hardware inventory WMI/CIM (CPU, RAM, Disks, TPM, Firmware); LiteDeploy readiness helpers. | Remote TCP probing (`Test-LiteDeployNetworkServer`) outside local inventory. |
 | **`050-Workflow`** | Schema validation, workflow/OS catalog domain, plan resolution. | Domain helpers still duplicated inside `UI.WorkflowSelection.ps1`. |
 | **`060-Disk`** | Partitioning / formatting; staging letters (`W:`, `S:`). | None. |
 | **`070-Drivers`** | Model matching, SHA-256, archive staging. | Internet TCP probe; standalone ShareRoot fallback to `Z:\` (path guess). |
 | **`080-Image`** | `dism.exe` / `setup.exe` apply, unattend, BCD; optional Setup LabConfig bypass. | Standalone `Get-LiteDeployImageDeploymentRoot` can walk to sibling `DeploymentShare` when BootObject/Environment are absent (path guess). Live Engine path should use BootObject + Environment only. |
 | **`090-Packages`** | FullOS package ordering / execution. | None (isolated for FullOS). |
-| **`100-Engine`** | Declare required names; phase orchestration; result gates. | Must not re-resolve component files outside Environment’s RequiredFiles. |
-| **`110-UI`** | Interaction only; receives RuntimeFiles / DeploymentSharePath. | `WorkflowSelection` embeds catalog domain logic; may join Workflow.ps1 under share when RuntimeFiles incomplete; `Progress` does not reuse `Theme.xaml`. |
+| **`100-UI`** | Interaction only; receives RuntimeFiles / DeploymentSharePath. | `WorkflowSelection` embeds catalog domain logic; may join Workflow.ps1 under share when RuntimeFiles incomplete; `Progress` does not reuse `Theme.xaml`. |
 
 ---
 

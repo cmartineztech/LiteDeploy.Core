@@ -5,7 +5,7 @@ current legacy host-filename limitation. The external Progress XAML is not requi
 controller; it builds its active markup internally.
 
 **ComponentId:** `UI.Progress`  
-**Dev:** `110-UI/Progress`  
+**Dev:** `100-UI/Progress`  
 **Published:** `Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1`
 
 ## Purpose
@@ -71,7 +71,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\110-UI\Progress\LiteDeploy.UI.Progress.ps1'
+$component = '.\Engine\Runtime\100-UI\Progress\LiteDeploy.UI.Progress.ps1'
 & $component -StatePath 'C:\LiteDeploy-Staging\DeploymentState.json' -Environment FullOS -Theme Light -KeepOpen
 ~~~
 

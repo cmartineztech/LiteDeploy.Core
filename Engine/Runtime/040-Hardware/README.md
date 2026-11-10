@@ -1,12 +1,12 @@
 # Hardware
 
 **ComponentId:** `Hardware`  
-**Dev folder:** `Runtime/030-Hardware`  
+**Dev folder:** `Runtime/040-Hardware`  
 **Published:** `Engine\Runtime\LiteDeploy.Hardware.ps1`
 
 ## Purpose
 
-Hardware inventory and readiness helpers used by Boot bootstrap, Engine, and UI.HardwarePrecheck (domain logic; UI stays in `110-UI`).
+Hardware inventory and readiness helpers used by Boot bootstrap, Engine, and UI.HardwarePrecheck (domain logic; UI stays in `100-UI`).
 
 `Test-LiteDeployHardwareRequirements` is LiteDeploy’s own readiness check (memory/disk/TPM helpers for Precheck). It is **not** `ComputerSetup.SkipSetupHardwareRequirements` (Setup.exe LabConfig/MoSetup bypass owned by Image).
 
@@ -44,7 +44,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\030-Hardware\LiteDeploy.Hardware.ps1'
+$component = '.\Engine\Runtime\040-Hardware\LiteDeploy.Hardware.ps1'
 $inventory = & $component -PassThru
 $inventory | Select-Object Vendor, Model, MemoryGB, DiskCount
 ~~~

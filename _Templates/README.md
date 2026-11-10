@@ -10,7 +10,7 @@ It is **not** published to the deployment share.
 
 | File | Type | Purpose |
 | :--- | :--- | :--- |
-| **[`LiteDeploy.Component.Template.ps1`](LiteDeploy.Component.Template.ps1)** | PowerShell Template | Master single-file template implementing the LiteDeploy component contract, embedded metadata, semantic versioning, StrictMode 2.0, and Logs integration. |
+| **[`LiteDeploy.Component.Template.ps1`](LiteDeploy.Component.Template.ps1)** | PowerShell Template | Master single-file template implementing the LiteDeploy component contract, embedded metadata, semantic versioning, StrictMode 2.0, and Session integration. |
 | **[`Get-LiteDeployComponentInventory.ps1`](Get-LiteDeployComponentInventory.ps1)** | PowerShell Utility | Scanner that queries `-Metadata` across `Engine` and returns a consolidated inventory. |
 
 ---
@@ -36,7 +36,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"                     # "WinPE", "FullOS", "Host", or "Universal"
         MinPowerShellVersion = "5.1"                       # Minimum supported PowerShell version
         Author               = "LiteDeploy Team"           # Maintainer / Author
-        Dependencies         = @("Logs")                   # Sibling component IDs required
+        Dependencies         = @("Session")                # Sibling component IDs required
         Description          = "Component purpose and behavior description."
     }
 }
@@ -49,7 +49,7 @@ if ($Metadata) {
 
 ### Region 2: Logging Integration
 
-Provides unified logging routing. Calls `Write-LiteDeployLog` when Logs is loaded in the
+Provides unified logging routing. Calls `Write-LiteDeployLog` when Session is loaded in the
 session, or falls back to standardized console output.
 
 ### Region 3: Core Implementation

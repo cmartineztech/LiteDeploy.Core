@@ -34,7 +34,7 @@ Image writes WinPE `LabConfig` / `MoSetup` registry bypasses immediately before 
 Source locations:
 
 - `Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1`
-- `Engine\Runtime\100-Engine\LiteDeploy.PE.Engine.ps1`
+- `Engine\Runtime\010-Engine\LiteDeploy.PE.Engine.ps1`
 
 Published share holds flat runtime scripts at `C:\DeploymentShare\Engine\Runtime\`. Canonical engine entry is `LiteDeploy.PE.Engine.ps1`. Legacy aliases have been retired.
 

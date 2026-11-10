@@ -1,7 +1,7 @@
 # UI.WorkflowSelectionDriverPicker
 
 **ComponentId:** `DriverPicker`  
-**Dev:** `Runtime/110-UI/WorkflowSelection`  
+**Dev:** `Runtime/100-UI/WorkflowSelection`  
 **Published:** `Engine\Runtime\UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1`
 
 Folder picker used by WorkflowSelection for custom/OEM driver paths; blocks system/root locations.
@@ -39,7 +39,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
+$component = '.\Engine\Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
 . $component
 $folder = Show-DriverPathDialog -ViewPath (Get-LiteDeployComponentPath -Name DriverPickerView)
 ~~~

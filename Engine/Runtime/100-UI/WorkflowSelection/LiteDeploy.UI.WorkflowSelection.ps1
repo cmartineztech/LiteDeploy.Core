@@ -58,7 +58,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("LogWriter", "Hardware", "DriverStaging", "DriverPicker")
+        Dependencies         = @("Session", "Hardware", "Drivers", "DriverPicker")
         Description          = "BootConfigPath + DeploymentSharePath wizard; markup in LiteDeploy.WorkflowSelection.UI.xaml; driver detect via DriverStaging; writes X:\WorkflowSelection.json and returns selection object."
     }
 }
@@ -111,7 +111,7 @@ $ErrorActionPreference = "Stop"
 if (-not $RuntimeFiles) {
     if (-not (Get-Command Get-LiteDeployComponentPath -ErrorAction SilentlyContinue)) { throw 'Load Environment before WorkflowSelection.' }
     $RuntimeFiles = [pscustomobject]@{
-        Logs                  = Get-LiteDeployComponentPath -Name Logs
+        Session               = Get-LiteDeployComponentPath -Name Session
         Hardware              = Get-LiteDeployComponentPath -Name Hardware
         Drivers               = Get-LiteDeployComponentPath -Name Drivers
         Workflow              = Get-LiteDeployComponentPath -Name Workflow
@@ -120,7 +120,7 @@ if (-not $RuntimeFiles) {
         DriverPickerView      = Get-LiteDeployComponentPath -Name DriverPickerView
     }
 }
-if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) { . $RuntimeFiles.Logs }
+if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) { . $RuntimeFiles.Session }
 if (-not (Get-Command Get-HardwareInventory -ErrorAction SilentlyContinue)) { . $RuntimeFiles.Hardware }
 if (-not (Get-Command Get-SystemDriverDetection -ErrorAction SilentlyContinue)) { . $RuntimeFiles.Drivers }
 if (-not (Get-Command Get-LiteDeployWorkflowPresentationGroups -ErrorAction SilentlyContinue)) {
@@ -1276,7 +1276,7 @@ if ($autoDetectDrivers) {
     }
     catch {
         if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-            Write-LiteDeployLog "Driver detection warning: $_" -Level "WARNING" -Component "WorkflowSelection"
+            Write-LiteDeployLog "Driver detection warning: $_" -Level "WARNING" -Component "UI.WorkflowSelection"
         }
     }
 }
@@ -1591,7 +1591,7 @@ function Invoke-LiteDeployDiskRefresh {
 function Invoke-LiteDeployWorkflowRefresh {
     # F5: reload BootConfig from path and refresh brand, catalog, disks, and drivers.
     if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-        Write-LiteDeployLog "Technician triggered manual refresh (F5). Reloading configuration, disks, and catalogs..." -Level "INFO" -Component "WorkflowSelection"
+        Write-LiteDeployLog "Technician triggered manual refresh (F5). Reloading configuration, disks, and catalogs..." -Level "INFO" -Component "UI.WorkflowSelection"
     }
     [System.Windows.Input.Mouse]::OverrideCursor = [System.Windows.Input.Cursors]::Wait
     try {

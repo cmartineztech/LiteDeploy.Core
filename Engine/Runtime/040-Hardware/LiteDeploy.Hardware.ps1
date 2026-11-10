@@ -37,7 +37,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Environment")
+        Dependencies         = @("Session", "Environment")
         Description          = "Hardware inventory, firmware/TPM/network/disk discovery for Boot, Precheck, and Workflow (read-only)."
     }
 }
@@ -1294,6 +1294,181 @@ function Test-LiteDeployHardwareRequirements {
         TpmPresent  = [bool]$tpm.Present
         RequireTpm  = [bool]$RequireTpm
         Checks      = $checks
+    }
+}
+
+function Write-LiteDeployHardwareInventoryLog {
+    <#
+    .SYNOPSIS
+        Logs MDT-style hardware inventory entries (one property per record, -NoConsole).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [psobject]$Inventory = $null,
+
+        [Parameter(Mandatory = $false)]
+        [string]$LogPath = ""
+    )
+
+    if (-not (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) {
+        return
+    }
+
+    # Strict: only use inventory explicitly passed; do not use stale global state.
+    if ($null -eq $Inventory) {
+        return
+    }
+
+    function Format-InventoryPropertyValue {
+        param($Value)
+        if ($null -eq $Value) { return "unavailable" }
+        if ($Value -is [bool]) { return $(if ($Value) { "True" } else { "False" }) }
+        if ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal]) { return [string]$Value }
+        $str = [string]$Value
+        if ([string]::IsNullOrWhiteSpace($str)) { return "unavailable" }
+        if ($str -match '^(?i)true$') { return "True" }
+        if ($str -match '^(?i)false$') { return "False" }
+        return $str.Trim()
+    }
+
+    $logParams = @{
+        Component = "Hardware"
+        NoConsole = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+        $logParams['LogPath'] = $LogPath
+    }
+
+    # 1. Scalar properties from Get-HardwareInventory contract
+    $mfg = if ($Inventory.PSObject.Properties['Manufacturer'] -and $null -ne $Inventory.Manufacturer) {
+        $Inventory.Manufacturer
+    } elseif ($Inventory.PSObject.Properties['VendorRaw'] -and $null -ne $Inventory.VendorRaw) {
+        $Inventory.VendorRaw
+    } elseif ($Inventory.PSObject.Properties['Vendor'] -and $null -ne $Inventory.Vendor) {
+        $Inventory.Vendor
+    } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: Manufacturer = {0}" -f (Format-InventoryPropertyValue $mfg))
+
+    $model = if ($Inventory.PSObject.Properties['Model'] -and $null -ne $Inventory.Model) { $Inventory.Model } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: Model = {0}" -f (Format-InventoryPropertyValue $model))
+
+    $serial = if ($Inventory.PSObject.Properties['SerialNumber'] -and $null -ne $Inventory.SerialNumber) { $Inventory.SerialNumber } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: SerialNumber = {0}" -f (Format-InventoryPropertyValue $serial))
+
+    $uuid = if ($Inventory.PSObject.Properties['UUID'] -and $null -ne $Inventory.UUID) { $Inventory.UUID } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: UUID = {0}" -f (Format-InventoryPropertyValue $uuid))
+
+    $bios = if ($Inventory.PSObject.Properties['BIOSVersion'] -and $null -ne $Inventory.BIOSVersion) {
+        $Inventory.BIOSVersion
+    } elseif ($Inventory.PSObject.Properties['BiosVersion'] -and $null -ne $Inventory.BiosVersion) {
+        $Inventory.BiosVersion
+    } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: BIOSVersion = {0}" -f (Format-InventoryPropertyValue $bios))
+
+    $arch = if ($Inventory.PSObject.Properties['Architecture'] -and $null -ne $Inventory.Architecture) { $Inventory.Architecture } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: Architecture = {0}" -f (Format-InventoryPropertyValue $arch))
+
+    $memMb = if ($Inventory.PSObject.Properties['MemoryMB'] -and $null -ne $Inventory.MemoryMB) {
+        $Inventory.MemoryMB
+    } elseif ($Inventory.PSObject.Properties['MemoryBytes'] -and $null -ne $Inventory.MemoryBytes) {
+        try { [int]($Inventory.MemoryBytes / 1MB) } catch { $null }
+    } elseif ($Inventory.PSObject.Properties['MemoryGB'] -and $null -ne $Inventory.MemoryGB) {
+        try { [int]($Inventory.MemoryGB * 1024) } catch { $null }
+    } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: MemoryMB = {0}" -f (Format-InventoryPropertyValue $memMb))
+
+    $bootMode = if ($Inventory.PSObject.Properties['BootMode'] -and $null -ne $Inventory.BootMode) {
+        $Inventory.BootMode
+    } elseif ($Inventory.PSObject.Properties['FirmwareType'] -and $null -ne $Inventory.FirmwareType) {
+        $Inventory.FirmwareType
+    } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: BootMode = {0}" -f (Format-InventoryPropertyValue $bootMode))
+
+    # SecureBoot: Preserve explicit boolean or status string; do NOT falsely map Unknown/null to Disabled/False
+    $sb = $null
+    if ($Inventory.PSObject.Properties['SecureBootStatus'] -and $null -ne $Inventory.SecureBootStatus) {
+        $statusStr = [string]$Inventory.SecureBootStatus
+        if ($statusStr -ieq "Enabled") { $sb = $true }
+        elseif ($statusStr -ieq "Disabled") { $sb = $false }
+        elseif (-not [string]::IsNullOrWhiteSpace($statusStr)) { $sb = $statusStr }
+    }
+    if ($null -eq $sb) {
+        if ($Inventory.PSObject.Properties['SecureBootEnabled'] -and $null -ne $Inventory.SecureBootEnabled) {
+            $sb = $Inventory.SecureBootEnabled
+        } elseif ($Inventory.PSObject.Properties['SecureBootIsEnabled'] -and $null -ne $Inventory.SecureBootIsEnabled) {
+            $sb = $Inventory.SecureBootIsEnabled
+        }
+    }
+    Write-LiteDeployLog @logParams -Message ("Hardware: SecureBootEnabled = {0}" -f (Format-InventoryPropertyValue $sb))
+
+    $tpm = if ($Inventory.PSObject.Properties['TPMVersion'] -and $null -ne $Inventory.TPMVersion) {
+        $Inventory.TPMVersion
+    } elseif ($Inventory.PSObject.Properties['TpmVersion'] -and $null -ne $Inventory.TpmVersion) {
+        $Inventory.TpmVersion
+    } else { $null }
+    Write-LiteDeployLog @logParams -Message ("Hardware: TPMVersion = {0}" -f (Format-InventoryPropertyValue $tpm))
+
+    # 2. Disks allowlist loop (supports HardDrives and Assessment Disks schemas)
+    $diskList = @(if ($Inventory.PSObject.Properties['Disks'] -and $Inventory.Disks) {
+        $Inventory.Disks
+    } elseif ($Inventory.PSObject.Properties['HardDrives'] -and $Inventory.HardDrives) {
+        $Inventory.HardDrives
+    })
+
+    if ($diskList.Count -gt 0) {
+        $diskAllowlist = @('DiskNumber', 'Number', 'Index', 'Model', 'Capacity', 'SizeGB', 'FreeSpace', 'UsedSpace', 'TotalBytes', 'BusType', 'PartitionStyle', 'OperationalStatus')
+        for ($i = 0; $i -lt $diskList.Count; $i++) {
+            $item = $diskList[$i]
+            if ($null -ne $item) {
+                if ($item -is [System.Collections.IDictionary]) {
+                    foreach ($prop in $diskAllowlist) {
+                        if ($item.Contains($prop) -and $null -ne $item[$prop]) {
+                            Write-LiteDeployLog @logParams -Message ("Hardware: Disk[{0}].{1} = {2}" -f $i, $prop, (Format-InventoryPropertyValue $item[$prop]))
+                        }
+                    }
+                } else {
+                    foreach ($prop in $diskAllowlist) {
+                        if ($item.PSObject.Properties[$prop] -and $null -ne $item.$prop) {
+                            Write-LiteDeployLog @logParams -Message ("Hardware: Disk[{0}].{1} = {2}" -f $i, $prop, (Format-InventoryPropertyValue $item.$prop))
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Write-LiteDeployLog @logParams -Message "Hardware: Disks = unavailable"
+    }
+
+    # 3. Network adapters allowlist loop (supports NICs and NetworkAdapters schemas)
+    $nicList = @(if ($Inventory.PSObject.Properties['NetworkAdapters'] -and $Inventory.NetworkAdapters) {
+        $Inventory.NetworkAdapters
+    } elseif ($Inventory.PSObject.Properties['NICs'] -and $Inventory.NICs) {
+        $Inventory.NICs
+    })
+
+    if ($nicList.Count -gt 0) {
+        $nicAllowlist = @('Name', 'Description', 'MacAddress', 'Status', 'SpeedMbps', 'IPAddress')
+        for ($i = 0; $i -lt $nicList.Count; $i++) {
+            $item = $nicList[$i]
+            if ($null -ne $item) {
+                if ($item -is [System.Collections.IDictionary]) {
+                    foreach ($prop in $nicAllowlist) {
+                        if ($item.Contains($prop) -and $null -ne $item[$prop]) {
+                            Write-LiteDeployLog @logParams -Message ("Hardware: NetworkAdapter[{0}].{1} = {2}" -f $i, $prop, (Format-InventoryPropertyValue $item[$prop]))
+                        }
+                    }
+                } else {
+                    foreach ($prop in $nicAllowlist) {
+                        if ($item.PSObject.Properties[$prop] -and $null -ne $item.$prop) {
+                            Write-LiteDeployLog @logParams -Message ("Hardware: NetworkAdapter[{0}].{1} = {2}" -f $i, $prop, (Format-InventoryPropertyValue $item.$prop))
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Write-LiteDeployLog @logParams -Message "Hardware: NetworkAdapters = unavailable"
     }
 }
 

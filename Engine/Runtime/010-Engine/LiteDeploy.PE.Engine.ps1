@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    LiteDeploy Engine — WinPE install pipeline (architecture v2).
+    LiteDeploy Engine  -  WinPE install pipeline (architecture v2).
 
 .DESCRIPTION
     Dedicated WinPE execution engine:
@@ -68,14 +68,14 @@ function Get-LiteDeployComponentMetadata {
         Returns standardized component metadata for inventory discovery and version management.
     #>
     return [PSCustomObject]@{
-        ComponentId          = "Engine"
+        ComponentId          = "PE.Engine"
         Name                 = "LiteDeploy Engine"
         Version              = "2.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Environment", "Logs", "Hardware", "State", "Drivers", "Disk", "Image", "UI.HardwarePrecheck", "UI.WorkflowSelection", "UI.Progress")
+        Dependencies         = @("Environment", "Session", "Hardware", "Drivers", "Disk", "Image", "UI.HardwarePrecheck", "UI.WorkflowSelection", "UI.Progress")
         Description          = "WinPE imaging pipeline orchestrator (Precheck, Selection, Disk, Image, Handoff)."
     }
 }
@@ -96,8 +96,7 @@ $EngineRequirements = [pscustomobject]@{
     Shared = @(
         'Environment'                  # Path definitions and environment detection; loaded first.
         'BootConfig'                   # Deployment configuration (share-rooted after Z:).
-        'Logs'                         # Console and file logging.
-        'State'                        # Deployment state and progress data.
+        'Session'                      # Deployment session, console/file logging, state, and progress data.
     )
     WinPE = @(
         'Hardware'                     # Inventory and readiness checks.
@@ -126,7 +125,7 @@ $EngineRequirements = [pscustomobject]@{
 
 # 2. STARTUP: Environment supplies the one path configuration.
 if ($ResumeFullOS) {
-    # FullOS bootstrap path — no BootObject from WinPE.
+    # FullOS bootstrap path  -  no BootObject from WinPE.
 }
 elseif (-not $BootObject) {
     throw 'Engine requires -BootObject from Boot. No deployment source is assumed.'
@@ -160,7 +159,7 @@ if ($ResumeFullOS) {
 }
 
 # ==============================================================================
-# WINPE — imaging pipeline (requires -BootObject)
+# WINPE  -  imaging pipeline (requires -BootObject)
 # ==============================================================================
 $requiredComponentNames = $EngineRequirements.Shared + $EngineRequirements.WinPE
 $RuntimePaths = Get-LiteDeployRuntimePaths -BootObject $BootObject -RequiredComponents $requiredComponentNames
@@ -193,7 +192,7 @@ if ($ValidateOnly) {
         RequirementsByEnvironment = $EngineRequirements
         ValidationProfile = 'WinPE'
         ImageEngine = $selectedImageEngine
-        HelpersToLoad = @('Logs', 'Hardware', 'State', 'Drivers', 'HostShell')
+        HelpersToLoad = @('Session', 'Hardware', 'Drivers', 'HostShell')
         Phases = @('HardwarePrecheck', 'WorkflowSelection', 'Progress', 'Disk (destructive)', 'Image', 'Log/state handoff')
     }
     return
@@ -204,12 +203,10 @@ if ($ValidateOnly) {
 # Disk and Image are NOT imported here: each runs once, at its deployment phase below.
 $engineBootObject = $BootObject
 try {
-    # Write-LiteDeployLog: shared console/CMTrace logging.
-    if (-not (Get-Command Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue)) { . $RequiredFiles.Logs }
+    # Write-LiteDeployLog / New-LiteDeployDeploymentObject / Save-LiteDeployDeploymentState: shared session, logging, and state.
+    if (-not (Get-Command Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue) -or -not (Get-Command New-LiteDeployDeploymentObject -ErrorAction SilentlyContinue)) { . $RequiredFiles.Session }
     # Hardware inventory used by precheck and selection.
     if (-not (Get-Command Get-HardwareInventory -ErrorAction SilentlyContinue)) { . $RequiredFiles.Hardware }
-    # New-LiteDeployDeploymentObject / Save-LiteDeployDeploymentState.
-    if (-not (Get-Command New-LiteDeployDeploymentObject -ErrorAction SilentlyContinue)) { . $RequiredFiles.State }
     # Driver detection used by WorkflowSelection, not driver installation.
     if (-not (Get-Command Get-SystemDriverDetection -ErrorAction SilentlyContinue)) { . $RequiredFiles.Drivers }
     # Console controls; no window action during import.
@@ -237,7 +234,7 @@ function Get-LiteDeployUid {
     return "$((Get-Date).ToString('yyMMdd'))-$hex"
 }
 
-# Progress host (separate STA process) — topmost while Disk/Image run; polls DeploymentState.json.
+# Progress host (separate STA process)  -  topmost while Disk/Image run; polls DeploymentState.json.
 # Disk / Image / UI wizards run in-process via Invoke-LiteDeployEngineScript (&) so Engine try/catch owns failures.
 # Progress cannot share that model (WPF needs its own STA message loop), so Engine owns it as PassThru + stderr log + health checks.
 $global:LiteDeployProgressProcess = $null
@@ -410,7 +407,7 @@ function Start-LiteDeployProgressHost {
 
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         try {
-            # Hidden: no blue/black PowerShell console for the Progress host — only the WPF window.
+            # Hidden: no blue/black PowerShell console for the Progress host  -  only the WPF window.
             $proc = Start-Process -FilePath $powershellExe -ArgumentList $argString -PassThru `
                 -RedirectStandardError $global:LiteDeployProgressStdErrLog `
                 -RedirectStandardOutput $global:LiteDeployProgressStdOutLog `
@@ -425,7 +422,7 @@ function Start-LiteDeployProgressHost {
                 Write-LiteDeployLog (
                     "Progress host exited early (attempt $attempt/$maxAttempts, exit=$exitCode)." +
                     $(if ($detail) { " $detail" } else { " See $($global:LiteDeployProgressStdErrLog)" })
-                ) -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+                ) -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
                 $global:LiteDeployProgressProcess = $null
                 if ($attempt -lt $maxAttempts) {
                     Start-Sleep -Milliseconds 300
@@ -439,11 +436,11 @@ function Start-LiteDeployProgressHost {
             #     try { Set-LiteDeployHostShellWindow -Action Minimize } catch {}
             # }
 
-            Write-LiteDeployLog "Progress host started (PID $($proc.Id), TopMost, $modeLabel, hidden console, RAM state map + $StatePath)." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+            Write-LiteDeployLog "Progress host started (PID $($proc.Id), TopMost, $modeLabel, hidden console, RAM state map + $StatePath)." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
             return $proc
         }
         catch {
-            Write-LiteDeployLog "Could not start Progress host (attempt $attempt/$maxAttempts): $_" -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+            Write-LiteDeployLog "Could not start Progress host (attempt $attempt/$maxAttempts): $_" -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
             $global:LiteDeployProgressProcess = $null
             if ($attempt -ge $maxAttempts) { return $null }
         }
@@ -458,8 +455,8 @@ function Start-LiteDeployProgressHost {
 
 function Write-LiteDeployEnginePauseNotice {
     Write-Host ""
-    Write-LiteDeployLog " [NOTICE]  Deployment halted." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
-    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+    Write-LiteDeployLog " [NOTICE]  Deployment halted." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
+    Write-LiteDeployLog "           To restart this process, run 'startnet' below." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
     Write-Host ""
 }
 
@@ -504,7 +501,7 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         Layout:
           <Os>:\~LiteDeploy\Engine\Runtime\
           <Os>:\~LiteDeploy\Engine\Tools\
-          <Os>:\~LiteDeploy\Content\Credentials\   (WinPECT — see credential handoff)
+          <Os>:\~LiteDeploy\Content\Credentials\   (WinPECT  -  see credential handoff)
     #>
     param(
         [Parameter(Mandatory = $true)][psobject]$RuntimePaths,
@@ -645,7 +642,7 @@ function Set-LiteDeployOfflineSetupCmdLine {
             [gc]::WaitForPendingFinalizers()
             & reg.exe unload "HKLM\$MountName" | Out-Null
             if ($LASTEXITCODE -ne 0) {
-                Write-LiteDeployLog "reg.exe unload HKLM\$MountName failed with exit code $LASTEXITCODE" -Level WARNING -Component Engine
+                Write-LiteDeployLog "reg.exe unload HKLM\$MountName failed with exit code $LASTEXITCODE" -Level WARNING -Component "PE.Engine"
             }
         }
     }
@@ -672,13 +669,13 @@ function Complete-LiteDeployWinPECredentialHandoff {
         $wrapper = Join-Path $RuntimePaths.DeploymentRoot 'Tools\WinPECT\LiteDeploy.WinPECT.ps1'
     }
     if (-not (Test-Path -LiteralPath $wrapper -PathType Leaf)) {
-        Write-LiteDeployLog "WinPECT wrapper not found at $wrapper; credential handoff skipped." -Level WARNING -Component Engine
+        Write-LiteDeployLog "WinPECT wrapper not found at $wrapper; credential handoff skipped." -Level WARNING -Component "PE.Engine"
         return [pscustomobject]@{ Success = $true; Skipped = $true; Message = 'WinPECT tools missing on share.' }
     }
 
     . $wrapper
 
-    # StrictMode: unset globals throw if read directly — use Get-Variable.
+    # StrictMode: unset globals throw if read directly  -  use Get-Variable.
     $secretMap = $null
     $secretMapVar = Get-Variable -Name LiteDeploySecretMap -Scope Global -ErrorAction SilentlyContinue
     if ($null -ne $secretMapVar -and $secretMapVar.Value -is [hashtable] -and $secretMapVar.Value.Count -gt 0) {
@@ -712,7 +709,7 @@ function Complete-LiteDeployWinPECredentialHandoff {
     $enforceRequired = @($workflowRequiredIds | Where-Object { $availableIds.Contains($_) })
     $missingRequired = @($workflowRequiredIds | Where-Object { -not $availableIds.Contains($_) })
     if ($missingRequired.Count -gt 0) {
-        Write-LiteDeployLog ("Workflow RequiredCredentialIds not in memory (skipped until DeployVault): {0}" -f ($missingRequired -join ', ')) -Level WARNING -Component Engine
+        Write-LiteDeployLog ("Workflow RequiredCredentialIds not in memory (skipped until DeployVault): {0}" -f ($missingRequired -join ', ')) -Level WARNING -Component "PE.Engine"
     }
 
     $exportParams = @{
@@ -728,7 +725,7 @@ function Complete-LiteDeployWinPECredentialHandoff {
     $export = Export-LiteDeployWinPECTCredentials @exportParams
 
     if ($export.Skipped) {
-        Write-LiteDeployLog $export.Message -Level INFO -Component Engine
+        Write-LiteDeployLog $export.Message -Level INFO -Component "PE.Engine"
         return $export
     }
 
@@ -746,7 +743,7 @@ function Complete-LiteDeployWinPECredentialHandoff {
         StagedTimeUtc   = [DateTime]::UtcNow.ToString('o')
     }
     $DeploymentState.Execution | Add-Member -NotePropertyName CredentialHandoff -NotePropertyValue $handoffInfo -Force
-    Write-LiteDeployLog ("WinPECT credential handoff staged ({0}): {1}" -f (@($export.SecretIds) -join ', '), $export.SecretFilePath) -Level SUCCESS -Component Engine
+    Write-LiteDeployLog ("WinPECT credential handoff staged ({0}): {1}" -f (@($export.SecretIds) -join ', '), $export.SecretFilePath) -Level SUCCESS -Component "PE.Engine"
     return $export
 }
 
@@ -767,7 +764,7 @@ function Complete-LiteDeployWinPEHandoff {
     if (-not (Test-Path -LiteralPath $rebootTool -PathType Leaf)) { throw 'wpeutil.exe is missing; automatic reboot unavailable.' }
 
     $DeploymentState.Execution.CurrentStep = 'FullOSPayloadStaging'
-    Write-LiteDeployLog 'Staging Engine Runtime + Tools (no Admin) onto the installed OS volume.' -Level NOTICE -Component Engine
+    Write-LiteDeployLog 'Staging Engine Runtime + Tools (no Admin) onto the installed OS volume.' -Level INFO -Component "PE.Engine" -NoConsole
     $payload = Sync-LiteDeployFullOSPayloadToOsVolume `
         -RuntimePaths $RuntimePaths `
         -OsDriveLetter $OsDriveLetter `
@@ -781,15 +778,21 @@ function Complete-LiteDeployWinPEHandoff {
             ToolsFilesCopied   = [int]$payload.ToolsFilesCopied
             StagedTimeUtc      = [DateTime]::UtcNow.ToString('o')
         }) -Force
-    Write-LiteDeployLog $payload.Message -Level SUCCESS -Component Engine
-    Write-LiteDeployLog 'HKLM Run LiteDeployFullOS is staged by Image specialize (when actions > 0); FullOS may re-arm it at interactive logon — not offline in WinPE.' -Level INFO -Component Engine
+    Write-LiteDeployLog $payload.Message -Level SUCCESS -Component "PE.Engine" -NoConsole
+    Write-LiteDeployLog 'HKLM Run LiteDeployFullOS is staged by Image specialize (when actions > 0); FullOS may re-arm it at interactive logon - not offline in WinPE.' -Level INFO -Component "PE.Engine" -NoConsole
 
-    # Persist share target for FullOS Z: remount (never persist passwords — only UNC + drive + secret Id).
+    # Persist share target for FullOS Z: remount (never persist passwords - only UNC + drive + secret Id).
     $networkPath = $null
     if ($BootCtx -and $BootCtx.PSObject.Properties['NetworkPath'] -and $BootCtx.NetworkPath) {
         $networkPath = [string]$BootCtx.NetworkPath
     }
-    elseif ($EngineBootConfig -and $EngineBootConfig.PSObject.Properties['Deployment'] -and $EngineBootConfig.Deployment -and
+    elseif ($BootCtx -and $BootCtx.PSObject.Properties['Config'] -and $BootCtx.Config -and
+        $BootCtx.Config.PSObject.Properties['Deployment'] -and $BootCtx.Config.Deployment -and
+        $BootCtx.Config.Deployment.PSObject.Properties['NetworkPath'] -and $BootCtx.Config.Deployment.NetworkPath) {
+        $networkPath = [string]$BootCtx.Config.Deployment.NetworkPath
+    }
+    elseif ((Get-Variable -Name 'EngineBootConfig' -Scope Script -ErrorAction SilentlyContinue) -and
+        $EngineBootConfig -and $EngineBootConfig.PSObject.Properties['Deployment'] -and $EngineBootConfig.Deployment -and
         $EngineBootConfig.Deployment.PSObject.Properties['NetworkPath'] -and $EngineBootConfig.Deployment.NetworkPath) {
         $networkPath = [string]$EngineBootConfig.Deployment.NetworkPath
     }
@@ -809,14 +812,14 @@ function Complete-LiteDeployWinPEHandoff {
             ReconnectOnBoot = ($deploymentType -eq 'Network')
         }) -Force
     if ($deploymentType -eq 'Network' -and $networkPath) {
-        Write-LiteDeployLog "FullOS (Network): reconnect Z: each boot and mirror logs to the share ($networkPath)." -Level INFO -Component Engine
+        Write-LiteDeployLog "FullOS (Network): reconnect Z: each boot and mirror logs to the share ($networkPath)." -Level INFO -Component "PE.Engine" -NoConsole
     }
     elseif ($deploymentType -eq 'Media') {
-        Write-LiteDeployLog 'FullOS (Media): no DeploymentShare reconnect; logs stay local/OS-volume only.' -Level INFO -Component Engine
+        Write-LiteDeployLog 'FullOS (Media): no DeploymentShare reconnect; logs stay local/OS-volume only.' -Level INFO -Component "PE.Engine" -NoConsole
     }
 
     $DeploymentState.Execution.CurrentStep = 'CredentialHandoff'
-    Write-LiteDeployLog 'Staging WinPECT credential handoff onto the installed OS volume (when credentials are in memory).' -Level NOTICE -Component Engine
+    Write-LiteDeployLog 'Staging WinPECT credential handoff onto the installed OS volume (when credentials are in memory).' -Level INFO -Component "PE.Engine" -NoConsole
     $null = Complete-LiteDeployWinPECredentialHandoff `
         -DeploymentState $DeploymentState `
         -RuntimePaths $RuntimePaths `
@@ -826,13 +829,33 @@ function Complete-LiteDeployWinPEHandoff {
 
     $DeploymentState.Execution.CurrentStep = 'RebootRequested'
     $DeploymentState.Execution | Add-Member -NotePropertyName RebootRequestedTime -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
-    Write-LiteDeployLog 'WinPE imaging completed. Reboot requested; verifying logs and state on the installed OS volume before restarting.' -Level NOTICE -Component Engine
+    Write-LiteDeployLog 'WinPE imaging completed. Reboot requested; verifying logs and state on the installed OS volume before restarting.' -Level INFO -Component "PE.Engine"
     Save-LiteDeployDeploymentState -DeploymentState $DeploymentState
     Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $DeploymentState.Execution.RemoteLogDir
     $handoff = Sync-LiteDeployArtifactsToOsVolume -RuntimePaths $RuntimePaths -OsDriveLetter $OsDriveLetter -DeploymentState $DeploymentState -LocalRootName $LocalRootName
     if (-not $handoff.Success -or -not $handoff.StateCopied -or $handoff.LogsCopied -lt 1) {
         throw "Reboot cancelled: logs/state handoff failed. $($handoff.Message)"
     }
+    Write-LiteDeployLog -Message ''
+    Write-LiteDeployLog 'Handoff verified. Ready to restart.' -Level SUCCESS -ForegroundColor Green -Component "PE.Engine"
+    $targetDisk = if ($DeploymentState -and $DeploymentState.PSObject.Properties['Disk'] -and $DeploymentState.Disk -and $DeploymentState.Disk.PSObject.Properties['DiskNumber'] -and $DeploymentState.Disk.DiskNumber -ne $null) {
+        $DeploymentState.Disk.DiskNumber
+    } else { '?' }
+    $imageName = if ($DeploymentState -and $DeploymentState.PSObject.Properties['OSInstall'] -and $DeploymentState.OSInstall) {
+        if ($DeploymentState.OSInstall.PSObject.Properties['ImagePath'] -and $DeploymentState.OSInstall.ImagePath) {
+            [System.IO.Path]::GetFileName([string]$DeploymentState.OSInstall.ImagePath)
+        }
+        elseif ($DeploymentState.OSInstall.PSObject.Properties['SetupPath'] -and $DeploymentState.OSInstall.SetupPath) {
+            [System.IO.Path]::GetFileName([string]$DeploymentState.OSInstall.SetupPath)
+        }
+        else { 'OS' }
+    } else { 'OS' }
+    $exitCode = if ($DeploymentState -and $DeploymentState.PSObject.Properties['OSInstall'] -and $DeploymentState.OSInstall -and $DeploymentState.OSInstall.PSObject.Properties['ExitCode'] -and $DeploymentState.OSInstall.ExitCode -ne $null) {
+        $DeploymentState.OSInstall.ExitCode
+    } else { 0 }
+    Write-LiteDeployLog ("WinPE phase completed: Target={0} (OS: {1}), Image={2} (ExitCode={3}), Handoff=Verified." -f `
+        $targetDisk, $OsDriveLetter, $imageName, $exitCode) `
+        -Level INFO -Component "PE.Engine" -NoConsole
     # All required writes precede this call. A requested reboot is not proof the next OS started.
     $process = Start-Process -FilePath $rebootTool -ArgumentList 'Reboot' -Wait -PassThru -NoNewWindow -ErrorAction Stop
     if ($process.ExitCode -ne 0) { throw "WinPE reboot command failed with exit code $($process.ExitCode)." }
@@ -850,7 +873,7 @@ function Start-LiteDeployPipeline {
     $deployment = New-LiteDeployDeploymentObject -DeferUid -BootCtx $BootObject
     $global:LiteDeployDeployment = $deployment
 
-    # Shared UI theme from BootConfig.Ui.Theme — PreCheck, WorkflowSelection, Progress all use this.
+    # Shared UI theme from BootConfig.Ui.Theme  -  PreCheck, WorkflowSelection, Progress all use this.
     $uiTheme = Get-LiteDeployUiTheme -BootConfig $EngineBootConfig
     if ($deployment.PSObject.Properties["Ui"] -and $deployment.Ui) {
         $deployment.Ui.Theme = $uiTheme
@@ -861,17 +884,18 @@ function Start-LiteDeployPipeline {
     $global:LiteDeployUiTheme = $uiTheme
     Save-LiteDeployDeploymentState -DeploymentState $deployment
 
-    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan -Component "Engine"
-    Write-LiteDeployLog "$($script:EngineMetadata.Name) v$($script:EngineMetadata.Version)" -Level "INIT" -ForegroundColor Cyan -Component "Engine"
-    Write-LiteDeployLog "Source        : $($RuntimePaths.DeploymentRoot)" -Level "INIT" -Component "Engine"
-    Write-LiteDeployLog "Runtime       : $($RuntimePaths.RuntimeRoot) [$($RuntimePaths.Mode)]" -Level "INIT" -Component "Engine"
-    Write-LiteDeployLog "BootConfig    : $($RequiredFiles.BootConfig)" -Level "INIT" -Component "Engine"
-    Write-LiteDeployLog "Deployment UID: assigned when WorkflowSelection launches" -Level "INIT" -Component "Engine"
-    Write-LiteDeployLog "UI Theme      : $uiTheme (BootConfig.Ui.Theme)" -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-LiteDeployLog "$($script:EngineMetadata.Name) v$($script:EngineMetadata.Version)" -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
+    Write-LiteDeployLog "Source        : $($RuntimePaths.DeploymentRoot)" -Level "INIT" -Component "PE.Engine"
+    Write-LiteDeployLog "Runtime       : $($RuntimePaths.RuntimeRoot) [$($RuntimePaths.Mode)]" -Level "INIT" -Component "PE.Engine"
+    Write-LiteDeployLog "BootConfig    : $($RequiredFiles.BootConfig)" -Level "INIT" -Component "PE.Engine"
+    Write-LiteDeployLog "Deployment UID: assigned when WorkflowSelection launches" -Level "INIT" -Component "PE.Engine" -NoConsole
+    Write-LiteDeployLog "UI Theme      : $uiTheme (BootConfig.Ui.Theme)" -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine" -NoConsole
     if ($remoteLogDir) {
-        Write-LiteDeployLog "Remote Logs   : $remoteLogDir" -Level "INIT" -ForegroundColor Green -Component "Engine"
+        Write-LiteDeployLog "Remote Logs   : $remoteLogDir" -Level "INIT" -ForegroundColor Green -Component "PE.Engine"
     }
-    Write-LiteDeployLog "================================================================" -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-LiteDeployLog -Message ''
 
     try {
         # Console window remains open (not minimized) so technician can view real-time logs
@@ -887,8 +911,11 @@ function Start-LiteDeployPipeline {
         $preCheckPassed = $false
         $deployment.CurrentPhase = 1
 
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Hardware Readiness' -Level INIT -Component "PE.Engine"
+
         if ($SkipPreCheck) {
-            Write-LiteDeployLog "SkipPreCheck switch specified. Bypassing Phase 1 (HardwarePreCheck)." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+            Write-LiteDeployLog "SkipPreCheck specified. Bypassing Hardware Readiness." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
             $preCheckPassed = $true
             $deployment.HardwarePreCheck.Passed = $true
             $deployment.HardwarePreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -900,7 +927,7 @@ function Start-LiteDeployPipeline {
 
             $preCheckScript = $RequiredFiles.HardwarePrecheck
 
-Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "CHECK" -ForegroundColor Cyan -Component "Engine"
+            Write-LiteDeployLog "Launching System Readiness Pre-Check..." -Level "CHECK" -ForegroundColor Cyan -Component "PE.Engine"
             try {
                 $bootConfigPath = $RequiredFiles.BootConfig
                 if ([string]::IsNullOrWhiteSpace($bootConfigPath) -or -not (Test-Path -LiteralPath $bootConfigPath -PathType Leaf)) {
@@ -920,7 +947,7 @@ Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "C
                 }
             }
             catch {
-                Write-LiteDeployLog "Phase 1: Unhandled exception during HardwarePreCheck execution: $_" -Level "ERROR" -ForegroundColor Red -Component "Engine"
+                Write-LiteDeployLog "Phase 1: Unhandled exception during HardwarePreCheck execution: $_" -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
                 $deployment.Status = "Failed"
                 $deployment.Execution.Errors += "HardwarePreCheckException: $_"
                 $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -929,7 +956,7 @@ Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "C
             }
 
             if (-not $preCheckPassed) {
-                Write-LiteDeployLog "Phase 1: HardwarePreCheck did not pass or was cancelled by user. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+                Write-LiteDeployLog "HardwarePreCheck did not pass or was cancelled by user. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
                 $deployment.Status = "Cancelled"
                 $deployment.HardwarePreCheck.Passed = $false
                 $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -940,7 +967,35 @@ Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "C
             $deployment.HardwarePreCheck.Passed = $true
             $deployment.HardwarePreCheck.CompletedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
             Save-LiteDeployDeploymentState -DeploymentState $deployment
-            Write-LiteDeployLog "Phase 1: System Readiness Pre-Check completed successfully." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
+            Write-LiteDeployLog "Hardware readiness check passed." -Level "SUCCESS" -ForegroundColor Green -Component "PE.Engine"
+
+            if ($precheckResult -and $precheckResult.PSObject.Properties['Inventory'] -and $precheckResult.Inventory) {
+                $inv = $precheckResult.Inventory
+                # MDT-style detailed inventory (log-only, -NoConsole)
+                if (Get-Command Write-LiteDeployHardwareInventoryLog -ErrorAction SilentlyContinue) {
+                    Write-LiteDeployHardwareInventoryLog -Inventory $inv
+                }
+                # Useful console summary
+                $devVendor = if ($inv.PSObject.Properties['Manufacturer'] -and $inv.Manufacturer) { $inv.Manufacturer } elseif ($inv.PSObject.Properties['Vendor'] -and $inv.Vendor) { $inv.Vendor } else { '' }
+                $devModel = if ($inv.PSObject.Properties['Model'] -and $inv.Model) { $inv.Model } else { '' }
+                if ($devVendor -or $devModel) {
+                    Write-LiteDeployLog ("Device   : {0} {1}" -f $devVendor, $devModel).Trim() -Level "INFO" -Component "PE.Engine"
+                }
+                $fwMode = if ($inv.PSObject.Properties['BootMode'] -and $inv.BootMode) { $inv.BootMode } elseif ($inv.PSObject.Properties['FirmwareType'] -and $inv.FirmwareType) { $inv.FirmwareType } else { '' }
+                $secBoot = if ($inv.PSObject.Properties['SecureBootDisplay'] -and $inv.SecureBootDisplay) {
+                    $inv.SecureBootDisplay
+                } elseif ($inv.PSObject.Properties['SecureBootStatus'] -and $inv.SecureBootStatus) {
+                    $inv.SecureBootStatus
+                } elseif ($inv.PSObject.Properties['SecureBootIsEnabled'] -and $null -ne $inv.SecureBootIsEnabled) {
+                    if ($inv.SecureBootIsEnabled) { 'Enabled' } else { 'Disabled' }
+                } elseif ($inv.PSObject.Properties['SecureBootEnabled'] -and $null -ne $inv.SecureBootEnabled) {
+                    if ($inv.SecureBootEnabled) { 'Enabled' } else { 'Disabled' }
+                } else { '' }
+                $tpmVer = if ($inv.PSObject.Properties['TpmVersion'] -and $inv.TpmVersion) { $inv.TpmVersion } elseif ($inv.PSObject.Properties['TPMVersion'] -and $inv.TPMVersion) { $inv.TPMVersion } else { '' }
+                if ($fwMode -or $secBoot -or $tpmVer) {
+                    Write-LiteDeployLog ("Firmware : {0} | Secure Boot: {1} | TPM: {2}" -f $(if ($fwMode) { $fwMode } else { 'N/A' }), $(if ($secBoot) { $secBoot } else { 'N/A' }), $(if ($tpmVer) { $tpmVer } else { 'N/A' })) -Level "INFO" -Component "PE.Engine"
+                }
+            }
         }
 
         # --------------------------------------------------------------------------
@@ -952,7 +1007,9 @@ Write-LiteDeployLog "Phase 1: Launching System Readiness Pre-Check..." -Level "C
 
         $workflowScript = $RequiredFiles.WorkflowSelection
 
-Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Workflow Selection' -Level INIT -Component "PE.Engine"
+        Write-LiteDeployLog "Launching Workflow Selection Wizard..." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
         $workflowResult = $null
         try {
             $bootConfigPath = $RequiredFiles.BootConfig
@@ -968,7 +1025,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             $deploymentUid = Get-LiteDeployUid
             $deployment.DeploymentUid = $deploymentUid
             Save-LiteDeployDeploymentState -DeploymentState $deployment
-            Write-LiteDeployLog "Deployment UID: $deploymentUid" -Level INIT -Component Engine
+            Write-LiteDeployLog "Deployment UID: $deploymentUid" -Level INIT -Component "PE.Engine" -NoConsole
 
             # Execute WorkflowSelection directly in the current STA PowerShell process (same Ui.Theme).
             $workflowResult = & $workflowScript `
@@ -980,7 +1037,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
                 -Theme $uiTheme
         }
         catch {
-            Write-LiteDeployLog "Phase 2: Unhandled exception during WorkflowSelection execution: $_" -Level "ERROR" -ForegroundColor Red -Component "Engine"
+            Write-LiteDeployLog "Phase 2: Unhandled exception during WorkflowSelection execution: $_" -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
             $deployment.Status = "Failed"
             $deployment.Execution.Errors += "WorkflowSelectionException: $_"
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -995,7 +1052,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             $workflowResult.Passed -is [bool] -and $workflowResult.Passed
 
         if (-not $deploymentRequested) {
-            Write-LiteDeployLog "Phase 2: Workflow selection was cancelled by technician. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+            Write-LiteDeployLog "Phase 2: Workflow selection was cancelled by technician. Halting deployment pipeline." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
             $deployment.Status = "Cancelled"
             $deployment.Workflow.Confirmed = $false
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -1019,7 +1076,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             $workflowResult | Add-Member -NotePropertyName TargetDiskIndex -NotePropertyValue $targetDiskIndex -Force
         }
         catch {
-            Write-LiteDeployLog "WorkflowSelection returned an invalid target: $_" -Level ERROR -Component Engine
+            Write-LiteDeployLog "WorkflowSelection returned an invalid target: $_" -Level ERROR -Component "PE.Engine"
             $deployment.Status = 'Failed'
             $deployment.Execution.Errors += "InvalidWorkflowSelection: $_"
             Save-LiteDeployDeploymentState -DeploymentState $deployment
@@ -1059,10 +1116,10 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             "Standard OS In-Box Drivers (Windows Default)"
         }
 
-        Write-LiteDeployLog " [SUCCESS] WorkflowSelection confirmed." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog (" [INFO]    Workflow: {0}" -f $workflowName) -Level "INFO" -Component "Engine"
-        Write-LiteDeployLog (" [INFO]    Computer: {0} | {1}" -f $computerName, $diskLabel) -Level "INFO" -Component "Engine"
-        Write-LiteDeployLog (" [INFO]    Drivers: {0}" -f $drivers) -Level "INFO" -Component "Engine"
+        Write-LiteDeployLog "Workflow Selection confirmed." -Level "SUCCESS" -ForegroundColor Green -Component "PE.Engine"
+        Write-LiteDeployLog ("Workflow : {0}" -f $workflowName) -Level "INFO" -Component "PE.Engine"
+        Write-LiteDeployLog ("Computer : {0} | {1}" -f $computerName, $diskLabel) -Level "INFO" -Component "PE.Engine"
+        Write-LiteDeployLog ("Drivers  : {0}" -f $drivers) -Level "INFO" -Component "PE.Engine"
 
         # --------------------------------------------------------------------------
         # PHASE 3: DISK PREPARATION (Wipe, Layout, Format, Recovery Flags)
@@ -1096,7 +1153,9 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
         # Temporary OS staging drive letter in WinPE (defaults to "W")
         $osStagingDriveLetter = "W"
 
-        Write-LiteDeployLog "Phase 3: Formatting Disk $targetDiskIndex for $detectedBootMode deployment (Staging: ${osStagingDriveLetter}:)..." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Disk Preparation' -Level INIT -Component "PE.Engine"
+        Write-LiteDeployLog "Formatting Disk $targetDiskIndex for $detectedBootMode deployment (Staging: ${osStagingDriveLetter}:)..." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
 
         $diskResult = $null
         try {
@@ -1108,7 +1167,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             }
         }
         catch {
-            Write-LiteDeployLog "Phase 3 Failed: Unhandled exception during disk formatting: $_" -Level "ERROR" -ForegroundColor Red -Component "Engine"
+            Write-LiteDeployLog "Disk Preparation Failed: Unhandled exception during disk formatting: $_" -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
             $deployment.Status = "Failed"
             $deployment.Execution.Errors += "DiskPreparationException: $_"
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -1117,7 +1176,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
         }
 
         if (-not $diskResult -or -not $diskResult.Success) {
-            Write-LiteDeployLog "Phase 3 Failed: Disk formatting did not succeed." -Level "ERROR" -ForegroundColor Red -Component "Engine"
+            Write-LiteDeployLog "Disk Preparation Failed: Disk formatting did not succeed." -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
             $deployment.Status = "Failed"
             $deployment.Execution.Errors += "DiskPreparationFailed"
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -1151,13 +1210,13 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             $global:LiteDeployOsRoot = $osEnable.TargetRoot
             $global:LiteDeployOsLogDir = Join-Path $osEnable.TargetRoot "WorkLogs"
             $global:LiteDeployOsStatePath = Join-Path $osEnable.TargetRoot "DeploymentState.json"
-            Write-LiteDeployLog "Log/state mirror enabled on OS volume: $($osEnable.TargetRoot) (RAM + share + OS)." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+            Write-LiteDeployLog "Log/state mirror enabled on OS volume: $($osEnable.TargetRoot) (RAM + share + OS)." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine" -NoConsole
         }
 
         Save-LiteDeployDeploymentState -DeploymentState $deployment
         Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $deployment.Execution.RemoteLogDir
 
-        Write-LiteDeployLog "Phase 3: Disk $targetDiskIndex formatted successfully ($($diskResult.TotalSizeGB) GB, OS at $($diskResult.OSDriveLetter))." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
+        Write-LiteDeployLog "Disk $targetDiskIndex formatted successfully ($($diskResult.TotalSizeGB) GB, OS at $($diskResult.OSDriveLetter))." -Level "SUCCESS" -ForegroundColor Green -Component "PE.Engine"
 
         # --------------------------------------------------------------------------
         # PHASE 3.5: DRIVER STAGING & EXTRACTION
@@ -1165,8 +1224,11 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
         $stagedDriverPath = $null
         $driverSelection = if ($workflowResult.PSObject.Properties['DriverFolderPath']) { [string]$workflowResult.DriverFolderPath } else { "" }
 
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Driver Staging' -Level INIT -Component "PE.Engine"
+
         if (-not [string]::IsNullOrWhiteSpace($driverSelection) -and $driverSelection -notlike "*Standard OS In-Box Drivers*") {
-            Write-LiteDeployLog "Phase 3.5: Staging driver package for installation..." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+            Write-LiteDeployLog "Staging driver package for installation..." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
             try {
                 $driverDetection = if ($workflowResult.PSObject.Properties['DriverDetection']) { $workflowResult.DriverDetection } else { $null }
                 if ($null -eq $driverDetection) {
@@ -1194,14 +1256,17 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
                 $stageResult = Stage-LiteDeployDrivers -ShareRoot $RuntimePaths.DeploymentRoot -Detection $driverDetection -DestinationPath $osDriverStagingDest
                 if ($stageResult -and ($stageResult.PSObject.Properties['Success'] -and $stageResult.Success) -and ($stageResult.PSObject.Properties['DriverPath'] -and $stageResult.DriverPath)) {
                     $stagedDriverPath = [string]$stageResult.DriverPath
-                    Write-LiteDeployLog "Phase 3.5: Driver staging ready at '$stagedDriverPath'." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
+                    Write-LiteDeployLog "Driver package staged successfully at '$stagedDriverPath'." -Level "SUCCESS" -ForegroundColor Green -Component "PE.Engine"
                 } else {
-                    Write-LiteDeployLog "Phase 3.5: Driver staging completed with in-box fallback." -Level "INFO" -Component "Engine"
+                    Write-LiteDeployLog "Driver staging completed with in-box fallback." -Level "INFO" -Component "PE.Engine"
                 }
             }
             catch {
-                Write-LiteDeployLog "Phase 3.5: Driver staging encountered an error ($($_)). Continuing with in-box drivers." -Level "WARNING" -ForegroundColor Yellow -Component "Engine"
+                Write-LiteDeployLog "Driver Staging: Error encountered ($($_)). Continuing with in-box drivers." -Level "WARNING" -ForegroundColor Yellow -Component "PE.Engine"
             }
+        }
+        else {
+            Write-LiteDeployLog "Standard in-box drivers selected." -Level "INFO" -Component "PE.Engine"
         }
 
         # --------------------------------------------------------------------------
@@ -1216,7 +1281,8 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
 
         $imageScript = $RequiredFiles.Image
 
-# Extract selected OS SetupPath / ImagePath / ImageIndex from Workflow selec        $selectedSetupPath = ""
+# Extract selected OS SetupPath / ImagePath / ImageIndex from Workflow selection
+        $selectedSetupPath = ""
         $selectedImagePath = ""
         $selectedMediaRoot = ""
         $selectedTemplateUnattendPath = ""
@@ -1300,7 +1366,9 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             }
         }
 
-        Write-LiteDeployLog "Phase 4: Initiating OS installation (Image Index: $(if ($selectedImageIndex -gt 0) { $selectedImageIndex } else { 1 })) on $($diskResult.OSDriveLetter) via $effectiveEngineName..." -Level "INIT" -ForegroundColor Cyan -Component "Engine"
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Windows Installation' -Level INIT -Component "PE.Engine"
+        Write-LiteDeployLog "Initiating OS installation (Image Index: $(if ($selectedImageIndex -gt 0) { $selectedImageIndex } else { 1 })) on $($diskResult.OSDriveLetter) via $effectiveEngineName..." -Level "INIT" -ForegroundColor Cyan -Component "PE.Engine"
 
         $deployment.OSInstall.StartedTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         Save-LiteDeployDeploymentState -DeploymentState $deployment
@@ -1322,7 +1390,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             }
         }
         catch {
-            Write-LiteDeployLog "Phase 4 Failed: Unhandled exception during OS image application: $_" -Level "ERROR" -ForegroundColor Red -Component "Engine"
+            Write-LiteDeployLog "Windows Installation Failed: Unhandled exception during OS image application: $_" -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
             $deployment.Status = "Failed"
             $deployment.Execution.Errors += "OSInstallationException: $_"
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -1331,7 +1399,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
         }
 
         if (-not $imageResult -or -not $imageResult.Success) {
-            Write-LiteDeployLog "Phase 4 Failed: OS image application did not succeed." -Level "ERROR" -ForegroundColor Red -Component "Engine"
+            Write-LiteDeployLog "Windows Installation Failed: OS image application did not succeed." -Level "ERROR" -ForegroundColor Red -Component "PE.Engine"
             $deployment.Status = "Failed"
             $deployment.Execution.Errors += "OSInstallationFailed"
             $deployment.EndTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -1354,7 +1422,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
         Save-LiteDeployDeploymentState -DeploymentState $deployment
         Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $deployment.Execution.RemoteLogDir
 
-        Write-LiteDeployLog "Phase 4: Windows OS image applied successfully (Image Index: $($imageResult.ImageIndex)) in $($imageResult.DurationSeconds) seconds (Exit code: $($imageResult.ExitCode))." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
+        Write-LiteDeployLog "Windows OS image applied successfully in $($imageResult.DurationSeconds) seconds (Exit code: $($imageResult.ExitCode))." -Level "SUCCESS" -ForegroundColor Green -Component "PE.Engine"
 
         # --------------------------------------------------------------------------
         # PHASE 5: ORCHESTRATION SUMMARY / OFFLINE STAGING HANDOFF
@@ -1391,12 +1459,11 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             "Windows Image"
         }
 
-        Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog "LiteDeploy Pre-Flight, Disk Preparation & OS Apply Complete [UID: $deploymentUid]." -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog "Target Disk : Disk $targetDiskIndex ($detectedBootMode) | OS Partition: $($diskResult.OSDriveLetter)" -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog "OS Applied  : $appliedTarget (Exit Code: $($imageResult.ExitCode))" -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog "Unattend XML: $($imageResult.UnattendPath)" -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
-        Write-LiteDeployLog "================================================================" -Level "SUCCESS" -ForegroundColor Green -Component "Engine"
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog -Message 'Handoff' -Level INIT -Component "PE.Engine"
+        Write-LiteDeployLog ("Target Disk : Disk {0} ({1}) | OS Partition: {2}" -f $targetDiskIndex, $detectedBootMode, $diskResult.OSDriveLetter) -Level "INFO" -Component "PE.Engine"
+        Write-LiteDeployLog ("OS Applied  : {0} (Exit Code: {1})" -f $appliedTarget, $imageResult.ExitCode) -Level "INFO" -Component "PE.Engine"
+        Write-LiteDeployLog ("Unattend XML: {0}" -f $imageResult.UnattendPath) -Level "INFO" -Component "PE.Engine" -NoConsole
 
         try {
             Stop-LiteDeployProgressHost
@@ -1406,7 +1473,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             $deployment.Status = 'Failed'
             $deployment.Execution.CurrentStep = 'HandoffOrRebootFailed'
             $deployment.Execution.Errors += "HandoffOrReboot: $_"
-            Write-LiteDeployLog "Automatic restart stopped: $_" -Level ERROR -Component Engine
+            Write-LiteDeployLog "Automatic restart stopped: $_" -Level ERROR -Component "PE.Engine"
             Save-LiteDeployDeploymentState -DeploymentState $deployment
             # Best effort to retain the failure too; never retry reboot from this catch.
             $null = Sync-LiteDeployArtifactsToOsVolume -RuntimePaths $RuntimePaths -OsDriveLetter $osDriveForHandoff -DeploymentState $deployment -LocalRootName $localRootName
@@ -1417,6 +1484,26 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
             # Synchronize final logs to deployment share
             if ($deployment -and $deployment.Execution.RemoteLogDir) {
                 Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $deployment.Execution.RemoteLogDir
+            }
+
+            # If OS volume mirror already exists (e.g. formatted target volume), preserve native logs and state on failure
+            if ($deployment -and $deployment.Status -in @("Failed", "Cancelled")) {
+                try {
+                    $osDrive = if ($diskResult -and $diskResult.PSObject.Properties['OSDriveLetter'] -and $diskResult.OSDriveLetter) {
+                        [string]$diskResult.OSDriveLetter
+                    } elseif ($deployment.PSObject.Properties['Disk'] -and $deployment.Disk -and $deployment.Disk.PSObject.Properties['OSDriveLetter'] -and $deployment.Disk.OSDriveLetter) {
+                        [string]$deployment.Disk.OSDriveLetter
+                    } else { "" }
+
+                    $localRoot = if ($BootObject -and $BootObject.PSObject.Properties["LocalRootName"] -and $BootObject.LocalRootName) {
+                        [string]$BootObject.LocalRootName
+                    } else { "~LiteDeploy" }
+
+                    if ($osDrive -and (Test-Path -LiteralPath "$($osDrive.TrimEnd('\'))\$localRoot")) {
+                        $null = Sync-LiteDeployArtifactsToOsVolume -RuntimePaths $RuntimePaths -OsDriveLetter $osDrive -DeploymentState $deployment -LocalRootName $localRoot
+                    }
+                }
+                catch {}
             }
 
             # Progress: dismiss on success; leave Failed/Cancelled window on top for the technician.
@@ -1441,7 +1528,7 @@ Write-LiteDeployLog "Phase 2: Launching Workflow Selection Wizard..." -Level "IN
     }
 
 # ==============================================================================
-# ENTRY POINT — WinPE pipeline (FullOS already returned above when -ResumeFullOS)
+# ENTRY POINT  -  WinPE pipeline (FullOS already returned above when -ResumeFullOS)
 # ==============================================================================
 
 if ($MyInvocation.InvocationName -ne '.') {

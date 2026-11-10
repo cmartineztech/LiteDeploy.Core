@@ -17,29 +17,28 @@ Guides cover entry points, dependencies, parameters, effects, results and limits
 | Admin.Utilities | [Guide](../Engine/Admin/080-Utilities/README.md) |
 | Admin.UI.Drivers | [Guide](../Engine/Admin/090-UI/Drivers/README.md) |
 | Admin.UI.Images | [Guide](../Engine/Admin/090-UI/Images/README.md) |
-| Boot | [Guide](../Engine/Runtime/000-Boot/README.md) |
-| Logs | [Guide](../Engine/Runtime/010-Logs/README.md) |
+| PE.Boot | [Guide](../Engine/Runtime/000-Boot/README.md) |
+| PE.Engine | [Guide](../Engine/Runtime/010-Engine/README.md) (`LiteDeploy.PE.Engine.ps1`) |
+| OS.Engine | Same guide as Engine ([010-Engine](../Engine/Runtime/010-Engine/README.md)) — `LiteDeploy.OS.Engine.ps1`; live monitor is integrated |
 | Environment | [Guide](../Engine/Runtime/020-Environment/README.md) |
-| Hardware | [Guide](../Engine/Runtime/030-Hardware/README.md) |
-| State | [Guide](../Engine/Runtime/040-State/README.md) |
+| Session | [Guide](../Engine/Runtime/030-Session/README.md) |
+| Hardware | [Guide](../Engine/Runtime/040-Hardware/README.md) |
 | Workflow | [Guide](../Engine/Runtime/050-Workflow/README.md) |
 | Disk | [Guide](../Engine/Runtime/060-Disk/README.md) |
 | Drivers | [Guide](../Engine/Runtime/070-Drivers/README.md) |
 | Image | [Guide](../Engine/Runtime/080-Image/README.md) |
 | Packages | [Guide](../Engine/Runtime/090-Packages/README.md) |
-| Engine | [Guide](../Engine/Runtime/100-Engine/README.md) (`LiteDeploy.PE.Engine.ps1`) |
-| FullOS | Same guide as Engine ([100-Engine](../Engine/Runtime/100-Engine/README.md)) — `LiteDeploy.OS.Engine.ps1`; Interactive Probe is temporary |
-| UI.HardwarePrecheck | [Guide](../Engine/Runtime/110-UI/HardwarePrecheck/README.md) |
-| UI.HostShell | [Guide](../Engine/Runtime/110-UI/HostShell/README.md) |
-| UI.Progress | [Guide](../Engine/Runtime/110-UI/Progress/README.md) |
-| UI.WorkflowSelection | [Guide](../Engine/Runtime/110-UI/WorkflowSelection/README.md) |
-| UI.WorkflowSelectionDriverPicker | [Guide](../Engine/Runtime/110-UI/WorkflowSelection/DRIVER_PICKER.md) |
-| UI.Theme | [Guide](../Engine/Runtime/110-UI/Theme/README.md) |
+| UI.HardwarePrecheck | [Guide](../Engine/Runtime/100-UI/HardwarePrecheck/README.md) |
+| UI.HostShell | [Guide](../Engine/Runtime/100-UI/HostShell/README.md) |
+| UI.Progress | [Guide](../Engine/Runtime/100-UI/Progress/README.md) |
+| UI.WorkflowSelection | [Guide](../Engine/Runtime/100-UI/WorkflowSelection/README.md) |
+| UI.WorkflowSelectionDriverPicker | [Guide](../Engine/Runtime/100-UI/WorkflowSelection/DRIVER_PICKER.md) |
+| UI.Theme | [Guide](../Engine/Runtime/100-UI/Theme/README.md) |
 | Architecture checks | [Guide](../_Tests/README.md) (`_Tests\` — not published) |
 | Component templates / inventory | [Guide](../_Templates/README.md) (`_Templates\` — not published) |
-| Progress emulator | [Guide](../Engine/Runtime/110-UI/Progress/TESTING.md) |
+| Progress emulator | [Guide](../Engine/Runtime/100-UI/Progress/TESTING.md) |
 
-FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, Interactive Probe in a second window) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
+FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, live interactive monitor) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
 
 ## Deployment setup and agreed designs
 

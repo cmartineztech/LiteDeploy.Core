@@ -24,7 +24,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Host"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Packages")
+        Dependencies         = @("Session", "Packages")
         Description          = "Create/edit/validate package.json definitions under Content\\Packages."
     }
 }

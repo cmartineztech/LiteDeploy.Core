@@ -49,7 +49,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"                     # "WinPE", "FullOS", "Host", or "Universal"
         MinPowerShellVersion = "5.1"                       # Minimum supported PowerShell version
         Author               = "LiteDeploy Team"           # Maintainer / Author
-        Dependencies         = @("LogWriter")              # Sibling component IDs required
+        Dependencies         = @("Session")              # Sibling component IDs required
         Description          = "Template blueprint for LiteDeploy standardized components."
     }
 }

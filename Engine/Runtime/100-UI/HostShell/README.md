@@ -40,7 +40,7 @@ From the repository root in Windows PowerShell 5.1 (STA for UI/Engine). This has
 
 ~~~powershell
 . '.\Engine\Runtime\020-Environment\LiteDeploy.Environment.ps1' -Mode Development
-$component = '.\Engine\Runtime\110-UI\HostShell\LiteDeploy.UI.HostShell.ps1'
+$component = '.\Engine\Runtime\100-UI\HostShell\LiteDeploy.UI.HostShell.ps1'
 . $component
 Write-LiteDeployHostShellProgress -Percent 25
 ~~~

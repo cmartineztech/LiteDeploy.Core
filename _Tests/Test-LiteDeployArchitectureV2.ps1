@@ -57,25 +57,24 @@ foreach ($source in Get-ChildItem -LiteralPath $scriptsRoot -Filter '*.ps1' -Rec
 
 $requiredRuntime = @(
     "Runtime\000-Boot\LiteDeploy.PE.Boot.ps1",
-    "Runtime\010-Logs\LiteDeploy.Logs.ps1",
+    "Runtime\010-Engine\LiteDeploy.PE.Engine.ps1",
+    "Runtime\010-Engine\LiteDeploy.OS.Engine.ps1",
     "Runtime\020-Environment\LiteDeploy.Environment.ps1",
-    "Runtime\030-Hardware\LiteDeploy.Hardware.ps1",
-    "Runtime\040-State\LiteDeploy.State.ps1",
+    "Runtime\030-Session\LiteDeploy.Session.ps1",
+    "Runtime\040-Hardware\LiteDeploy.Hardware.ps1",
     "Runtime\050-Workflow\LiteDeploy.Workflow.ps1",
     "Runtime\060-Disk\LiteDeploy.Disk.ps1",
     "Runtime\070-Drivers\LiteDeploy.Drivers.ps1",
     "Runtime\080-Image\LiteDeploy.Image.ps1",
     "Runtime\090-Packages\LiteDeploy.Packages.ps1",
-    "Runtime\100-Engine\LiteDeploy.PE.Engine.ps1",
-    "Runtime\100-Engine\LiteDeploy.OS.Engine.ps1",
-    "Runtime\110-UI\HostShell\LiteDeploy.UI.HostShell.ps1",
-    "Runtime\110-UI\Theme\LiteDeploy.UI.Theme.xaml",
-    "Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1",
-    "Runtime\110-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.xaml",
-    "Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1",
-    "Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.xaml",
-    "Runtime\110-UI\Progress\LiteDeploy.UI.Progress.ps1",
-    "Runtime\110-UI\Progress\LiteDeploy.UI.Progress.xaml"
+    "Runtime\100-UI\HostShell\LiteDeploy.UI.HostShell.ps1",
+    "Runtime\100-UI\Theme\LiteDeploy.UI.Theme.xaml",
+    "Runtime\100-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.ps1",
+    "Runtime\100-UI\HardwarePrecheck\LiteDeploy.UI.HardwarePrecheck.xaml",
+    "Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1",
+    "Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.xaml",
+    "Runtime\100-UI\Progress\LiteDeploy.UI.Progress.ps1",
+    "Runtime\100-UI\Progress\LiteDeploy.UI.Progress.xaml"
 )
 
 $requiredAdmin = @(
@@ -98,10 +97,9 @@ foreach ($rel in ($requiredRuntime + $requiredAdmin)) {
 
 # Metadata + parse checks for core components
 $metaTargets = @(
-    "Runtime\010-Logs\LiteDeploy.Logs.ps1",
+    "Runtime\030-Session\LiteDeploy.Session.ps1",
     "Runtime\020-Environment\LiteDeploy.Environment.ps1",
-    "Runtime\030-Hardware\LiteDeploy.Hardware.ps1",
-    "Runtime\040-State\LiteDeploy.State.ps1",
+    "Runtime\040-Hardware\LiteDeploy.Hardware.ps1",
     "Runtime\050-Workflow\LiteDeploy.Workflow.ps1",
     "Runtime\060-Disk\LiteDeploy.Disk.ps1",
     "Runtime\090-Packages\LiteDeploy.Packages.ps1",
@@ -119,20 +117,20 @@ foreach ($rel in $metaTargets) {
     }
 }
 
-# Dot-source load order (Logs -> Environment -> Hardware -> State)
+# Dot-source load order (Session -> Environment -> Hardware)
 try {
-    $logs = Join-Path $scriptsRoot "Runtime\010-Logs\LiteDeploy.Logs.ps1"
+    $session = Join-Path $scriptsRoot "Runtime\030-Session\LiteDeploy.Session.ps1"
     $envc = Join-Path $scriptsRoot "Runtime\020-Environment\LiteDeploy.Environment.ps1"
-    $hw = Join-Path $scriptsRoot "Runtime\030-Hardware\LiteDeploy.Hardware.ps1"
-    $state = Join-Path $scriptsRoot "Runtime\040-State\LiteDeploy.State.ps1"
-    . $logs
+    $hw = Join-Path $scriptsRoot "Runtime\040-Hardware\LiteDeploy.Hardware.ps1"
+    . $session
     . $envc
     . $hw
-    . $state
     Assert-True ([bool](Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue)) "Dot-source: Write-LiteDeployLog"
     Assert-True ([bool](Get-Command Get-LiteDeployEnvironment -ErrorAction SilentlyContinue)) "Dot-source: Get-LiteDeployEnvironment"
     Assert-True ([bool](Get-Command Get-LiteDeployHardwareInventory -ErrorAction SilentlyContinue)) "Dot-source: Get-LiteDeployHardwareInventory"
     Assert-True ([bool](Get-Command Get-LiteDeployState -ErrorAction SilentlyContinue)) "Dot-source: Get-LiteDeployState"
+    Assert-True ([bool](Get-Command New-LiteDeployDeploymentObject -ErrorAction SilentlyContinue)) "Dot-source: New-LiteDeployDeploymentObject"
+    Assert-True ([bool](Get-Command Save-LiteDeployDeploymentState -ErrorAction SilentlyContinue)) "Dot-source: Save-LiteDeployDeploymentState"
 }
 catch {
     Assert-True $false "Dot-source load order failed: $_"
@@ -153,7 +151,7 @@ $sourceRuntimeRoot = Join-Path $scriptsRoot 'Runtime'
 
 # Loading Engine must retain in-memory configuration and never start its pipeline.
 # Child scope contains dot-sourced parameter names and helper functions.
-$engineTargets = @(@{ Path = (Join-Path $sourceRuntimeRoot '100-Engine\LiteDeploy.PE.Engine.ps1'); Mode = 'Development'; EnvironmentPath = (Join-Path $sourceRuntimeRoot '020-Environment\LiteDeploy.Environment.ps1'); ComponentRoot = $sourceRuntimeRoot })
+$engineTargets = @(@{ Path = (Join-Path $sourceRuntimeRoot '010-Engine\LiteDeploy.PE.Engine.ps1'); Mode = 'Development'; EnvironmentPath = (Join-Path $sourceRuntimeRoot '020-Environment\LiteDeploy.Environment.ps1'); ComponentRoot = $sourceRuntimeRoot })
 if ($PublishedRuntimeRoot) { $engineTargets += @{ Path = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.PE.Engine.ps1'); Mode = 'Production'; EnvironmentPath = (Join-Path $PublishedRuntimeRoot 'LiteDeploy.Environment.ps1'); ComponentRoot = $PublishedRuntimeRoot } }
 foreach ($engineTarget in $engineTargets) {
     try {
@@ -202,8 +200,8 @@ foreach ($engineTarget in $engineTargets) {
         $registrationChecks = & {
             . $imagePathForTest
             function Write-ComponentLog { param($Message, $Level, $ForegroundColor) }
-            $stateComponent = if ($engineTarget.Mode -eq 'Development') { Join-Path $engineTarget.ComponentRoot '040-State\LiteDeploy.State.ps1' } else { Join-Path $engineTarget.ComponentRoot 'LiteDeploy.State.ps1' }
-            . $stateComponent
+            $sessionComponent = if ($engineTarget.Mode -eq 'Development') { Join-Path $engineTarget.ComponentRoot '030-Session\LiteDeploy.Session.ps1' } else { Join-Path $engineTarget.ComponentRoot 'LiteDeploy.Session.ps1' }
+            . $sessionComponent
             $template = Join-Path $RepoRoot 'DeploymentShare\Content\Unattend\IntuneReady.xml'
             $answer = Join-Path $TestRoot 'RegistrationAnswer.xml'
             $optionalClean = $true
@@ -393,12 +391,12 @@ try {
     . $envc -Mode Development -RuntimeRoot $sourceRuntimeRoot
     $networkBoot = [pscustomobject]@{ DeploymentType = 'Network'; DriveLetter = $TestRoot }
     $networkPaths = Get-LiteDeployRuntimePaths -BootObject $networkBoot
-    Assert-True ($networkPaths.RequiredFiles.Hardware -eq (Join-Path $sourceRuntimeRoot '030-Hardware\LiteDeploy.Hardware.ps1')) 'Development path is explicit'
+    Assert-True ($networkPaths.RequiredFiles.Hardware -eq (Join-Path $sourceRuntimeRoot '040-Hardware\LiteDeploy.Hardware.ps1')) 'Development path is explicit'
     . $envc -Mode Production -RuntimeRoot $sourceRuntimeRoot
     $flatPaths = Get-LiteDeployRuntimePaths -BootObject $networkBoot
     Assert-True ($flatPaths.RequiredFiles.Hardware -eq (Join-Path $sourceRuntimeRoot 'LiteDeploy.Hardware.ps1')) 'Published layout does not fall back to available development files'
     . $envc -Mode Development -RuntimeRoot $sourceRuntimeRoot
-    $fullOsPaths = Get-LiteDeployRuntimePaths -BootObject $networkBoot -RequiredComponents @('Environment', 'BootConfig', 'Logs', 'State', 'Packages')
+    $fullOsPaths = Get-LiteDeployRuntimePaths -BootObject $networkBoot -RequiredComponents @('Environment', 'BootConfig', 'Session', 'Packages')
     Assert-True ($fullOsPaths.RequiredFiles.Packages -eq (Join-Path $sourceRuntimeRoot '090-Packages\LiteDeploy.Packages.ps1') -and
         -not $fullOsPaths.RequiredFiles.PSObject.Properties['Disk']) 'Environment maps the requested FullOS subset without adding WinPE files'
 
@@ -449,9 +447,9 @@ try {
         }
     }
     Assert-True $checks.BootHelpersPresent 'Boot imports retain helper functions in the caller scope'
-    Assert-True $checks.HelpersReused 'Drivers reuses the existing Logs and Hardware functions'
+    Assert-True $checks.HelpersReused 'Drivers reuses the existing Session and Hardware functions'
     Assert-True $checks.HostShellLoaded 'Console helpers load independently from Environment'
-    Assert-True $checks.LogCopied 'Logs copies the expected content using explicit RuntimePaths'
+    Assert-True $checks.LogCopied 'Session copies the expected content using explicit RuntimePaths'
 }
 catch { Assert-True $false "Central layout regressions: $_" }
 
@@ -459,7 +457,7 @@ Write-Host ""
 # The real selection contract returns configuration in memory, not in its JSON copy.
 try {
     $contract = & {
-        $ui = Join-Path $scriptsRoot 'Runtime\110-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1'
+        $ui = Join-Path $scriptsRoot 'Runtime\100-UI\WorkflowSelection\LiteDeploy.UI.WorkflowSelection.ps1'
         $tree = [Management.Automation.Language.Parser]::ParseFile($ui, [ref]$null, [ref]$null)
         foreach ($name in @('New-LiteDeployWorkflowSelectionResult','Save-LiteDeployWorkflowSelectionJson')) {
             $node = $tree.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)
@@ -484,7 +482,7 @@ try {
     foreach ($scenario in @('PrecheckCancelled', 'SelectionCancelled', 'SelectionException', 'InvalidTarget', 'Confirmed', 'ReloadedTrue', 'ReloadedFalse', 'DiskMismatch', 'MissingConfig')) {
         $result = & {
             $events = [System.Collections.Generic.List[string]]::new()
-            $enginePath = Join-Path $scriptsRoot 'Runtime\100-Engine\LiteDeploy.PE.Engine.ps1'
+            $enginePath = Join-Path $scriptsRoot 'Runtime\010-Engine\LiteDeploy.PE.Engine.ps1'
             $tree = [System.Management.Automation.Language.Parser]::ParseFile($enginePath, [ref]$null, [ref]$null)
             foreach ($name in @('Start-LiteDeployPipeline', 'Get-LiteDeploySelectedDiskNumber')) {
                 $node = $tree.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)

@@ -80,7 +80,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs")
+        Dependencies         = @("Session")
         Description          = "Workflow and OS catalog loading, validation, and plan resolution (business logic; UI lives in UI.WorkflowSelection)."
     }
 }

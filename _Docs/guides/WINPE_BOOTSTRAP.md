@@ -18,7 +18,7 @@ X:\~LiteDeploy\
 
 `LiteDeploy.PE.Boot.ps1` does not require any helper scripts inside `boot.wim`. It contains embedded CMTrace-compliant logging (`Write-LiteDeployLog`), network hardware checking (`Test-LiteDeployNetworkHardware`), DHCP / link-up waiting, SMB port 445 connectivity probing, CredUI credentials prompt, and persistent share mounting (`Z:`).
 
-All modular runtime components (`LiteDeploy.Logs.ps1`, `LiteDeploy.Environment.ps1`, `LiteDeploy.Hardware.ps1`, `LiteDeploy.PE.Engine.ps1`, UI packages, and tools) reside exclusively on the deployment share (`Z:\Engine\Runtime\`) and are invoked directly from the share once mounted. Production is the default mode.
+All modular runtime components (`LiteDeploy.Session.ps1`, `LiteDeploy.Environment.ps1`, `LiteDeploy.Hardware.ps1`, `LiteDeploy.PE.Engine.ps1`, UI packages, and tools) reside exclusively on the deployment share (`Z:\Engine\Runtime\`) and are invoked directly from the share once mounted. Production is the default mode.
 
 ## Stage an already-mounted image
 

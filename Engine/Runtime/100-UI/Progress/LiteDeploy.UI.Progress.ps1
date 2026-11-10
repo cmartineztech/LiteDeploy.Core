@@ -33,7 +33,7 @@
 .PARAMETER WinPE
     Force the WinPE enterprise layout (same as -Environment WinPE). Use this from Engine
     so Progress aligns with the WinPE execution environment. Prefers the RAM memory-map
-    state published by LiteDeploy.State (Local\LiteDeploy.DeploymentState), then falls back
+    state published by LiteDeploy.Session (Local\LiteDeploy.DeploymentState), then falls back
     to DeploymentState.json on the SystemDrive RAM disk (X:\ in WinPE).
 
 .EXAMPLE
@@ -81,7 +81,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("State")
+        Dependencies         = @("Session")
         Description          = "WPF progress dashboard: reads Engine state from RAM memory-map (preferred) or DeploymentState.json; -WinPE selects WinPE layout."
     }
 }

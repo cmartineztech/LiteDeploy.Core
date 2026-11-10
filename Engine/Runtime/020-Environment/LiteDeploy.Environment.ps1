@@ -15,8 +15,7 @@
 
     Run directly (no dot-source) to print Get-LiteDeployEnvironment. -Metadata returns the component record.
 
-    ComponentId: Environment    Dependencies: Logs
-
+    ComponentId: Environment    Dependencies: Session
 .NOTES
     PowerShell 5.1, WinPE 5.1/10/11, Set-StrictMode -Version 2.0 compatible.
     Console controls live in UI.HostShell. Load Environment once with -Mode Development for source use.
@@ -50,7 +49,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Universal"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs")
+        Dependencies         = @("Session")
         Description          = "Explicit runtime paths, environment detection, share connectivity, and process execution."
     }
 }
@@ -80,37 +79,42 @@ $global:LiteDeployPathSettings = [pscustomobject]@{
         'PE.Engine' = 'LiteDeploy.PE.Engine.ps1'
         FullOS = 'LiteDeploy.OS.Engine.ps1'
         'OS.Engine' = 'LiteDeploy.OS.Engine.ps1'
-        'OS.InteractiveProbe' = 'LiteDeploy.OS.InteractiveProbe.ps1'
-        Logs = 'LiteDeploy.Logs.ps1'
+        Session = 'LiteDeploy.Session.ps1'
         Hardware = 'LiteDeploy.Hardware.ps1'
-        State = 'LiteDeploy.State.ps1'
         Workflow = 'LiteDeploy.Workflow.ps1'
         Drivers = 'LiteDeploy.Drivers.ps1'
         Disk = 'LiteDeploy.Disk.ps1'
         Image = 'LiteDeploy.Image.ps1'
         Packages = 'LiteDeploy.Packages.ps1'
         HostShell = 'UI\LiteDeploy.UI.HostShell.ps1'
+        'UI.HostShell' = 'UI\LiteDeploy.UI.HostShell.ps1'
         HardwarePrecheck = 'UI\LiteDeploy.UI.HardwarePrecheck.ps1'
+        'UI.HardwarePrecheck' = 'UI\LiteDeploy.UI.HardwarePrecheck.ps1'
         HardwarePrecheckView = 'UI\LiteDeploy.UI.HardwarePrecheck.xaml'
         WorkflowSelection = 'UI\LiteDeploy.UI.WorkflowSelection.ps1'
+        'UI.WorkflowSelection' = 'UI\LiteDeploy.UI.WorkflowSelection.ps1'
         WorkflowSelectionView = 'UI\LiteDeploy.UI.WorkflowSelection.xaml'
         DriverPicker = 'UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
+        'UI.DriverPicker' = 'UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.ps1'
         DriverPickerView = 'UI\LiteDeploy.UI.WorkflowSelectionDriverPicker.xaml'
         Progress = 'UI\LiteDeploy.UI.Progress.ps1'
+        'UI.Progress' = 'UI\LiteDeploy.UI.Progress.ps1'
         AdminDrivers = '..\Admin\LiteDeploy.Admin.Drivers.ps1'
     }
     DevelopmentFolders = @{
-        Environment = '020-Environment'; Boot = '000-Boot'; 'PE.Boot' = '000-Boot'; Engine = '100-Engine'; 'PE.Engine' = '100-Engine'; FullOS = '100-Engine'; 'OS.Engine' = '100-Engine'; 'OS.InteractiveProbe' = '100-Engine'
-        Logs = '010-Logs'; Hardware = '030-Hardware'; State = '040-State'
+        Environment = '020-Environment'; Boot = '000-Boot'; 'PE.Boot' = '000-Boot'; Engine = '010-Engine'; 'PE.Engine' = '010-Engine'; FullOS = '010-Engine'; 'OS.Engine' = '010-Engine'
+        Session = '030-Session'; Hardware = '040-Hardware'
         Workflow = '050-Workflow'; Drivers = '070-Drivers'; Disk = '060-Disk'
-        Image = '080-Image'; Packages = '090-Packages'; HostShell = '110-UI\HostShell'
-        HardwarePrecheck = '110-UI\HardwarePrecheck'; HardwarePrecheckView = '110-UI\HardwarePrecheck'
-        WorkflowSelection = '110-UI\WorkflowSelection'; WorkflowSelectionView = '110-UI\WorkflowSelection'
-        DriverPicker = '110-UI\WorkflowSelection'; DriverPickerView = '110-UI\WorkflowSelection'
-        Progress = '110-UI\Progress'; AdminDrivers = '..\Admin\030-Drivers'
+        Image = '080-Image'; Packages = '090-Packages'
+        HostShell = '100-UI\HostShell'; 'UI.HostShell' = '100-UI\HostShell'
+        HardwarePrecheck = '100-UI\HardwarePrecheck'; 'UI.HardwarePrecheck' = '100-UI\HardwarePrecheck'; HardwarePrecheckView = '100-UI\HardwarePrecheck'
+        WorkflowSelection = '100-UI\WorkflowSelection'; 'UI.WorkflowSelection' = '100-UI\WorkflowSelection'; WorkflowSelectionView = '100-UI\WorkflowSelection'
+        DriverPicker = '100-UI\WorkflowSelection'; 'UI.DriverPicker' = '100-UI\WorkflowSelection'; DriverPickerView = '100-UI\WorkflowSelection'
+        Progress = '100-UI\Progress'; 'UI.Progress' = '100-UI\Progress'
+        AdminDrivers = '..\Admin\030-Drivers'
     }
 }
-# File-only log helper: uses Logs when loaded, otherwise stays silent (verbose only).
+# File-only log helper: uses Session when loaded, otherwise stays silent (verbose only).
 function Write-LiteDeployEnvironmentLog {
     param([string]$Message, [string]$Level = "INFO")
     if (Get-Command -Name Write-LiteDeployLog -ErrorAction SilentlyContinue) {

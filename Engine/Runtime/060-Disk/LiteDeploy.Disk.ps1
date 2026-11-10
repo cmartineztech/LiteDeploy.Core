@@ -88,7 +88,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Logs", "Hardware")
+        Dependencies         = @("Session", "Hardware")
         Description          = "Target disk wipe, UEFI (GPT) and Legacy (MBR) partition layout, formatting, and WinRE attributes. Standalone execution is read-only unless -ConfirmDestroy."
     }
 }
@@ -111,16 +111,22 @@ function Write-ComponentLog {
         [ValidateSet("INFO", "SUCCESS", "INIT", "CHECK", "WARNING", "RETRY", "ERROR")]
         [string]$Level = "INFO",
 
-        [ConsoleColor]$ForegroundColor = [ConsoleColor]::White
+        [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
+
+        [switch]$NoConsole,
+
+        [switch]$NoPrefix
     )
 
     $meta = Get-LiteDeployComponentMetadata
 
     if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
-        Write-LiteDeployLog -Message $Message -Level $Level -Component $meta.ComponentId -ForegroundColor $ForegroundColor
+        Write-LiteDeployLog -Message $Message -Level $Level -Component $meta.ComponentId -ForegroundColor $ForegroundColor -NoConsole:$NoConsole -NoPrefix:$NoPrefix
     }
     else {
-        Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
+        if (-not $NoConsole) {
+            Write-Host " [$($Level.PadRight(7))] $Message" -ForegroundColor $ForegroundColor
+        }
     }
 }
 
