@@ -28,10 +28,7 @@ For WinPE, include the optional components needed by the code: WinPE-WMI, WinPE-
 WinPE-Scripting, WinPE-PowerShell, and WinPE-StorageWMI. Include suitable storage/network
 drivers and validate share access on target hardware.
 
-Microsoft lists WPF as unsupported in WinPE-NetFX. LiteDeploy currently uses WPF, so
-standard optional components alone do not establish UI compatibility. Validate your
-customized boot image or provide a supported UI approach before claiming general WinPE
-compatibility. See the [Microsoft WinPE component reference](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-add-packages--optional-components-reference?view=windows-11).
+Microsoft lists WPF as unsupported in WinPE-NetFX due to the absence of 3D hardware graphics acceleration. Without software-only rendering, WPF fails with `System.OutOfMemoryException` during `$window.ShowDialog()`. LiteDeploy enforces Software-Only WPF Render Mode (`[System.Windows.Media.RenderOptions]::ProcessRenderMode = SoftwareOnly`) across all WinPE UI scripts and preemptively in `LiteDeploy.PE.Engine.ps1`, allowing WPF windows to render reliably using CPU software rasterization. See the [Microsoft WinPE component reference](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-add-packages--optional-components-reference?view=windows-11).
 
 ## Safe local checks
 

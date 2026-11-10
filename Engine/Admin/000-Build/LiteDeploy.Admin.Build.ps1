@@ -37,16 +37,16 @@
     Outputs standardized component metadata and exits immediately.
 
 .EXAMPLE
-    .\LiteDeploy.SyncComponents.ps1 -DeploymentShare "D:\DeploymentShare"
+    .\LiteDeploy.Admin.Build.ps1 -DeploymentShare "D:\DeploymentShare"
 
 .EXAMPLE
-    .\LiteDeploy.SyncComponents.ps1 -WinPEStagingPath "C:\WinPE_Build\Mount" -Clean
+    .\LiteDeploy.Admin.Build.ps1 -WinPEStagingPath "C:\WinPE_Build\Mount" -Clean
 
 .EXAMPLE
-    .\LiteDeploy.SyncComponents.ps1 -DeploymentShare "\\Server\DeploymentShare$" -WinPEStagingPath "C:\WinPE_Build\Mount"
+    .\LiteDeploy.Admin.Build.ps1 -DeploymentShare "\\Server\DeploymentShare$" -WinPEStagingPath "C:\WinPE_Build\Mount"
 
 .NOTES
-    LiteDeploy Core Component Standard v1.0
+    LiteDeploy Core Component Standard v2.0
     Target Environment: Host
     PowerShell Version: 5.1+
     Strict Mode: Version 2.0
@@ -97,8 +97,8 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Host"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Session")
-        Description          = "Builds/publishes deployable LiteDeploy artifacts, WinPE bootstrap staging, and share sync (formerly SyncComponents)."
+        Dependencies         = @()
+        Description          = "Builds/publishes deployable LiteDeploy artifacts, WinPE bootstrap staging, and share sync."
     }
 }
 
@@ -517,8 +517,8 @@ function Start-LiteDeploySync {
         Write-Host "   -MediaRoot        <Path>   : Sync to offline USB/ISO media root" -ForegroundColor White
         Write-Host ""
         Write-Host " Example:" -ForegroundColor Cyan
-        Write-Host "   .\LiteDeploy.SyncComponents.ps1 -DeploymentShare `"D:\DeploymentShare`"" -ForegroundColor Gray
-        Write-Host "   .\LiteDeploy.SyncComponents.ps1 -WinPEStagingPath `"C:\WinPE_Build\Mount`"" -ForegroundColor Gray
+        Write-Host "   .\LiteDeploy.Admin.Build.ps1 -DeploymentShare `"D:\DeploymentShare`"" -ForegroundColor Gray
+        Write-Host "   .\LiteDeploy.Admin.Build.ps1 -WinPEStagingPath `"C:\WinPE_Build\Mount`"" -ForegroundColor Gray
         Write-Host ""
         return
     }

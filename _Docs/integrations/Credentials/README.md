@@ -69,6 +69,6 @@ flowchart TD
     Probe --> Done["Clear Run + restore EnableLUA if UacBypassed"]
 ```
 
-Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon local `user` + temporary UAC bypass when needed) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume.
+Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon ephemeral local `LD-<UID>` + temporary UAC bypass + Environment Shielding) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume.
 
 See [EndToEndDeploymentGuide.md](EndToEndDeploymentGuide.md), [Tools README](../../../Engine/Tools/README.md), and [deployment diagrams](../../architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md).

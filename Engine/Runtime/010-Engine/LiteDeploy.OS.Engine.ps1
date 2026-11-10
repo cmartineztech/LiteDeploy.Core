@@ -533,7 +533,15 @@ function Set-LiteDeployFullOSHighPerformance {
     <#
     .SYNOPSIS
         Sets the active power scheme to High Performance and disables AC/DC sleep and display timeouts.
-        Applies universally across all deployment workflows in FullOS to maximize performance and prevent standby.
+    .DESCRIPTION
+        Applies universally across all deployment workflows in FullOS (Standard, Intune, Domain Join)
+        to prevent system suspension, standby, and screen locking during software installations.
+        Activates scheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c (or duplicates it if missing) and
+        sets monitor, disk, standby, and hibernate timeouts to 0 on both AC and DC power.
+    .OUTPUTS
+        [pscustomobject] containing Success, SchemeSet, TimeoutsConfigured, and Messages.
+    .NOTES
+        Safe to invoke under all credentials and environments. Non-destructive.
     #>
     [CmdletBinding()]
     param()
@@ -592,10 +600,22 @@ function Set-LiteDeployFullOSHighPerformance {
 function Enable-LiteDeployFullOSShielding {
     <#
     .SYNOPSIS
-        Applies environment shielding (GPO freeze, AutoLogon preservation, CAD and LegalNotice suppression)
-        when FullOS executes under a non-Administrator account (e.g. ephemeral service account LD-<UID>).
+        Applies environment shielding (GPO freeze, AutoLogon preservation, CAD and LegalNotice suppression).
+    .DESCRIPTION
+        When FullOS executes under a non-builtin Administrator account (e.g. ephemeral service account
+        LD-<UID> in Domain Join), background domain Group Policies can re-enable UAC, enforce CAD,
+        display modal legal notice dialogues, or kill AutoLogon before packages finish.
+        This function:
+          1. Freezes background GPO refresh (DisableGPO = 1).
+          2. Backs up and blanks interactive legalnoticecaption and legalnoticetext.
+          3. Suppresses Ctrl+Alt+Del (DisableCAD = 1).
+          4. Suppresses Lock Screen and screen savers (NoLockScreen = 1).
+          5. Preserves AutoLogon count at 999.
+    .PARAMETER UserName
+        The active interactive identity username (e.g. LD-<UID>) recorded in the shielding marker.
+    .OUTPUTS
+        [pscustomobject] containing Success, GpoFrozen, LegalNoticeBlank, CadDisabled, LockScreenBlank, AutoLogonArmed, and Message.
     .NOTES
-        Prevents background domain GPOs or login legal notices from killing AutoLogon or breaking execution before completion.
         All modified properties are backed up to HKLM:\SOFTWARE\LiteDeploy\FullOS\ShieldingBackup for cleanup.
     #>
     [CmdletBinding()]
@@ -694,7 +714,17 @@ function Disable-LiteDeployFullOSShielding {
     <#
     .SYNOPSIS
         Removes environment shielding, restores original policies from backup, and triggers group policy refresh.
+    .DESCRIPTION
         Invoked during final FullOS completion and cleanup (Clear-LiteDeployFullOSRunKey).
+        Restores DisableGPO, NoLockScreen, and legal notice registry values from
+        HKLM:\SOFTWARE\LiteDeploy\FullOS\ShieldingBackup, removes shielding markers, and
+        optionally executes 'gpupdate.exe /force' in the background to apply corporate policies.
+    .PARAMETER SkipGpUpdate
+        If specified, bypasses launching gpupdate.exe /force.
+    .OUTPUTS
+        [pscustomobject] containing Success, ShieldingRemoved, GpoUnfrozen, LegalNoticesRestored, LockScreenRestored, GpUpdateTriggered, and Message.
+    .NOTES
+        Safe no-op when ShieldingActive marker is not present.
     #>
     [CmdletBinding()]
     param(
@@ -995,6 +1025,14 @@ function Clear-LiteDeployFullOSSetupCmdLine {
 
 # Legacy aliases kept so older call sites / docs referring to "SetupCmdLine arm" still resolve to Run.
 function Set-LiteDeployFullOSSetupCmdLine {
+    <#
+    .SYNOPSIS
+        Legacy compatibility shim: redirects Setup\CmdLine arming to Set-LiteDeployFullOSRunKey.
+    .DESCRIPTION
+        Arming Setup\CmdLine caused Windows Setup-continue reboot loops. LiteDeploy FullOS
+        standardized on HKLM\...\Run for interactive Administrator logon resume. This shim
+        clears any legacy LiteDeploy Setup CmdLine hijack and arms HKLM Run instead.
+    #>
     param(
         [string]$LocalRootName = '~LiteDeploy',
         [string]$OsDriveLetter = $env:SystemDrive,

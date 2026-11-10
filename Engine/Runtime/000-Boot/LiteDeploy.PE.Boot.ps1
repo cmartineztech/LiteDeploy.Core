@@ -23,7 +23,7 @@
     .\LiteDeploy.PE.Boot.ps1 -MountShare -ShowGuiError
 
 .NOTES
-    LiteDeploy Core Component Standard v1.0
+    LiteDeploy Core Component Standard v2.0
     Target Environment: WinPE
     PowerShell Version: 5.1+
     Strict Mode: Version 2.0
@@ -65,7 +65,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("None")
+        Dependencies         = @()
         Description          = "WinPE parent shell: discovers BootConfig.json, validates network, mounts Z:\, and launches LiteDeploy.PE.Engine.ps1."
     }
 }

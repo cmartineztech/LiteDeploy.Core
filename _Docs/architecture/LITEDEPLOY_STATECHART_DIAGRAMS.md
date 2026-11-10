@@ -293,7 +293,7 @@ stateDiagram-v2
     state "Windows Restart & Logon" as WindowsLogon {
         [*] --> WindowsKernelInit
         WindowsKernelInit --> AutoLogonOrAuditLogon: Interactive Session 1
-        AutoLogonOrAuditLogon --> HklmRunTrigger: Launch FullOS.ps1
+        AutoLogonOrAuditLogon --> HklmRunTrigger: Launch LiteDeploy.OS.Engine.ps1
     }
 
     HklmRunTrigger --> Session1: RESUME_EXECUTION (State.Step=N+1)

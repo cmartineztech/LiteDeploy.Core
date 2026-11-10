@@ -86,4 +86,4 @@ powershell.exe -NoProfile -File $component -Action Status -DeploymentShare 'C:\L
 
 ## Current behavior and agreed follow-up
 
-See [the detailed guide](../../../../_Docs/guides/DRIVER_HANDLING.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.
+See [the detailed guide](../../../_Docs/guides/DRIVER_HANDLING.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.

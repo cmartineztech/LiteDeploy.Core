@@ -25,12 +25,12 @@ Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy name
 - **Console & Logging Experience**: PowerShell host console window remains open and visible in background during all phases for live technician monitoring and troubleshooting
 - **Single Responsibility & Architecture**:
   - Component Responsibility Audit report ([COMPONENT_RESPONSIBILITY_AUDIT.md](COMPONENT_RESPONSIBILITY_AUDIT.md)) completed
-  - Architecture suite: **158 / 158** passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`; run from repo root with absolute `-PublishedRuntimeRoot` when checking DeploymentShare)
+  - Architecture suite: **136 passing** in standalone dev mode; **158 / 158** passing when checking published share (`_Tests\Test-LiteDeployArchitectureV2.ps1 -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Runtime'`)
   - Repo tooling layout: component blueprints/inventory under `_Templates\`; smoke suite under `_Tests\` (neither is published to the share)
 
 ### In progress / gaps & future exploration
 
-- **Lab verify Domain Join UAC bypass e2e** (specialize Orders 1–4 → AutoLogon `user` → FullOS/WinPECT/Z: → EnableLUA restore)
+- **Lab verify Domain Join UAC bypass e2e** (specialize Orders 1–4 → AutoLogon `LD-<UID>` → FullOS/WinPECT/Z: → EnableLUA restore)
 - Packages phase after FullOS resume — **plan:** [PACKAGE_ORCHESTRATOR_PLAN.md](../planning/PACKAGE_ORCHESTRATOR_PLAN.md) (state queue + Spec snapshot + 3010 anti-loop); not implemented
 - Future tool (not started): DeployVault → `$global:LiteDeploySecretMap` for account create / run-as (see planning IDEAS §12) — do not incorporate yet
 - Replace temporary Interactive Probe (second-window dry-run) with real FullOS Progress dispatch

@@ -71,9 +71,9 @@
 ## 4. Phase 6: FullOS Resume & Package Orchestration
 
 - [x] **specialize HKLM Run + WinPECT Credential Bridge:**
-  - [x] Stage Runtime/Tools only (no Admin, no SetupComplete); Image stages HKLM Run; logon launches `LiteDeploy.FullOS.ps1`.
+  - [x] Stage Runtime/Tools only (no Admin, no SetupComplete); Image stages HKLM Run; logon launches `LiteDeploy.OS.Engine.ps1`.
   - [x] Vendor WinPECT under repo `Engine\Tools\WinPECT\` (trimmed) + `LiteDeploy.WinPECT.ps1`; Admin.Build publishes to share; Engine WinPE handoff stages package when secrets are in memory.
-  - [x] Publish `LiteDeploy.DeploymentEngine.ps1` as byte-identical Engine alias for legacy BootInitializer.
+  - [x] Publish `LiteDeploy.DeploymentEngine.ps1` as byte-identical Engine alias for legacy BootInitializer (subsequently retired in Phase 8).
   - [x] In-memory secret retrieval (`Get-LiteDeployFullOSSecret`) avoiding disk DPAPI `.xml` exports.
   - [x] Native PowerShell `New-SmbMapping` share connect + mirror logs to `WorkLogs\Deployments\<UID>` (Network).
   - [ ] **Package orchestrator** — plan: [PACKAGE_ORCHESTRATOR_PLAN.md](planning/PACKAGE_ORCHESTRATOR_PLAN.md) (diagram + phases). Do not implement until scheduled after Domain Join lab.
@@ -82,7 +82,7 @@
     - [ ] **C:** Hardening + Progress reads queue; lab no-reboot / 3010 / fail Stop.
   - [ ] **Future (not started):** integrate [DeployVault](https://github.com/cmartinezone/DeployVault) as optional Tools vault → `$global:LiteDeploySecretMap` (account create / run-as-X); see [IDEAS §12](planning/IDEAS_FOR_IMPLEMENTATION.md#12-future-tool-integration-deployvault-credentialvault--not-incorporated-yet). Do not incorporate until scheduled.
 - [x] **Persistent User-Session Execution (Current Baseline):**
-  - [x] First arm: unattend specialize `reg add` HKLM Run (short `powershell.exe -File`) when actions > 0; first launch at interactive logon → `LiteDeploy.FullOS.ps1`.
+  - [x] First arm: unattend specialize `reg add` HKLM Run (short `powershell.exe -File`) when actions > 0; first launch at interactive logon → `LiteDeploy.OS.Engine.ps1`.
   - [x] Reboot survival: FullOS may re-arm `HKLM\...\Run\LiteDeployFullOS` (tasks gated off).
   - [x] Leave stock Setup sysprep CmdLine intact; kill `sysprep.exe` process from FullOS.
   - [x] Clean up legacy Session 0 / AtLogOn LiteDeploy_* tasks on FullOS startup.
@@ -90,7 +90,7 @@
   - [x] Temporary Interactive Probe started by FullOS in a second PowerShell window; replace with real Progress dispatch.
   - [x] WorkflowTag carries `Actions` so Image can gate FullOS Run / Audit reseal.
   - [x] Standard = Audit Admin (elevated); Domain Join = AutoLogon local admin + temporary `EnableLUA=0` when no `<!--AuditMode-->` and actions > 0; cleanup restores UAC.
-  - [ ] **Lab verify Domain Join UAC bypass end-to-end** (specialize Orders 1–4 → AutoLogon `user` → FullOS/WinPECT/Z: → cleanup restores EnableLUA).
+  - [ ] **Lab verify Domain Join UAC bypass end-to-end** (specialize Orders 1–4 → AutoLogon `LD-<UID>` → FullOS/WinPECT/Z: → cleanup restores EnableLUA).
 - [ ] **Future Exploration: Full Headless `SYSTEM` Execution with Decoupled Progress-Only UI:**
   - [ ] **System Execution Parity:** Audit and ensure all actions currently running under `Administrator` (package installs, scripts, registry tweaks, driver servicing) can execute under `NT AUTHORITY\SYSTEM` without desktop token dependencies.
   - [ ] **Silent Installer Validation & Watchdog:** Add process execution timeouts / watchdog guards so non-silent installers with hidden dialogs cannot hang headless in Session 0.
@@ -98,12 +98,12 @@
   - [ ] **Decoupled Progress-Only Shell:** User in Session 1 sees *only* a dedicated, full-screen or foreground WPF Progress Bar that observes progress via IPC / `DeploymentState.json` without access to Explorer, CMD, or network drives.
   - [ ] **Complete End-to-End Teardown in SYSTEM:** Cleanup of staging directories, secret stores, and final reseal/OOBE invocation executed entirely within the SYSTEM context.
 - [x] **FullOS Shielding & Teardown Architecture Documented:** Reference matrix in [FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md](architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md) covering all disabled/suppressed items, registry keys, backups, and teardown restoration logic.
-- [ ] **Power Plan & GPO Immunization (FullOS Shielding):**
+- [x] **Power Plan & GPO Immunization (FullOS Shielding):**
   - [x] Document complete registry modification and restoration lifecycle matrix.
-  - [ ] Implement `Set-LiteDeployFullOSHighPerformance` (Universal: High Performance power plan + zero sleep/display timeouts on AC/DC).
-  - [ ] Implement `Enable-LiteDeployFullOSShielding` for non-Administrator / Domain Join sessions (Freeze GPO, blank legal notices, disable CAD, suppress lock screen, preserve AutoLogon count).
-  - [ ] Implement `Disable-LiteDeployFullOSShielding` (Restore GPO, legal notices, lock screen, execute `gpupdate.exe /force`) coordinated in `Clear-LiteDeployFullOSRunKey`.
-- [ ] **Ephemeral Deployment Service Account (`LD_<UID>`):**
+  - [x] Implement `Set-LiteDeployFullOSHighPerformance` (Universal: High Performance power plan + zero sleep/display timeouts on AC/DC).
+  - [x] Implement `Enable-LiteDeployFullOSShielding` for non-Administrator / Domain Join sessions (Freeze GPO, blank legal notices, disable CAD, suppress lock screen, preserve AutoLogon count).
+  - [x] Implement `Disable-LiteDeployFullOSShielding` (Restore GPO, legal notices, lock screen, execute `gpupdate.exe /force`) coordinated in `Clear-LiteDeployFullOSRunKey`.
+- [ ] **Ephemeral Deployment Service Account (`LD-<UID>`):**
   - [x] Inject temporary admin account `LD-<UID>` with `LogonCount = 999` in `unattend.xml` (staged dynamically by Image when `actions > 0`).
   - [ ] **Dynamic Random Base64 Password:** Replace static lab base64 password (`passwordPassword`) with a cryptographically secure random password generated in WinPE, encoded to UTF-16LE Base64 with unattend salt for `<PlainText>false</PlainText>`.
   - [ ] Launch interactive desktop session (Session 1) for user-facing application installers and full-screen WPF progress display.

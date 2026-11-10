@@ -70,6 +70,12 @@ For Media deployment, the source root is `<media drive>:\~LiteDeploy` (or config
 
 Use Windows PowerShell 5.1, STA for UI, and the agreed Windows 11 24H2-or-newer Setup baseline. WinPE needs appropriate WMI, NetFX, Scripting, PowerShell, StorageWMI components and storage/network drivers. Check the ADK package dependencies and matching image architecture.
 
-Microsoft lists WPF as unsupported in WinPE-NetFX. Current LiteDeploy UI is WPF: adding optional components alone does not establish support. Validate the actual customized image or provide a supported UI before claiming general WinPE compatibility. [Microsoft component reference](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-add-packages--optional-components-reference?view=windows-11).
+Microsoft lists WPF as unsupported in WinPE-NetFX because standard WinPE lacks 3D hardware graphics acceleration drivers. Under default hardware-accelerated rendering, WPF attempts Direct3D device creation, which fails with `E_OUTOFMEMORY` translated into `System.OutOfMemoryException` upon window display (`$window.ShowDialog()`).
+
+To solve this deterministically, LiteDeploy mandates **Software-Only WPF Rendering** across all WinPE UI components (`HardwarePrecheck`, `WorkflowSelection`, `Progress`, and preemptively in `LiteDeploy.PE.Engine.ps1`). Assemblies must be imported first (`Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase`), followed immediately by:
+```powershell
+[System.Windows.Media.RenderOptions]::ProcessRenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly
+```
+This forces WPF (`wpfgfx`) to render entirely via CPU rasterization, guaranteeing flawless dialog execution in WinPE. [Microsoft component reference](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-add-packages--optional-components-reference?view=windows-11).
 
 Boot does not assign deployment IDs. Engine uses provisional local precheck state, assigns the ID immediately before WorkflowSelection, and creates the share log folder only after Passed=true and target validation. After imaging, WinPE handoff stages Runtime/Tools and WinPECT credentials (no SetupComplete). Image stages `HKLM\...\Run\LiteDeployFullOS` in unattend specialize when the workflow has actions; FullOS starts at interactive logon (not `auditUser`), may re-arm Run for later reboots, and kills `sysprep.exe` while leaving stock Setup CmdLine intact (see [Credentials](../integrations/Credentials/README.md)).

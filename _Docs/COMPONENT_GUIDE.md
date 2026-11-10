@@ -38,7 +38,7 @@ Guides cover entry points, dependencies, parameters, effects, results and limits
 | Component templates / inventory | [Guide](../_Templates/README.md) (`_Templates\` — not published) |
 | Progress emulator | [Guide](../Engine/Runtime/100-UI/Progress/TESTING.md) |
 
-FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + restore, live interactive monitor) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
+FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specialize when actions > 0, universal High Performance power plan + 0 timeouts, Environment Shielding with GPO freeze and CAD/Notice suppression for non-Administrator accounts, HKCU console handoff on load for consoles started afterward, re-arm for reboot survival, kill sysprep.exe, in-memory WinPECT, native `New-SmbMapping` Z: + `EnableLinkedConnections`, Domain Join temporary UAC bypass + teardown restore, live interactive monitor) is implemented; package orchestration and real Progress dispatch are next. Admin.UI.Images still uses legacy backend lookup; its guide records the direct Admin.Images alternative. Doc map: [`README.md`](README.md).
 
 ## Deployment setup and agreed designs
 
@@ -50,5 +50,6 @@ FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specia
 - [Fast Transition Spec & Rollback Plan](architecture/FAST_TRANSITION_NETWORK_SPECIFICATION.md): sub-second (<0.4s) network transition specification, RAM catalog caching rules, and rollback procedure.
 - [Credentials / WinPECT](integrations/Credentials/README.md): WinPE → FullOS credential handoff and FullOS entry.
 - [Deployment share template](../DeploymentShare/README.md): publish layout, flat runtime, Tools sync.
-- [Upcoming Ideas & Designs](planning/IDEAS_FOR_IMPLEMENTATION.md): ephemeral `LD_<UID>` account, Packages orchestration, console UX (future; current FullOS uses specialize-staged HKLM Run).
+- [FullOS Shielding & Teardown Matrix](architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md): complete matrix of power plans, GPO freezes, legal notices, CAD, UAC bypass, and cleanup restoration.
+- [Upcoming Ideas & Designs](planning/IDEAS_FOR_IMPLEMENTATION.md): ephemeral `LD-<UID>` account, Packages orchestration, console UX.
 - [Release status](architecture/LITEDEPLOY_PROJECT_STATUS.md): implemented work versus remaining blockers.

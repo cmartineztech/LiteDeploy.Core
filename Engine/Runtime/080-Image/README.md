@@ -146,7 +146,7 @@ The generated XML file includes an audit header identifying the source workflow,
 ### Template Archetypes & Policies
 - **`Standard.xml`** (`<ProtectYourPC>1</ProtectYourPC>`): Workgroup workstation. Has `<!--AuditMode-->` (filled when workflow `actions.Count > 0`) so first interactive session is built-in Administrator in Audit Mode.
 - **`IntuneReady.xml`**: MDM-oriented OOBE. Same placeholders as Standard, but the stock Intune workflow has **zero actions**, so Image clears FullOS Run and Audit reseal (plain OOBE).
-- **`DomainJoin.xml`** (`<ProtectYourPC>3</ProtectYourPC>`): Local test admin + AutoLogon (`user`); **no** `<!--AuditMode-->`. FullOS Run (when actions > 0) starts at AutoLogon; temporary UAC bypass via `<!--DisableUacForFullOS-->`.
+- **`DomainJoin.xml`** (`<ProtectYourPC>3</ProtectYourPC>`): Ephemeral local admin `LD-<UID>` (`<!--LocalServiceAccount-->`) + AutoLogon (`<!--AutoLogonServiceAccount-->`); **no** `<!--AuditMode-->`. FullOS Run (when actions > 0) starts at AutoLogon; temporary UAC bypass via `<!--DisableUacForFullOS-->`. When actions are 0, placeholders and empty `<UserAccounts>` tags are stripped.
 
 ### Specialize RunSynchronous (`Microsoft-Windows-Deployment`)
 Templates use placeholders filled by `New-LiteDeployUnattendXml`:
@@ -176,7 +176,7 @@ Filled only when the template has `<!--AuditMode-->` **and** workflow actions > 
 **Source File:** [LiteDeploy.Image.ps1](LiteDeploy.Image.ps1)  
 **Published Path:** `DeploymentShare\Engine\Runtime\LiteDeploy.Image.ps1`  
 **Component ID:** `Image`  
-**Dependencies:** `Logs`, `Workflow`, `Environment`  
+**Dependencies:** `Session`, `Workflow`, `Environment`  
 **Target Environment:** WinPE (PowerShell 5.1+, StrictMode 2.0)
 
 ### Execution Modes

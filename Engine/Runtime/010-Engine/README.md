@@ -32,7 +32,7 @@ still returns `RequirementsByEnvironment` for inspection.
 
 Scheduled-task registration in FullOS is **gated off** for now.
 
-Read [Understand and control Engine](../../../../_Docs/guides/ENGINE_READING_GUIDE.md) for variables,
+Read [Understand and control Engine](../../../_Docs/guides/ENGINE_READING_GUIDE.md) for variables,
 component inputs/results, the execution sequence, and safe inspection examples.
 
 ## Source and publish
@@ -97,15 +97,15 @@ Disk receives `-ConfirmDestroy`; Image receives `-ExecuteSetup`. These are real 
 
 Progress is a separate display process in WinPE. Its failure is logged, but Disk/Image may continue.
 Read-only media can reject deployment-log writes; local logs remain at the path in RuntimePaths.
-Credential paths: `Content\Credentials\` — see [_Docs/integrations/Credentials](../../../../_Docs/integrations/Credentials/README.md).
+Credential paths: `Content\Credentials\` — see [_Docs/integrations/Credentials](../../../_Docs/integrations/Credentials/README.md).
 
 ## Limits and troubleshooting
 
 - Missing files: correct the named file or selected layout; publish the complete runtime.
 - Missing configuration: correct BootObject.ConfigPath; there is no alternate-file search.
 - STA error: start Boot/Engine in `powershell.exe -NoProfile -STA`.
-- UI failure: validate the actual WinPE image; see [maintenance](../../../../_Docs/guides/MAINTENANCE.md).
-- WinPE finishes at OS install + handoff. FullOS resume (credentials, Z:, HKLM Run) is implemented;
+- UI failure: validate the actual WinPE image; see [maintenance](../../../_Docs/guides/MAINTENANCE.md).
+- WinPE finishes at OS install + handoff. FullOS resume (credentials, Z:, HKLM Run, universal High Performance power plan, and Environment Shielding for non-Administrator sessions) is implemented;
   package orchestration and interactive Progress dispatch remain open.
 
 <!-- component-contract -->
@@ -212,7 +212,7 @@ Sequence: local startup/pre-check -> assign ID -> WorkflowSelection -> validate 
 
 ## Current behavior and agreed follow-up
 
-See [the detailed guide](../../../../_Docs/guides/LOGGING_AND_FAILURE_DESIGN.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.
+See [the detailed guide](../../../_Docs/guides/LOGGING_AND_FAILURE_DESIGN.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.
 
 ## Effective configuration after selection (implemented)
 

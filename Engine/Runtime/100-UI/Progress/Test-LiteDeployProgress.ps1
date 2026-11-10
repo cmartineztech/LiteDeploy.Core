@@ -29,6 +29,10 @@
 
 .EXAMPLE
     .\Test-LiteDeployProgress.ps1 -TestMode TestAllMatrix
+.NOTES
+    LiteDeploy Test Suite Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
 #>
 
 [CmdletBinding()]
@@ -49,7 +53,7 @@ param(
     [int]$StepDelayMs = 800
 )
 
-Set-StrictMode -Version Latest
+Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $ScriptRoot = $PSScriptRoot

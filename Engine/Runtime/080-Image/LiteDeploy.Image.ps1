@@ -62,7 +62,7 @@
     Check ComputerSetup.ImageEngine only; no media access, files, or processes.
 
 .NOTES
-    LiteDeploy Component Standard v1.0
+    LiteDeploy Component Standard v2.0
     PowerShell Version: 5.1+
     Strict Mode: Version 2.0
     Target Environment: WinPE
@@ -597,6 +597,31 @@ function Resolve-UnattendTemplate {
 # ==============================================================================
 
 function New-LiteDeployUnattendXml {
+    <#
+    .SYNOPSIS
+        Generates customized unattended XML answer file by replacing template placeholders.
+    .DESCRIPTION
+        Reads an answer file XML template (e.g. Standard.xml, DomainJoin.xml, IntuneReady.xml),
+        interpolates configuration values (ComputerName, TimeZone, DiskID, PartitionID, ProductKey,
+        Domain Join credentials, Registration), and dynamically gates post-install placeholders:
+          - <!--LiteDeployFullOSRun-->: Injected when workflow actions exist (> 0).
+          - <!--DisableUacForFullOS-->: Staged with UacBypassed=1 for non-Audit templates (Domain Join).
+          - <!--AuditMode-->: Injected when template contains AuditMode placeholder and actions > 0.
+          - <!--LocalServiceAccount--> / <!--AutoLogon(ServiceAccount)?-->: Injects ephemeral LD-<UID>
+            account when actions > 0; strips placeholders and empty <UserAccounts> blocks when actions == 0.
+    .PARAMETER TemplateFile
+        Path to the unattended XML template.
+    .PARAMETER TargetOutputFile
+        Path where the final processed unattended.xml is saved.
+    .PARAMETER ConfigObj
+        BootConfig configuration object.
+    .PARAMETER WorkflowData
+        WorkflowSelection result object.
+    .PARAMETER DiskData
+        DiskPreparation result object.
+    .PARAMETER BootCtx
+        Boot context object.
+    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$TemplateFile,

@@ -4,11 +4,33 @@
 .DESCRIPTION
     Dot-source once from Engine. Import does not change the console or start a window.
     Functions use Windows console APIs when called and work in Windows PowerShell 5.1.
+.PARAMETER Metadata
+    Returns standardized component metadata.
+.NOTES
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: Universal
 #>
 [CmdletBinding()]
 param([switch]$Metadata)
+
+function Get-LiteDeployComponentMetadata {
+    return [pscustomobject]@{
+        ComponentId          = 'UI.HostShell'
+        Name                 = 'LiteDeploy Console Host'
+        Version              = '2.0.0'
+        Category             = 'Runtime'
+        TargetEnvironment    = 'Universal'
+        MinPowerShellVersion = '5.1'
+        Author               = 'LiteDeploy Team'
+        Dependencies         = @()
+        Description          = 'Console window layout, colors, and progress display for LiteDeploy.'
+    }
+}
+
 if ($Metadata) {
-    [pscustomobject]@{ ComponentId = 'UI.HostShell'; Name = 'LiteDeploy Console Host'; Version = '2.0.0'; Category = 'Runtime'; TargetEnvironment = 'Universal'; MinPowerShellVersion = '5.1'; Dependencies = @() }
+    Get-LiteDeployComponentMetadata
     return
 }
 Set-StrictMode -Version 2.0

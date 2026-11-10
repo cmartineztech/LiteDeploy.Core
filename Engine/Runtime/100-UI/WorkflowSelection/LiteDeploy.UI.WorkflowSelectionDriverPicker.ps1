@@ -1,8 +1,29 @@
+<#
+.SYNOPSIS
+    LiteDeploy Driver Folder Picker UI dialog.
+
+.DESCRIPTION
+    Provides an interactive WPF driver-folder browser in WinPE with live path validation,
+    DeploymentShare (Z:) volume labeling, and .inf/.sys/.cat driver package detection.
+
+.PARAMETER Metadata
+    Returns standardized component metadata.
+
+.NOTES
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: WinPE
+#>
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [switch]$Metadata
 )
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
 
 # ==============================================================================
 # COMPONENT METADATA
@@ -12,13 +33,13 @@ function Get-LiteDeployComponentMetadata {
     return [PSCustomObject]@{
         ComponentId          = "UI.DriverPicker"
         Name                 = "LiteDeploy Driver Folder Picker"
-        Version              = "1.1.0"
+        Version              = "2.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
         Dependencies         = @()
-        Description          = "WinPE WPF driver-folder browser; markup in LiteDeploy.WorkflowSelectionDriverPicker.UI.xaml; DeploymentShare (Z:) labeling, live Select blocking, and .inf/.sys/.cat validation."
+        Description          = "WinPE WPF driver-folder browser; markup in LiteDeploy.UI.WorkflowSelectionDriverPicker.xaml; DeploymentShare (Z:) labeling, live Select blocking, and .inf/.sys/.cat validation."
     }
 }
 

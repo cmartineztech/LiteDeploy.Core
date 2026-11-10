@@ -18,7 +18,7 @@
 | **Boot modes** | Network (SMB → `Z:`) and Media (USB → `<drive>:\~LiteDeploy`) |
 | **Imaging** | `setup.exe` or `dism.exe` |
 | **FullOS resume** | `HKLM\...\Run\LiteDeployFullOS` (not Task Scheduler / SetupComplete) |
-| **Smoke suite** | [`_Tests\`](_Tests/README.md) — **155 / 155** |
+| **Smoke suite** | [`_Tests\`](_Tests/README.md) — **136 passing** (158 with published Runtime) |
 | **Docs map** | [`_Docs/README.md`](_Docs/README.md) |
 
 ---
@@ -76,11 +76,13 @@ flowchart TB
 
   subgraph FullOS["FullOS — Session 1"]
     Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
+    Power["High Performance power scheme · 0 timeouts"]
+    Shield["Environment Shielding (GPO freeze · CAD/Notice suppression)"]
     Console["HKCU console handoff<br/>later windows only"]
     ReArm["Re-arm Run · kill sysprep.exe"]
     Secrets["WinPECT unseal · Z: · log mirror"]
     Probe["Interactive Probe window<br/>(Progress/packages next)"]
-    Run --> Console --> ReArm --> Secrets --> Probe
+    Run --> Power --> Shield --> Console --> ReArm --> Secrets --> Probe
   end
 
   Build -.->|publish| Boot

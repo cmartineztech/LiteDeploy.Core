@@ -1,6 +1,6 @@
 # LiteDeploy documentation map
 
-**Updated:** 2026-10-15
+**Updated:** 2026-11-10
 
 Canonical project docs live here. Component contracts stay next to source under `Engine/**/README.md`. `DeploymentShare/**` copies of Tools READMEs are **publish mirrors** of `Engine/Tools/` (keep in sync via Admin.Build — do not edit only the share copy).
 
@@ -9,13 +9,13 @@ Repo tooling (not published to the share):
 | Path | Role |
 | :--- | :--- |
 | [`_Templates/`](../_Templates/README.md) | Component blueprint + `-Metadata` inventory scanner |
-| [`_Tests/`](../_Tests/README.md) | Architecture smoke suite (`Test-LiteDeployArchitectureV2.ps1`) |
+| [`_Tests/`](../_Tests/README.md) | Architecture smoke suite (`Test-LiteDeployArchitectureV2.ps1` — 136 dev / 158 published tests) |
 
 ## Live baseline (do not contradict)
 
 - FullOS entry / resume: **`HKLM\...\Run\LiteDeployFullOS`** (specialize-staged when `WorkflowTag.Actions` > 0; FullOS may re-arm)
 - Not used for this path: `SetupComplete.cmd`, `auditUser`, LiteDeploy_* scheduled tasks (gated off)
-- Standard = Audit Admin; Domain Join = AutoLogon + temporary `EnableLUA=0` when no `<!--AuditMode-->`; Intune Ready with 0 actions = OOBE only
+- Standard = Audit Admin; Domain Join = AutoLogon with ephemeral local admin `LD-<UID>` + temporary `EnableLUA=0` when no `<!--AuditMode-->` + FullOS Environment Shielding; Intune Ready with 0 actions = OOBE only
 - Unattend Specialize `RunSynchronous`: Order 1 ComputerDescription (always), Order 2 FullOS Run (actions > 0), Orders 3–4 UAC bypass (DomainJoin / non-Audit + actions > 0)
 - MDT reference: Startup / `RunOnce` / `LTIBootstrap` — not Task Scheduler
 - Boot modes today: **Network** (SMB UNC) and **Media** (USB). Azure Blob / cloud-pull = future, not implemented

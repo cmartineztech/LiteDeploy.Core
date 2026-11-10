@@ -5,10 +5,13 @@
     Loads BootConfig from a mandatory path (or optional in-memory -BootConfig on first paint;
     Run Again / F5 always reload from path). Always runs quiet MDT-style hardware
     discovery, then validates readiness via the native WPF host. UI markup lives in
-    LiteDeploy.HardwarePreCheck.UI.xaml (theme tokens applied at load). Returns
+    LiteDeploy.UI.HardwarePrecheck.xaml (theme tokens applied at load). Returns
     Passed + Inventory (discovery + PreCheck properties + Results).
 .NOTES
-    Inlined-XAML variant: SingleFile\LiteDeploy.HardwarePreCheck.ps1
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: WinPE
 #>
 [CmdletBinding()]
 param(
@@ -63,7 +66,7 @@ if ($GetComponentMetadata) {
 }
 
 if ([string]::IsNullOrWhiteSpace($BootConfigPath)) {
-    throw "LiteDeploy.HardwarePreCheck.ps1 requires -BootConfigPath."
+    throw "LiteDeploy.UI.HardwarePrecheck.ps1 requires -BootConfigPath."
 }
 
 # ------------------------------------------------------------------------------

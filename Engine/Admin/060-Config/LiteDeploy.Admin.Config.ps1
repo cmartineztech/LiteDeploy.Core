@@ -13,7 +13,7 @@
 
 .PARAMETER BootConfig
     Switch specifying that BootConfig.json configuration is being generated.
-    Allows extending LiteDeploy.SetConfig.ps1 with additional configuration target switches in the future.
+    Allows extending LiteDeploy.Admin.Config.ps1 with additional configuration target switches in the future.
 
 .PARAMETER Mode
     Deployment mode to generate configuration for.
@@ -34,13 +34,19 @@
     Default: 'BootConfig.json' in current working directory.
 
 .EXAMPLE
-    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode DeploymentShare -NetworkPath "\\Server01\Share$" -Environment "Production"
+    .\LiteDeploy.Admin.Config.ps1 -BootConfig -Mode DeploymentShare -NetworkPath "\\Server01\Share$" -Environment "Production"
 
 .EXAMPLE
-    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode Media -Comment "Custom offline USB config"
+    .\LiteDeploy.Admin.Config.ps1 -BootConfig -Mode Media -Comment "Custom offline USB config"
 
 .EXAMPLE
-    .\LiteDeploy.SetConfig.ps1 -BootConfig -Mode BootWim -NetworkPath "\\PXEServer\DeploymentShare$" -Environment "Production" -Comment "PXE WIM Boot Configuration"
+    .\LiteDeploy.Admin.Config.ps1 -BootConfig -Mode BootWim -NetworkPath "\\PXEServer\DeploymentShare$" -Environment "Production" -Comment "PXE WIM Boot Configuration"
+
+.NOTES
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: Host
 #>
 
 [CmdletBinding()]

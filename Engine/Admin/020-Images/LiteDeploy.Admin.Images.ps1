@@ -1,3 +1,52 @@
+<#
+.SYNOPSIS
+    LiteDeploy OS Media Ingestion & Catalog Engine.
+
+.DESCRIPTION
+    Automates Windows setup media ingestion (ISO, mounted drive, or directory),
+    extracts WIM/ESD edition metadata, copies setup assets to the deployment share,
+    and publishes catalog.json definitions for LiteDeploy workflows.
+
+.PARAMETER DeploymentShare
+    Path to the root LiteDeploy deployment share directory.
+
+.PARAMETER SourcePath
+    Path to an ISO file, Drive Letter (e.g. E: or E:\), or unpacked directory.
+
+.PARAMETER Use7Zip
+    Use 7-Zip registry parsing for automated OS name/version extraction.
+
+.PARAMETER SevenZipPath
+    Path to 7z.exe binary.
+
+.PARAMETER CustomWimPath
+    Optional path to a custom .wim or .esd file to replace default install.wim.
+
+.PARAMETER SelectedIndices
+    Specific WIM image indices to enable (e.g. 1, 6). Bypasses Out-GridView prompt if specified.
+
+.PARAMETER SelectAllEditions
+    Select all editions automatically without interactive Out-GridView prompt.
+
+.PARAMETER OSName
+    Override or supply OS Name directly (bypasses Read-Host prompt in DISM mode).
+
+.PARAMETER PassThru
+    Return the generated local OS object output to pipeline.
+
+.PARAMETER RebuildCatalog
+    Rebuild central catalog.json from local os.json files.
+
+.PARAMETER Metadata
+    Returns standardized component metadata.
+
+.NOTES
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: Host
+#>
+
 [CmdletBinding(DefaultParameterSetName = 'Import')]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Import', HelpMessage = "Path to the root LiteDeploy deployment share directory.")]
@@ -37,6 +86,9 @@ param(
     [switch]$Metadata
 )
 
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = "Stop"
+
 # ==============================================================================
 # COMPONENT METADATA
 # ==============================================================================
@@ -64,7 +116,7 @@ if ($Metadata) {
 $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "LiteDeploy.ImportOSMedia.ps1 requires administrative privileges. Please launch from an elevated PowerShell prompt."
+    throw "LiteDeploy.Admin.Images.ps1 requires administrative privileges. Please launch from an elevated PowerShell prompt."
 }
 
 # ===========================================================================

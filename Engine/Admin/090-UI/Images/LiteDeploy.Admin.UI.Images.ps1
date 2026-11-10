@@ -36,7 +36,7 @@ function Get-LiteDeployComponentMetadata {
         TargetEnvironment    = "Host"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("ImportOSMedia")
+        Dependencies         = @("Admin.Images")
         Description          = "WPF management frontend for Windows OS media ingestion and catalog management."
     }
 }
@@ -554,16 +554,22 @@ function Show-Msg {
 }
 
 function Get-ImportScriptPath {
+    $adminRoot = Split-Path -Parent $PSScriptRoot
     $candidates = @(
+        (Join-Path $PSScriptRoot "LiteDeploy.Admin.Images.ps1"),
+        (Join-Path $adminRoot "LiteDeploy.Admin.Images.ps1"),
+        (Join-Path $adminRoot "020-Images\LiteDeploy.Admin.Images.ps1"),
+        (Join-Path (Get-Location).Path "Engine\Admin\020-Images\LiteDeploy.Admin.Images.ps1"),
+        (Join-Path (Get-Location).Path "LiteDeploy.Admin.Images.ps1"),
         (Join-Path $PSScriptRoot "LiteDeploy.ImportOSMedia.ps1"),
         (Join-Path (Get-Location).Path "LiteDeploy.ImportOSMedia.ps1"),
-        (Join-Path (Split-Path -Parent $PSScriptRoot) "LiteDeploy.ImportOSMedia.ps1"),
+        (Join-Path $adminRoot "LiteDeploy.ImportOSMedia.ps1"),
         (Join-Path $PSScriptRoot "Import-OSMedia.ps1")
     )
     foreach ($cand in $candidates) {
-        if (Test-Path $cand) { return (Resolve-Path $cand).Path }
+        if (Test-Path -LiteralPath $cand -PathType Leaf) { return (Resolve-Path $cand).Path }
     }
-    return (Join-Path $PSScriptRoot "LiteDeploy.ImportOSMedia.ps1")
+    return (Join-Path $adminRoot "020-Images\LiteDeploy.Admin.Images.ps1")
 }
 
 function Clear-ImportForm {

@@ -53,13 +53,13 @@ function Get-LiteDeployComponentMetadata {
     return [PSCustomObject]@{
         ComponentId          = "UI.WorkflowSelection"
         Name                 = "LiteDeploy Workflow Selection"
-        Version              = "1.0.0"
+        Version              = "2.0.0"
         Category             = "Runtime"
         TargetEnvironment    = "WinPE"
         MinPowerShellVersion = "5.1"
         Author               = "LiteDeploy Team"
-        Dependencies         = @("Session", "Hardware", "Drivers", "DriverPicker")
-        Description          = "BootConfigPath + DeploymentSharePath wizard; markup in LiteDeploy.WorkflowSelection.UI.xaml; driver detect via DriverStaging; writes X:\WorkflowSelection.json and returns selection object."
+        Dependencies         = @("Session", "Hardware", "Drivers", "UI.DriverPicker")
+        Description          = "BootConfigPath + DeploymentSharePath wizard; markup in LiteDeploy.UI.WorkflowSelection.xaml; driver detect via DriverStaging; writes X:\WorkflowSelection.json and returns selection object."
     }
 }
 
@@ -71,10 +71,10 @@ if ($GetComponentMetadata) {
 }
 
 if ([string]::IsNullOrWhiteSpace($BootConfigPath)) {
-    throw "LiteDeploy.WorkflowSelection.ps1 requires -BootConfigPath."
+    throw "LiteDeploy.UI.WorkflowSelection.ps1 requires -BootConfigPath."
 }
 if ([string]::IsNullOrWhiteSpace($DeploymentSharePath)) {
-    throw "LiteDeploy.WorkflowSelection.ps1 requires -DeploymentSharePath (Root / DeploymentRoot)."
+    throw "LiteDeploy.UI.WorkflowSelection.ps1 requires -DeploymentSharePath (Root / DeploymentRoot)."
 }
 
 # ------------------------------------------------------------------------------

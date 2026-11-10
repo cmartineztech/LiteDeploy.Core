@@ -34,6 +34,12 @@
     .\LiteDeploy.Admin.Drivers.ps1 -DeploymentShare C:\DeploymentShare -Action Status -All
     .\LiteDeploy.Admin.Drivers.ps1 -DeploymentShare C:\DeploymentShare -Action Search -SystemSKU 873E
     .\LiteDeploy.Admin.Drivers.ps1 -DeploymentShare C:\DeploymentShare -Action AddCustom -ComputerModel "Toughbook 55" -SystemSKU "FZ55" -CustomManufacturer Panasonic
+
+.NOTES
+    LiteDeploy Core Component Standard v2.0
+    PowerShell Version: 5.1+
+    Strict Mode: Version 2.0
+    Target Environment: Host
 #>
 
 [CmdletBinding()]
@@ -58,6 +64,7 @@ param(
     [switch]$Metadata
 )
 
+Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }

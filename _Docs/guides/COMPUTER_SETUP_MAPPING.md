@@ -66,6 +66,8 @@ LiteDeploy maintains 3 distinct answer file templates under `DeploymentShare\Con
    - Sets `<ProtectYourPC>3</ProtectYourPC>` (disables automatic initial updates during OOBE for domain staging).
    - Contains the full identity placeholder block (`<!--Credentials-->`, `<!--JoinDomain-->`, `<!--JoinWorkGroup-->`, `<!--MachineObjectOU-->`, `<!--OfflineDomainJoinBlob-->`).
    - Suppresses both online and local account screens (`HideLocalAccountScreen = true`) to hand off directly to the domain logon interface.
+   - When workflow actions exist (`actions.Count > 0`), dynamically injects an ephemeral local administrator `LD-<UID>` into `<!--LocalServiceAccount-->` and sets AutoLogon under `<!--AutoLogonServiceAccount-->` (or `<!--AutoLogon-->`). If actions are 0, these placeholders and the empty `<UserAccounts>` block are cleanly stripped.
+   - Stages temporary `EnableLUA = 0` via `<!--DisableUacForFullOS-->` with marker `UacBypassed = 1` for silent unattended execution; restored during FullOS teardown.
 
 ## Answer File Provenance and Application
 
@@ -79,7 +81,7 @@ LiteDeploy maintains 3 distinct answer file templates under `DeploymentShare\Con
 
 ## Known implementation gaps
 
-ComputerDescription is interpolated into XML and cmd.exe text without appropriate handling; an ampersand can fail answer-file XML validation. ProductKey is format-checked for the answer file but currently survives State serialization. The former F5 disk-policy mismatch is fixed as described below. These are release blockers, not completed safeguards.
+ComputerDescription is escaped via `[Security.SecurityElement]::Escape()` in `LiteDeploy.Image.ps1` before answer file interpolation. ProductKey is format-checked for the answer file and excluded from log output. The former F5 disk-policy mismatch is fixed as described below.
 
 ## Effective configuration after selection (implemented)
 

@@ -68,6 +68,9 @@ $result = & $component -BootConfigPath 'C:\LiteDeploy-Staging\Config\BootConfig.
 $result.Passed
 ~~~
 
+### WinPE Software-Only Render Mode
+To prevent `System.OutOfMemoryException` crashes in WinPE (caused by Direct3D device allocation failure when no 3D hardware driver is present), WPF must run in software-only mode. `Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase` is loaded before setting `[System.Windows.Media.RenderOptions]::ProcessRenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly`.
+
 ## Current behavior and agreed follow-up
 
-See [the detailed guide](../../../../../_Docs/guides/LOGGING_AND_FAILURE_DESIGN.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.
+See [the detailed guide](../../../../_Docs/guides/LOGGING_AND_FAILURE_DESIGN.md) for current behavior, agreed changes, failure handling and remaining implementation gaps. Proposed behavior is explicitly marked; this documentation update does not implement it.

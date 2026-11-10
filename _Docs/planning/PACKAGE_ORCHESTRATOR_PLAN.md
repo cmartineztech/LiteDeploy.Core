@@ -28,7 +28,7 @@ flowchart TD
     end
 
     subgraph FirstBoot["First FullOS logon"]
-        Run["HKLM Run → FullOS.ps1"]
+        Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
         WinPECT["WinPECT unseal"]
         Z["New-SmbMapping Z:"]
         Lock["Acquire orchestration lock"]

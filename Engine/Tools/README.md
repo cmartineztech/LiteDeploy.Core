@@ -22,14 +22,14 @@ WinPE handoff copies **Runtime + Tools only** — never `Engine\Admin`:
 
 ```text
 W:\~LiteDeploy\
-  Engine\Runtime\     # Environment, Logs, State, Hardware, Packages, Engine, FullOS, …
+  Engine\Runtime\     # Environment, Session, Hardware, Packages, PE.Engine, OS.Engine, …
   Engine\Tools\WinPECT\
   Content\Credentials\        # CredentialTransfer.bin (encrypted package; unsealed directly in RAM)
   WorkLogs\
   DeploymentState.json
 ```
 
-SetupComplete.cmd is **not** staged. There is **no** `auditUser` FullOS launch. Image stages `HKLM\...\Run\LiteDeployFullOS` in unattend **specialize** when the workflow has actions; FullOS starts at the first interactive logon. Domain Join (no Audit marker) may also stage temporary `EnableLUA=0`.
+SetupComplete.cmd is **not** staged. There is **no** `auditUser` FullOS launch. Image stages `HKLM\...\Run\LiteDeployFullOS` in unattend **specialize** when the workflow has actions; FullOS starts at the first interactive logon. Domain Join (no Audit marker) stages temporary `EnableLUA=0` and AutoLogon for the ephemeral `LD-<UID>` account.
 
 ## FullOS entry
 
@@ -44,8 +44,10 @@ SetupComplete.cmd is **not** staged. There is **no** `auditUser` FullOS launch. 
 
 Engine FullOS (driven by `DeploymentState.json`):
 
-1. Interactive logon (Audit Admin on Standard, or Domain Join AutoLogon `user`) — Session 1
-2. **HKLM Run** launches FullOS (value staged in specialize; FullOS may re-arm for mid-deploy reboots)
+1. Interactive logon (Audit Admin on Standard/Intune, or Domain Join AutoLogon `LD-<UID>`) — Session 1
+2. Sets system power scheme to **Universal High Performance** and zero timeouts on AC/DC
+3. **Environment Shielding:** If running as non-Administrator (`LD-<UID>`), freezes GPO (`DisableGPO=1`), blanks legal notices, suppresses CAD and lock screen
+4. **HKLM Run** launches FullOS (value staged in specialize; FullOS may re-arm for mid-deploy reboots)
 3. On load, sets `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` so consoles started afterward hand off to Windows Terminal. The current window stays as launched. A registry failure does not stop resume
 4. Kills `sysprep.exe` process; leaves stock Setup `CmdLine` (sysprep) intact
 5. Loads Runtime components; reads state for UID, `FullOSShare`, `CredentialHandoff`
