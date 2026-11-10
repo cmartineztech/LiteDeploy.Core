@@ -97,6 +97,7 @@ foreach ($rel in ($requiredRuntime + $requiredAdmin)) {
 
 # Metadata + parse checks for core components
 $metaTargets = @(
+    "Runtime\010-Engine\LiteDeploy.OS.Engine.ps1",
     "Runtime\030-Session\LiteDeploy.Session.ps1",
     "Runtime\020-Environment\LiteDeploy.Environment.ps1",
     "Runtime\040-Hardware\LiteDeploy.Hardware.ps1",
@@ -431,6 +432,15 @@ try {
 
     $catalogPath = Resolve-LiteDeployContentPath -Path 'Content\OperatingSystems\Example' -DeploymentRoot $TestRoot
     Assert-True ($catalogPath -eq (Join-Path $TestRoot 'Content\OperatingSystems\Example')) 'Catalog-relative content uses the declared source'
+
+    # FullOS Power Plan and Shielding architecture tests
+    $osEnginePath = Join-Path $sourceRuntimeRoot '010-Engine\LiteDeploy.OS.Engine.ps1'
+    $osTokens = $null
+    $osErrors = $null
+    $osAst = [System.Management.Automation.Language.Parser]::ParseFile($osEnginePath, [ref]$osTokens, [ref]$osErrors)
+    $fnNames = @('Set-LiteDeployFullOSHighPerformance', 'Enable-LiteDeployFullOSShielding', 'Disable-LiteDeployFullOSShielding', 'Clear-LiteDeployFullOSRunKey', 'Restore-LiteDeployFullOSUacBypass')
+    $foundFns = @($osAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $fnNames }, $true))
+    Assert-True ($foundFns.Count -eq $fnNames.Count) 'FullOS Engine implements HighPerformance, Shielding, and Teardown lifecycle functions'
 }
 catch { Assert-True $false "Explicit Environment paths: $_" }
 

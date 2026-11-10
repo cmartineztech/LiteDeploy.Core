@@ -455,6 +455,14 @@ function Show-LiteDeployOSProbe {
         Write-Host ('    User Account : {0} (Session ID: {1})' -f $userName, $sessionId)
         Write-Host ('    Interactive  : {0}' -f $isInteractive)
         Write-Host ('    Sysprep Watch: Active (background sweep)' ) -ForegroundColor Green
+        $shieldActive = $false
+        try {
+            $sm = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\LiteDeploy\FullOS' -Name 'ShieldingActive' -ErrorAction SilentlyContinue
+            if ($sm -and [int]$sm.ShieldingActive -eq 1) { $shieldActive = $true }
+        } catch {}
+        if ($shieldActive) {
+            Write-Host ('    Shielding    : Active (GPO frozen, CAD/Notices suppressed)' ) -ForegroundColor Yellow
+        }
         Write-Host ''
         Write-Host '  Deployment Engine State:' -ForegroundColor Yellow
         Write-Host ('    UID          : {0}' -f $uid)
@@ -520,6 +528,292 @@ function Stop-LiteDeployAuditModeSysprep {
 # Setup\CmdLine + SetupType=2 causes Windows Setup-continue reboot loops when
 # re-armed across failures. Use HKLM\...\Run so FullOS starts as the Autologon
 # Administrator on each interactive logon instead.
+
+function Set-LiteDeployFullOSHighPerformance {
+    <#
+    .SYNOPSIS
+        Sets the active power scheme to High Performance and disables AC/DC sleep and display timeouts.
+        Applies universally across all deployment workflows in FullOS to maximize performance and prevent standby.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $result = [pscustomobject]@{
+        Success            = $true
+        SchemeSet          = $false
+        TimeoutsConfigured = $false
+        HighPerfGuid       = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+        Messages           = New-Object System.Collections.Generic.List[string]
+    }
+
+    try {
+        $highPerfGuid = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+        $setOut = & powercfg.exe /setactive $highPerfGuid 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $result.SchemeSet = $true
+            $result.Messages.Add("Activated High Performance power scheme ($highPerfGuid).")
+        }
+        else {
+            # Scheme might not be imported; duplicate built-in High Performance scheme
+            $dupOut = & powercfg.exe /duplicatescheme $highPerfGuid 2>&1
+            if ($LASTEXITCODE -eq 0 -and $dupOut -match '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') {
+                $newGuid = $Matches[1]
+                & powercfg.exe /setactive $newGuid 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $result.SchemeSet = $true
+                    $result.HighPerfGuid = $newGuid
+                    $result.Messages.Add("Duplicated and activated High Performance power scheme ($newGuid).")
+                }
+            }
+            if (-not $result.SchemeSet) {
+                $result.Messages.Add("Could not activate High Performance power scheme: $setOut")
+            }
+        }
+
+        # Zero out AC and DC timeouts so machine does not sleep, hibernate, turn off disk, or blank display
+        $timeouts = @(
+            'monitor-timeout-ac', 'disk-timeout-ac', 'standby-timeout-ac', 'hibernate-timeout-ac',
+            'monitor-timeout-dc', 'disk-timeout-dc', 'standby-timeout-dc', 'hibernate-timeout-dc'
+        )
+        foreach ($t in $timeouts) {
+            & powercfg.exe /change $t 0 2>&1 | Out-Null
+        }
+        $result.TimeoutsConfigured = $true
+        $result.Messages.Add("Configured power timeouts (monitor, disk, standby, hibernate set to 0 on AC/DC).")
+    }
+    catch {
+        $result.Success = $false
+        $result.Messages.Add("Power configuration exception: $($_.Exception.Message)")
+    }
+
+    return $result
+}
+
+function Enable-LiteDeployFullOSShielding {
+    <#
+    .SYNOPSIS
+        Applies environment shielding (GPO freeze, AutoLogon preservation, CAD and LegalNotice suppression)
+        when FullOS executes under a non-Administrator account (e.g. ephemeral service account LD-<UID>).
+    .NOTES
+        Prevents background domain GPOs or login legal notices from killing AutoLogon or breaking execution before completion.
+        All modified properties are backed up to HKLM:\SOFTWARE\LiteDeploy\FullOS\ShieldingBackup for cleanup.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$UserName = ''
+    )
+
+    $markerKey = 'HKLM:\SOFTWARE\LiteDeploy\FullOS'
+    $backupKey = 'HKLM:\SOFTWARE\LiteDeploy\FullOS\ShieldingBackup'
+    $systemPolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
+    $legalNoticeKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+    $winlogonKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    $personalizationKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'
+    $desktopKey = 'HKCU:\Control Panel\Desktop'
+
+    $shieldResult = [pscustomobject]@{
+        Success          = $true
+        GpoFrozen        = $false
+        LegalNoticeBlank = $false
+        CadDisabled      = $false
+        LockScreenBlank  = $false
+        AutoLogonArmed   = $false
+        UserName         = $UserName
+        Message          = ''
+    }
+
+    try {
+        foreach ($k in @($markerKey, $backupKey, $systemPolicyKey, $legalNoticeKey, $winlogonKey, $personalizationKey)) {
+            if (-not (Test-Path -LiteralPath $k)) {
+                $null = New-Item -Path $k -Force -ErrorAction Stop
+            }
+        }
+
+        # 1. Freeze GPO background refresh (DisableGPO = 1)
+        $existingGpo = (Get-ItemProperty -LiteralPath $systemPolicyKey -Name 'DisableGPO' -ErrorAction SilentlyContinue)
+        if ($existingGpo -and $null -ne $existingGpo.DisableGPO) {
+            Set-ItemProperty -LiteralPath $backupKey -Name 'DisableGPO' -Value [int]$existingGpo.DisableGPO -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Set-ItemProperty -LiteralPath $systemPolicyKey -Name 'DisableGPO' -Value 1 -Type DWord -Force -ErrorAction Stop
+        $shieldResult.GpoFrozen = $true
+
+        # 2. Backup and blank legal notice caption and text
+        $existingCaption = (Get-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticecaption' -ErrorAction SilentlyContinue)
+        $existingText = (Get-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticetext' -ErrorAction SilentlyContinue)
+        if ($existingCaption -and $existingCaption.legalnoticecaption) {
+            Set-ItemProperty -LiteralPath $backupKey -Name 'legalnoticecaption' -Value [string]$existingCaption.legalnoticecaption -Type String -Force -ErrorAction SilentlyContinue
+        }
+        if ($existingText -and $existingText.legalnoticetext) {
+            Set-ItemProperty -LiteralPath $backupKey -Name 'legalnoticetext' -Value [string]$existingText.legalnoticetext -Type String -Force -ErrorAction SilentlyContinue
+        }
+        Set-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticecaption' -Value '' -Type String -Force -ErrorAction Stop
+        Set-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticetext' -Value '' -Type String -Force -ErrorAction Stop
+        $shieldResult.LegalNoticeBlank = $true
+
+        # 3. Suppress Ctrl+Alt+Del (DisableCAD = 1)
+        $existingCad = (Get-ItemProperty -LiteralPath $winlogonKey -Name 'DisableCAD' -ErrorAction SilentlyContinue)
+        if ($existingCad -and $null -ne $existingCad.DisableCAD) {
+            Set-ItemProperty -LiteralPath $backupKey -Name 'DisableCAD' -Value [int]$existingCad.DisableCAD -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Set-ItemProperty -LiteralPath $winlogonKey -Name 'DisableCAD' -Value 1 -Type DWord -Force -ErrorAction Stop
+        $shieldResult.CadDisabled = $true
+
+        # 4. Suppress Lock Screen & Screen Saver
+        $existingLock = (Get-ItemProperty -LiteralPath $personalizationKey -Name 'NoLockScreen' -ErrorAction SilentlyContinue)
+        if ($existingLock -and $null -ne $existingLock.NoLockScreen) {
+            Set-ItemProperty -LiteralPath $backupKey -Name 'NoLockScreen' -Value [int]$existingLock.NoLockScreen -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Set-ItemProperty -LiteralPath $personalizationKey -Name 'NoLockScreen' -Value 1 -Type DWord -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $desktopKey) {
+            Set-ItemProperty -LiteralPath $desktopKey -Name 'ScreenSaveActive' -Value '0' -Type String -Force -ErrorAction SilentlyContinue
+        }
+        $shieldResult.LockScreenBlank = $true
+
+        # 5. Preserve AutoLogon with high count
+        Set-ItemProperty -LiteralPath $winlogonKey -Name 'AutoAdminLogon' -Value '1' -Type String -Force -ErrorAction Stop
+        Set-ItemProperty -LiteralPath $winlogonKey -Name 'AutoLogonCount' -Value 999 -Type DWord -Force -ErrorAction Stop
+        $shieldResult.AutoLogonArmed = $true
+
+        # 6. Mark shielding active
+        Set-ItemProperty -LiteralPath $markerKey -Name 'ShieldingActive' -Value 1 -Type DWord -Force -ErrorAction Stop
+        if (-not [string]::IsNullOrWhiteSpace($UserName)) {
+            Set-ItemProperty -LiteralPath $markerKey -Name 'ShieldingUser' -Value $UserName -Type String -Force -ErrorAction Stop
+        }
+
+        $shieldResult.Message = 'Environment shielded: DisableGPO=1, LegalNotices blanked, DisableCAD=1, NoLockScreen=1, AutoLogonCount=999.'
+    }
+    catch {
+        $shieldResult.Success = $false
+        $shieldResult.Message = "Shielding error: $($_.Exception.Message)"
+    }
+
+    return $shieldResult
+}
+
+function Disable-LiteDeployFullOSShielding {
+    <#
+    .SYNOPSIS
+        Removes environment shielding, restores original policies from backup, and triggers group policy refresh.
+        Invoked during final FullOS completion and cleanup (Clear-LiteDeployFullOSRunKey).
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$SkipGpUpdate
+    )
+
+    $markerKey = 'HKLM:\SOFTWARE\LiteDeploy\FullOS'
+    $backupKey = 'HKLM:\SOFTWARE\LiteDeploy\FullOS\ShieldingBackup'
+    $systemPolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
+    $legalNoticeKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+    $winlogonKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    $personalizationKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization'
+
+    $result = [pscustomobject]@{
+        Success              = $true
+        ShieldingRemoved     = $false
+        GpoUnfrozen          = $false
+        LegalNoticesRestored = $false
+        LockScreenRestored   = $false
+        GpUpdateTriggered    = $false
+        Message              = ''
+    }
+
+    try {
+        $shieldActive = $false
+        if (Test-Path -LiteralPath $markerKey) {
+            $m = Get-ItemProperty -LiteralPath $markerKey -Name 'ShieldingActive' -ErrorAction SilentlyContinue
+            if ($m -and [int]$m.ShieldingActive -eq 1) { $shieldActive = $true }
+        }
+
+        if (-not $shieldActive -and -not (Test-Path -LiteralPath $backupKey)) {
+            $result.Message = 'No active shielding marker or backup found; nothing to unshield.'
+            return $result
+        }
+
+        # 1. Unfreeze GPO (restore original or remove DisableGPO)
+        if (Test-Path -LiteralPath $systemPolicyKey) {
+            $gpoBackup = $null
+            if (Test-Path -LiteralPath $backupKey) {
+                $gpoBackup = Get-ItemProperty -LiteralPath $backupKey -Name 'DisableGPO' -ErrorAction SilentlyContinue
+            }
+            if ($gpoBackup -and $null -ne $gpoBackup.DisableGPO) {
+                Set-ItemProperty -LiteralPath $systemPolicyKey -Name 'DisableGPO' -Value [int]$gpoBackup.DisableGPO -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Remove-ItemProperty -LiteralPath $systemPolicyKey -Name 'DisableGPO' -Force -ErrorAction SilentlyContinue
+            }
+            $result.GpoUnfrozen = $true
+        }
+
+        # 2. Restore Lock Screen (NoLockScreen)
+        if (Test-Path -LiteralPath $personalizationKey) {
+            $lockBackup = $null
+            if (Test-Path -LiteralPath $backupKey) {
+                $lockBackup = Get-ItemProperty -LiteralPath $backupKey -Name 'NoLockScreen' -ErrorAction SilentlyContinue
+            }
+            if ($lockBackup -and $null -ne $lockBackup.NoLockScreen) {
+                Set-ItemProperty -LiteralPath $personalizationKey -Name 'NoLockScreen' -Value [int]$lockBackup.NoLockScreen -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Remove-ItemProperty -LiteralPath $personalizationKey -Name 'NoLockScreen' -Force -ErrorAction SilentlyContinue
+            }
+            $result.LockScreenRestored = $true
+        }
+
+        # 3. Restore CAD (DisableCAD)
+        if (Test-Path -LiteralPath $winlogonKey) {
+            $cadBackup = $null
+            if (Test-Path -LiteralPath $backupKey) {
+                $cadBackup = Get-ItemProperty -LiteralPath $backupKey -Name 'DisableCAD' -ErrorAction SilentlyContinue
+            }
+            if ($cadBackup -and $null -ne $cadBackup.DisableCAD) {
+                Set-ItemProperty -LiteralPath $winlogonKey -Name 'DisableCAD' -Value [int]$cadBackup.DisableCAD -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Remove-ItemProperty -LiteralPath $winlogonKey -Name 'DisableCAD' -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # 4. Restore Legal Notices if backed up
+        if (Test-Path -LiteralPath $backupKey) {
+            $backup = Get-ItemProperty -LiteralPath $backupKey -ErrorAction SilentlyContinue
+            if ($backup) {
+                if ($backup.PSObject.Properties['legalnoticecaption']) {
+                    Set-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticecaption' -Value [string]$backup.legalnoticecaption -Type String -Force -ErrorAction SilentlyContinue
+                }
+                if ($backup.PSObject.Properties['legalnoticetext']) {
+                    Set-ItemProperty -LiteralPath $legalNoticeKey -Name 'legalnoticetext' -Value [string]$backup.legalnoticetext -Type String -Force -ErrorAction SilentlyContinue
+                }
+                $result.LegalNoticesRestored = $true
+            }
+            Remove-Item -LiteralPath $backupKey -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # 5. Remove shielding markers
+        if (Test-Path -LiteralPath $markerKey) {
+            Remove-ItemProperty -LiteralPath $markerKey -Name 'ShieldingActive' -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -LiteralPath $markerKey -Name 'ShieldingUser' -Force -ErrorAction SilentlyContinue
+        }
+        $result.ShieldingRemoved = $true
+
+        # 6. Trigger gpupdate /force in background if not skipped
+        if (-not $SkipGpUpdate) {
+            try {
+                $p = Start-Process -FilePath 'gpupdate.exe' -ArgumentList '/force' -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+                $result.GpUpdateTriggered = ($null -ne $p)
+            }
+            catch {}
+        }
+
+        $result.Message = 'Shielding removed: GPO un-frozen, legal notices restored, CAD/LockScreen restored, gpupdate triggered.'
+    }
+    catch {
+        $result.Success = $false
+        $result.Message = "Unshielding error: $($_.Exception.Message)"
+    }
+
+    return $result
+}
 
 function Get-LiteDeployFullOSRunCommand {
     <#
@@ -616,7 +910,7 @@ function Clear-LiteDeployFullOSRunKey {
     <#
     .SYNOPSIS
         Removes the HKLM Run value so FullOS stops auto-launching at logon.
-        Also restores temporary Domain Join UAC bypass (EnableLUA) when marked.
+        Also restores temporary Domain Join UAC bypass (EnableLUA) and removes environment shielding.
     #>
     param(
         [string]$ValueName = 'LiteDeployFullOS',
@@ -624,16 +918,17 @@ function Clear-LiteDeployFullOSRunKey {
     )
 
     $uac = Restore-LiteDeployFullOSUacBypass
+    $shielding = Disable-LiteDeployFullOSShielding
 
     if (-not (Test-Path -LiteralPath $RunKey)) {
-        return [pscustomobject]@{ Success = $true; Cleared = $false; Message = 'Run key not present.'; UacRestore = $uac }
+        return [pscustomobject]@{ Success = $true; Cleared = $false; Message = 'Run key not present.'; UacRestore = $uac; ShieldingRestore = $shielding }
     }
     $existing = Get-ItemProperty -LiteralPath $RunKey -Name $ValueName -ErrorAction SilentlyContinue
     if ($null -eq $existing -or -not ($existing.PSObject.Properties.Name -contains $ValueName)) {
-        return [pscustomobject]@{ Success = $true; Cleared = $false; Message = 'Run value not present.'; UacRestore = $uac }
+        return [pscustomobject]@{ Success = $true; Cleared = $false; Message = 'Run value not present.'; UacRestore = $uac; ShieldingRestore = $shielding }
     }
     Remove-ItemProperty -LiteralPath $RunKey -Name $ValueName -Force -ErrorAction Stop
-    return [pscustomobject]@{ Success = $true; Cleared = $true; ValueName = $ValueName; RunKey = $RunKey; UacRestore = $uac }
+    return [pscustomobject]@{ Success = $true; Cleared = $true; ValueName = $ValueName; RunKey = $RunKey; UacRestore = $uac; ShieldingRestore = $shielding }
 }
 
 function Test-LiteDeployOwnedSetupCmdLine {
@@ -1060,6 +1355,15 @@ function Start-LiteDeployFullOSResume {
     Write-FullOSLog "FullOS initialization starting." -Level 'INFO'
     Write-FullOSLog "StatePath=$StatePath RuntimeRoot=$RuntimeRoot" -Level 'INFO' -NoConsole
 
+    # Universal High Performance power plan: applies to all deployment workflows in FullOS
+    try {
+        $powerResult = Set-LiteDeployFullOSHighPerformance
+        Write-FullOSLog ("Power configuration: SchemeSet={0}, TimeoutsConfigured={1}" -f $powerResult.SchemeSet, $powerResult.TimeoutsConfigured) -Level 'INFO'
+    }
+    catch {
+        Write-FullOSLog "Power configuration warning: $_" -Level 'WARNING'
+    }
+
     # Leave stock Setup\CmdLine (sysprep) alone. Only clear a legacy LiteDeploy FullOS hijack.
     try {
         $clearedSetup = Clear-LiteDeployFullOSSetupCmdLine
@@ -1110,6 +1414,24 @@ function Start-LiteDeployFullOSResume {
     }
 
     Write-FullOSLog "Executing FullOS engine in interactive user session ($($currentIdentity.Name))." -Level 'SUCCESS'
+
+    # Environment shielding: when running under non-Administrator (e.g. ephemeral LD-* account) or UAC bypass
+    $isBuiltinAdmin = ($currentIdentity.Name -match '(?i)\\Administrator$|^Administrator$')
+    $uacMarkerPresent = $false
+    try {
+        $m = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\LiteDeploy\FullOS' -Name 'UacBypassed' -ErrorAction SilentlyContinue
+        if ($m -and [int]$m.UacBypassed -eq 1) { $uacMarkerPresent = $true }
+    } catch {}
+
+    if (-not $isBuiltinAdmin -or $uacMarkerPresent) {
+        try {
+            $shieldResult = Enable-LiteDeployFullOSShielding -UserName $currentIdentity.Name
+            Write-FullOSLog ("FullOS Environment Shielding enabled ({0}): {1}" -f $currentIdentity.Name, $shieldResult.Message) -Level 'SUCCESS'
+        }
+        catch {
+            Write-FullOSLog "Environment Shielding activation warning: $_" -Level 'WARNING'
+        }
+    }
 
     # 1) Load state first — everything else is derived from it.
     if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {

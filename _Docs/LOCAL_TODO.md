@@ -97,9 +97,12 @@
   - [ ] **Headless Network Access:** Utilize direct UNC paths (`\\Server\Share$\...`) or pre-staged local packages (`C:\~LiteDeploy\Content\Packages`), removing any requirement for user-visible mapped drives (`Z:`).
   - [ ] **Decoupled Progress-Only Shell:** User in Session 1 sees *only* a dedicated, full-screen or foreground WPF Progress Bar that observes progress via IPC / `DeploymentState.json` without access to Explorer, CMD, or network drives.
   - [ ] **Complete End-to-End Teardown in SYSTEM:** Cleanup of staging directories, secret stores, and final reseal/OOBE invocation executed entirely within the SYSTEM context.
-- [ ] **Power Plan & GPO Immunization:**
-  - [ ] Set High Performance (`powercfg`) & suppress screen lock / standby.
-  - [ ] Temporarily block background GPO refresh (`DisableGPO = 1`) to prevent domain policies from breaking AutoLogon.
+- [x] **FullOS Shielding & Teardown Architecture Documented:** Reference matrix in [FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md](architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md) covering all disabled/suppressed items, registry keys, backups, and teardown restoration logic.
+- [ ] **Power Plan & GPO Immunization (FullOS Shielding):**
+  - [x] Document complete registry modification and restoration lifecycle matrix.
+  - [ ] Implement `Set-LiteDeployFullOSHighPerformance` (Universal: High Performance power plan + zero sleep/display timeouts on AC/DC).
+  - [ ] Implement `Enable-LiteDeployFullOSShielding` for non-Administrator / Domain Join sessions (Freeze GPO, blank legal notices, disable CAD, suppress lock screen, preserve AutoLogon count).
+  - [ ] Implement `Disable-LiteDeployFullOSShielding` (Restore GPO, legal notices, lock screen, execute `gpupdate.exe /force`) coordinated in `Clear-LiteDeployFullOSRunKey`.
 - [ ] **Ephemeral Deployment Service Account (`LD_<UID>`):**
   - [x] Inject temporary admin account `LD-<UID>` with `LogonCount = 999` in `unattend.xml` (staged dynamically by Image when `actions > 0`).
   - [ ] **Dynamic Random Base64 Password:** Replace static lab base64 password (`passwordPassword`) with a cryptographically secure random password generated in WinPE, encoded to UTF-16LE Base64 with unattend salt for `<PlainText>false</PlainText>`.
