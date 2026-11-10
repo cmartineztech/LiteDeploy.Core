@@ -59,13 +59,14 @@ Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization" -Na
 Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop" -Name "ScreenSaveActive" -Value "0"
 ```
 
-#### C. Pre-Reboot Winlogon Hook
-Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume:
+#### C. Pre-Reboot Winlogon Hook (`Set-LiteDeployFullOSAutoLogon` - Pending Feature)
+Before any package-triggered intermediate restart (Exit Code `3010`), LiteDeploy re-injects the AutoAdminLogon credentials to guarantee seamless resume. Because Windows purges `DefaultPassword` from the registry upon initial interactive logon, and because joining Active Directory alters `DefaultDomainName`, `Set-LiteDeployFullOSAutoLogon` restores full authentication with `DefaultDomainName = '.'` (local machine context):
 ```powershell
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoAdminLogon" -Value "1"
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoLogonCount" -Value 999
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultUserName" -Value $tempAdminUser
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultPassword" -Value $tempPassword
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoAdminLogon"    -Value "1" -Type String
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoLogonCount"    -Value 999 -Type DWord
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultUserName"   -Value $tempAdminUser -Type String
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultPassword"   -Value $tempPassword -Type String
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DefaultDomainName" -Value "." -Type String
 ```
 
 #### D. Teardown & Final Polish
@@ -82,7 +83,7 @@ Once all packages finish successfully, `Disable-LiteDeployFullOSShielding` and `
 
 ## 2. Persistent `SYSTEM` Worker Daemon & Interactive Task Dispatch
 
-> **Status: Future exploration.** The live v2 engine uses interactive logon via HKLM Run (`LiteDeployFullOS`) with `Set-LiteDeployFullOSHighPerformance` and `Enable-LiteDeployFullOSShielding`. Session 0 persistent SYSTEM daemon with interactive task dispatch was analyzed to overcome interactive constraints, but scheduled tasks firing `AtLogOn` encountered the `Queued` state in Audit mode (see Section 11). This section is retained for future headless/daemon exploration.
+> **Status: Removed from roadmap (Archived Experiment).** LiteDeploy operates entirely in the interactive user desktop session via HKLM Run. SYSTEM Session 0 daemon / headless execution has been removed from the product roadmap due to desktop token requirements for software installers, Task Scheduler `Queued` issues, and unnecessary architectural complexity. Retained here only as historical reference.
 
 ### Concept
 `NT AUTHORITY\SYSTEM` acts as the persistent master engine (Session 0) across all FullOS phases and intermediate reboots. It maintains the authenticated SMB connection to the Deployment Share via DPAPI secrets, streams logs in real-time to the server, and dispatches interactive UI/processes into the ephemeral `LD-<UID>` user desktop (Session 1) using native Scheduled Tasks.
@@ -328,7 +329,9 @@ flowchart TD
 
 ---
 
-## 3. Headless SYSTEM Execution with Decoupled Progress Bar (Production Architecture)
+## 10. Headless SYSTEM Execution with Decoupled Progress Bar (Archived Experiment)
+
+> **Status: Removed from roadmap (Archived Experiment).** LiteDeploy has officially standardized on interactive user execution (under shielded `LD-<UID>` or local `Administrator`) via specialize HKLM Run. Headless SYSTEM execution in Session 0 has been retired from the roadmap.
 
 ### Motivation & Comparison
 During early development and lab staging, running LiteDeploy FullOS directly in the interactive user context (`Administrator` in Audit Mode) provides immediate visibility, live console diagnostics, and native access to mapped drives (`Z:`). 

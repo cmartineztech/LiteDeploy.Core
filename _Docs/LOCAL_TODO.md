@@ -91,12 +91,9 @@
   - [x] WorkflowTag carries `Actions` so Image can gate FullOS Run / Audit reseal.
   - [x] Standard = Audit Admin (elevated); Domain Join = AutoLogon local admin + temporary `EnableLUA=0` when no `<!--AuditMode-->` and actions > 0; cleanup restores UAC.
   - [ ] **Lab verify Domain Join UAC bypass end-to-end** (specialize Orders 1–4 → AutoLogon `LD-<UID>` → FullOS/WinPECT/Z: → cleanup restores EnableLUA).
-- [ ] **Future Exploration: Full Headless `SYSTEM` Execution with Decoupled Progress-Only UI:**
-  - [ ] **System Execution Parity:** Audit and ensure all actions currently running under `Administrator` (package installs, scripts, registry tweaks, driver servicing) can execute under `NT AUTHORITY\SYSTEM` without desktop token dependencies.
-  - [ ] **Silent Installer Validation & Watchdog:** Add process execution timeouts / watchdog guards so non-silent installers with hidden dialogs cannot hang headless in Session 0.
-  - [ ] **Headless Network Access:** Utilize direct UNC paths (`\\Server\Share$\...`) or pre-staged local packages (`C:\~LiteDeploy\Content\Packages`), removing any requirement for user-visible mapped drives (`Z:`).
-  - [ ] **Decoupled Progress-Only Shell:** User in Session 1 sees *only* a dedicated, full-screen or foreground WPF Progress Bar that observes progress via IPC / `DeploymentState.json` without access to Explorer, CMD, or network drives.
-  - [ ] **Complete End-to-End Teardown in SYSTEM:** Cleanup of staging directories, secret stores, and final reseal/OOBE invocation executed entirely within the SYSTEM context.
+- [ ] **FullOS AutoLogon Mid-Deploy Reboot Shielding (Pre-Reboot Hook):**
+  - [ ] **`Set-LiteDeployFullOSAutoLogon` Implementation:** Create helper in `LiteDeploy.OS.Engine.ps1` to re-arm Winlogon registry before any reboot. Because Windows wipes `DefaultPassword` upon initial logon, this function restores `AutoAdminLogon = '1'`, `AutoLogonCount = 999`, `DefaultUserName`, `DefaultPassword` (retrieved in-memory from WinPECT / DPAPI), and sets `DefaultDomainName = '.'` (to force local authentication for `LD-<UID>` or local `Administrator` even after Active Directory domain join).
+  - [ ] **Package Orchestrator Pre-Reboot Interceptor (Exit Code 3010):** When a package or workflow action signals an intermediate reboot (`3010`), execute `Set-LiteDeployFullOSRunKey` (re-arm HKLM Run), invoke `Set-LiteDeployFullOSAutoLogon`, update `DeploymentState.json` (set `Index++`, `Status = 'WaitingReboot'`), and initiate a controlled restart (`shutdown.exe /r /t 5 /f`).
 - [x] **FullOS Shielding & Teardown Architecture Documented:** Reference matrix in [FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md](architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md) covering all disabled/suppressed items, registry keys, backups, and teardown restoration logic.
 - [x] **Power Plan & GPO Immunization (FullOS Shielding):**
   - [x] Document complete registry modification and restoration lifecycle matrix.
@@ -116,7 +113,7 @@
   - [ ] Support `unattend.xml` template `<ProvisioningPackage>` tag expansion for `setup.exe` engine.
   - [ ] Stage offline Autopilot JSON profile (`W:\Windows\Provisioning\Autopilot\AutopilotConfigurationFile.json`) when Intune Ready workflow is selected.
 - [ ] **Standard & Workgroup Pre-OOBE Silent App Installation & Native OOBE Handoff:**
-  - [ ] Execute silent software package installations (MSI/EXE) under FullOS (Administrator interactive / future SYSTEM worker) before OOBE handoff.
+  - [ ] Execute silent software package installations (MSI/EXE) under FullOS (Administrator interactive) before OOBE handoff.
   - [ ] Inject modern AppX/MSIX provisioned packages into offline OS in WinPE (`dism /Add-AppxProvisionedPackage`) for automatic user profile propagation.
   - [ ] Pair with `Standard.xml` (`<HideLocalAccountScreen>false</HideLocalAccountScreen>`) for seamless native interactive local account creation.
 

@@ -158,6 +158,7 @@ Rules:
 
 - [ ] `Start-LiteDeployPackageOrchestration` (FullOS or thin helper; reuse `Invoke-`/`Install-LiteDeployPackage`).
 - [ ] Implement status machine + Index + WaitingReboot anti-loop.
+- [ ] Pre-Reboot AutoLogon Hook (`Set-LiteDeployFullOSAutoLogon`): When an action returns `3010`, re-inject `AutoAdminLogon=1`, `AutoLogonCount=999`, `DefaultUserName`, `DefaultPassword` (from memory/DPAPI), `DefaultDomainName='.'`, re-arm `Set-LiteDeployFullOSRunKey`, and initiate controlled reboot.
 - [ ] ExecutionSource Remote vs Local (stage under `C:\~LiteDeploy\Content\Packages\<id>`).
 - [ ] Orchestration lock; Clear Run + FullOS shielding teardown (`Disable-LiteDeployFullOSShielding`) + UAC restore (`Restore-LiteDeployFullOSUacBypass`) + account cleanup when queue finishes or Stop-on-error.
 - [ ] Wire call after Z:/WinPECT in `LiteDeploy.OS.Engine.ps1` (replace “packages pending” log).
@@ -173,7 +174,7 @@ Rules:
 
 - SCCM-style detection methods / multi Deployment Types / dependency graph.
 - DeployVault wiring (future tool).
-- SYSTEM Session 0 package host.
+- SYSTEM Session 0 package host (removed from roadmap; all orchestration runs in the interactive desktop session via HKLM Run).
 - **Winget / Chocolatey package IDs** — internet/bootstrap/version-pin complexity; keep v1 share-local payloads only. Optional later via a separate `packageType` adapter, not in the core queue.
 
 ---
