@@ -596,6 +596,141 @@ function Resolve-UnattendTemplate {
 # REGION 4: UNATTENDED ANSWER FILE GENERATION & SUBSTITUTION
 # ==============================================================================
 
+function Test-LiteDeployUnattendDocument {
+    <#
+    .SYNOPSIS
+        Validates an unattended XML template or generated answer file against schema, placeholder,
+        ComputerName, and RunSynchronous ordering policies.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$XmlContent = "",
+
+        [Parameter(Mandatory = $false)]
+        [xml]$XmlDocument = $null,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Path = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IsTemplate,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$PassThru
+    )
+
+    $rawXml = $XmlContent
+    if ([string]::IsNullOrWhiteSpace($rawXml) -and (-not [string]::IsNullOrWhiteSpace($Path))) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Unattended XML file not found at '$Path'."
+        }
+        $rawXml = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    }
+
+    $doc = $XmlDocument
+    if ($null -eq $doc) {
+        if ([string]::IsNullOrWhiteSpace($rawXml)) {
+            throw "Unattended XML content is empty."
+        }
+        try {
+            $doc = [xml]$rawXml
+        }
+        catch {
+            throw "Malformed unattended XML document: $($_.Exception.Message)"
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace($rawXml)) {
+        $rawXml = $doc.OuterXml
+    }
+
+    if ($null -eq $doc.DocumentElement -or $doc.DocumentElement.LocalName -ne 'unattend') {
+        throw "Invalid unattended XML root element. Expected '<unattend>'."
+    }
+
+    if (-not $IsTemplate) {
+        $prohibitedPlaceholders = @(
+            '<!--WorkflowInfo-->',
+            '<!--DiskID-->',
+            '<!--PartitionID-->',
+            '<!--SetupUILanguage-->',
+            '<!--UILanguage-->',
+            '<!--InputLocale-->',
+            '<!--SystemLocale-->',
+            '<!--UserLocale-->',
+            '<!--ComputerName-->',
+            '<!--TimeZone-->',
+            '<!--Timezone-->',
+            '<!--RegisteredOwner-->',
+            '<!--RegisteredOrganization-->',
+            '<!--JoinWorkGroup-->',
+            '<!--JoinWorkgroup-->',
+            '<!--JoinDomain-->',
+            '<!--MachineObjectOU-->',
+            '<!--ComputerDescription-->',
+            '<!--LiteDeployFullOSRun-->',
+            '<!--DisableUacForFullOS-->',
+            '<!--AuditMode-->',
+            '<!--Architecture-->',
+            '<!--Arch-->',
+            '<!--ImageIndex-->'
+        )
+        foreach ($placeholder in $prohibitedPlaceholders) {
+            if ($rawXml.IndexOf($placeholder, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "Generated unattended XML still contains unreplaced template placeholder '$placeholder'."
+            }
+        }
+    }
+
+    $computerNameNodes = $doc.SelectNodes("//*[local-name()='ComputerName']")
+    if ($null -ne $computerNameNodes) {
+        foreach ($cnNode in $computerNameNodes) {
+            $cnText = ([string]$cnNode.InnerText).Trim()
+            if ([string]::IsNullOrEmpty($cnText) -or $cnText -eq '*') {
+                continue
+            }
+            if ($cnText.Length -gt 15 -or
+                $cnText.StartsWith('-') -or
+                $cnText.EndsWith('-') -or
+                ($cnText -notmatch '^[A-Za-z0-9-]+$') -or
+                ($cnText -match '^\d+$')) {
+                throw "Invalid ComputerName '$cnText' in unattended XML. ComputerName must be 1-15 NetBIOS characters (letters, digits, hyphens) and not all-numeric."
+            }
+        }
+    }
+
+    $runSyncBlocks = $doc.SelectNodes("//*[local-name()='RunSynchronous']")
+    if ($null -ne $runSyncBlocks) {
+        foreach ($runSync in $runSyncBlocks) {
+            $seenOrders = @{}
+            $cmdNodes = $runSync.SelectNodes("*[local-name()='RunSynchronousCommand']")
+            if ($null -eq $cmdNodes) { continue }
+            foreach ($cmdNode in $cmdNodes) {
+                $orderNode = $cmdNode.SelectSingleNode("*[local-name()='Order']")
+                $orderText = if ($null -ne $orderNode) { ([string]$orderNode.InnerText).Trim() } else { "" }
+                $orderInt = 0
+                if ([string]::IsNullOrWhiteSpace($orderText) -or (-not [int]::TryParse($orderText, [ref]$orderInt)) -or $orderInt -lt 1) {
+                    throw "Invalid or missing <Order> '$orderText' in <RunSynchronousCommand>. Orders must be positive integers (>= 1)."
+                }
+                if ($seenOrders.ContainsKey($orderInt)) {
+                    throw "Duplicate <RunSynchronousCommand> Order '$orderInt' detected within <RunSynchronous>."
+                }
+                $seenOrders[$orderInt] = $true
+            }
+        }
+    }
+
+    if ($PassThru) {
+        return [PSCustomObject]@{
+            Passed     = $true
+            IsTemplate = [bool]$IsTemplate
+            Document   = $doc
+        }
+    }
+
+    return $true
+}
+
 function New-LiteDeployUnattendXml {
     <#
     .SYNOPSIS
@@ -1112,6 +1247,15 @@ function New-LiteDeployUnattendXml {
     $targetFolder = Split-Path -Path $effectiveOutputPath -Parent
     if ($targetFolder -and (-not (Test-Path -LiteralPath $targetFolder))) {
         $null = New-Item -Path $targetFolder -ItemType Directory -Force -ErrorAction SilentlyContinue
+    }
+
+    # Preflight validation: verify XML syntax, root element, placeholders, ComputerName, and RunSynchronous orders
+    try {
+        [void](Test-LiteDeployUnattendDocument -XmlContent $generatedContent)
+    }
+    catch {
+        Write-ComponentLog "Preflight Unattend validation failed: $($_.Exception.Message)" -Level "ERROR" -ForegroundColor Red
+        throw
     }
 
     Set-Content -LiteralPath $effectiveOutputPath -Value $generatedContent -Encoding UTF8 -Force

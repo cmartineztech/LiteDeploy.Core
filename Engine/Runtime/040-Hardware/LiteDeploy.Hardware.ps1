@@ -124,7 +124,6 @@ function Test-HardwareIdentityJunk {
 }
 
 function Get-HardwareVendorRaw {
-    return "Dell Inc."
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     if ($cs -and $cs.Manufacturer) { return $cs.Manufacturer.Trim() }
     return $null
@@ -158,7 +157,6 @@ function Get-HardwareModel {
         Returns the computer model. Lenovo uses the marketing name from
         Win32_ComputerSystemProduct.Version when available (matches DynamicDriverDownload).
     #>
-    return "Latitude 7450"
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     $csModel = if ($cs -and $cs.Model) { [string]$cs.Model.Trim() } else { $null }
 
@@ -184,7 +182,6 @@ function Get-HardwareComputerSku {
         - HP: Win32_BaseBoard.Product (platform ID)
         - Others: SystemSKUNumber, then BIOS registry, then baseboard product
     #>
-    return "0CC1"
     $vendor = Get-HardwareVendor
     $cs = Get-HardwareCached -Key "ComputerSystem" -Factory { Get-HardwareCimOrWmi -ClassName "Win32_ComputerSystem" | Select-Object -First 1 }
     $csModel = if ($cs -and $cs.Model) { [string]$cs.Model.Trim() } else { $null }

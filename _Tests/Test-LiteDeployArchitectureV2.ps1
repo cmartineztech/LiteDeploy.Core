@@ -441,6 +441,39 @@ try {
     $fnNames = @('Set-LiteDeployFullOSHighPerformance', 'Enable-LiteDeployFullOSShielding', 'Disable-LiteDeployFullOSShielding', 'Set-LiteDeployFullOSAutoLogon', 'Clear-LiteDeployFullOSRunKey', 'Restore-LiteDeployFullOSUacBypass')
     $foundFns = @($osAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $fnNames }, $true))
     Assert-True ($foundFns.Count -eq $fnNames.Count) 'FullOS Engine implements HighPerformance, Shielding, AutoLogon, and Teardown lifecycle functions'
+
+    # Security Hardening: Hardware inventory contains no hardcoded mock debug returns
+    $hwPath = Join-Path $sourceRuntimeRoot '040-Hardware\LiteDeploy.Hardware.ps1'
+    $hwContent = Get-Content -LiteralPath $hwPath -Raw
+    $noMocks = ($hwContent -notmatch '(?m)^\s*return\s+["'']Dell Inc\.["'']') -and
+               ($hwContent -notmatch '(?m)^\s*return\s+["'']Latitude 7450["'']') -and
+               ($hwContent -notmatch '(?m)^\s*return\s+["'']0CC1["'']')
+    Assert-True $noMocks 'Hardware inventory contains no hardcoded Dell/Latitude/0CC1 mock returns'
+
+    # Security Hardening: Disk safety guard rails (Assert-LiteDeployTargetDiskIdentity)
+    $diskPath = Join-Path $sourceRuntimeRoot '060-Disk\LiteDeploy.Disk.ps1'
+    $diskAst = [System.Management.Automation.Language.Parser]::ParseFile($diskPath, [ref]$null, [ref]$null)
+    $assertDiskFn = $diskAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-LiteDeployTargetDiskIdentity' }, $true)
+    Assert-True ($null -ne $assertDiskFn -and $assertDiskFn.Count -gt 0) 'Disk component implements Assert-LiteDeployTargetDiskIdentity safety gate'
+
+    # Functional test for disk guard rails
+    if ($assertDiskFn.Count -gt 0) {
+        . ([scriptblock]::Create($assertDiskFn[0].Extent.Text))
+    }
+    $usbBlocked = $false
+    try {
+        Assert-LiteDeployTargetDiskIdentity -Disk ([pscustomobject]@{ Number = 0; BusType = 'USB'; IsBoot = $false; IsSystem = $false; Size = 64GB })
+    }
+    catch {
+        $usbBlocked = ($_.Exception.Message -match 'USB')
+    }
+    Assert-True $usbBlocked 'Assert-LiteDeployTargetDiskIdentity blocks wipe of USB removable/boot media'
+
+    # Security Hardening: Preflight Unattend XML validation (Test-LiteDeployUnattendDocument)
+    $imagePath = Join-Path $sourceRuntimeRoot '080-Image\LiteDeploy.Image.ps1'
+    $imageAst = [System.Management.Automation.Language.Parser]::ParseFile($imagePath, [ref]$null, [ref]$null)
+    $assertUnattendFn = $imageAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-LiteDeployUnattendDocument' }, $true)
+    Assert-True ($null -ne $assertUnattendFn -and $assertUnattendFn.Count -gt 0) 'Image component implements Test-LiteDeployUnattendDocument preflight check'
 }
 catch { Assert-True $false "Explicit Environment paths: $_" }
 
