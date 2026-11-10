@@ -897,6 +897,13 @@ function Start-LiteDeployPipeline {
     Write-Host "================================================================" -ForegroundColor Cyan
     Write-LiteDeployLog -Message ''
 
+    # Ensure WPF renders purely in software mode within WinPE to avoid Direct3D OutOfMemoryException
+    try {
+        Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms -ErrorAction SilentlyContinue
+        [System.Windows.Media.RenderOptions]::ProcessRenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly
+    }
+    catch {}
+
     try {
         # Console window remains open (not minimized) so technician can view real-time logs
         # if (Get-Command Set-LiteDeployHostShellWindow -ErrorAction SilentlyContinue) {

@@ -98,8 +98,8 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     return
 }
 
-try { [System.Windows.Media.RenderOptions]::ProcessRenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly } catch {}
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
+try { [System.Windows.Media.RenderOptions]::ProcessRenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly } catch {}
 try { [System.Windows.Input.Mouse]::OverrideCursor = [System.Windows.Input.Cursors]::Wait } catch {}
 
 $script:WindowsFormsAlertsAvailable = $true
