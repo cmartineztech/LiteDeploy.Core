@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Non-destructive architecture v2 smoke tests for LiteDeploy Core.
 #>
@@ -438,9 +438,9 @@ try {
     $osTokens = $null
     $osErrors = $null
     $osAst = [System.Management.Automation.Language.Parser]::ParseFile($osEnginePath, [ref]$osTokens, [ref]$osErrors)
-    $fnNames = @('Set-LiteDeployFullOSHighPerformance', 'Enable-LiteDeployFullOSShielding', 'Disable-LiteDeployFullOSShielding', 'Clear-LiteDeployFullOSRunKey', 'Restore-LiteDeployFullOSUacBypass')
+    $fnNames = @('Set-LiteDeployFullOSHighPerformance', 'Enable-LiteDeployFullOSShielding', 'Disable-LiteDeployFullOSShielding', 'Set-LiteDeployFullOSAutoLogon', 'Clear-LiteDeployFullOSRunKey', 'Restore-LiteDeployFullOSUacBypass')
     $foundFns = @($osAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $fnNames }, $true))
-    Assert-True ($foundFns.Count -eq $fnNames.Count) 'FullOS Engine implements HighPerformance, Shielding, and Teardown lifecycle functions'
+    Assert-True ($foundFns.Count -eq $fnNames.Count) 'FullOS Engine implements HighPerformance, Shielding, AutoLogon, and Teardown lifecycle functions'
 }
 catch { Assert-True $false "Explicit Environment paths: $_" }
 

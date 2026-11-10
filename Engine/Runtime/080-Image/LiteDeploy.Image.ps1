@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Applies a Windows operating system image using the Windows Setup (setup.exe) or DISM (dism.exe) engine with automated unattended answer file generation.
 
@@ -996,9 +996,10 @@ function New-LiteDeployUnattendXml {
     }
 
     # oobeSystem LocalServiceAccount (Domain Join / non-Audit only; when actions > 0).
-    # Stages ephemeral admin account matching Deployment UID: LD-<DeploymentUid>.
+    # Stages ephemeral admin account matching Deployment UID: LD-<DeploymentUid> with a dynamic random password.
     $serviceAccountName = if (-not [string]::IsNullOrWhiteSpace($depUid)) { "LD-$depUid" } else { "LD-Service" }
-    $b64Password = "cABhAHMAcwB3AG8AcgBkAFAAYQBzAHMAdwBvAHIAZAA="
+    $rawPassword = ('Ld!' + [guid]::NewGuid().ToString('N').Substring(0, 16) + 'Aa9#')
+    $b64Password = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($rawPassword + 'Password'))
 
     $localServiceAccountComponent = @"
           <LocalAccount wcm:action="add">
@@ -1015,6 +1016,21 @@ function New-LiteDeployUnattendXml {
         if ($hasFullOsActions) {
             $generatedContent = $generatedContent -replace '<!--LocalServiceAccount-->', $localServiceAccountComponent
             Write-ComponentLog "Staged LocalServiceAccount '$serviceAccountName' (workflow actions > 0)." -Level "SUCCESS" -ForegroundColor Green
+
+            # Register in-memory PSCredential for WinPECT transfer to FullOS
+            try {
+                $secPass = ConvertTo-SecureString -String $rawPassword -AsPlainText -Force
+                $localServiceCred = New-Object System.Management.Automation.PSCredential ($serviceAccountName, $secPass)
+                $secretMapVar = Get-Variable -Name 'LiteDeploySecretMap' -Scope Global -ErrorAction SilentlyContinue
+                if ($null -eq $secretMapVar -or $null -eq $secretMapVar.Value -or $secretMapVar.Value -isnot [hashtable]) {
+                    $global:LiteDeploySecretMap = @{}
+                }
+                $global:LiteDeploySecretMap['LocalServiceAccount'] = $localServiceCred
+                Write-ComponentLog "Registered 'LocalServiceAccount' in SecretMap for WinPECT handoff." -Level "SUCCESS" -ForegroundColor Green
+            }
+            catch {
+                Write-ComponentLog "Warning: Failed to register 'LocalServiceAccount' in SecretMap: $_" -Level "WARNING"
+            }
         }
         else {
             $generatedContent = $generatedContent -replace '<!--LocalServiceAccount-->', ''

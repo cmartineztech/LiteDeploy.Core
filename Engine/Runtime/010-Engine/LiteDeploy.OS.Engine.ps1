@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy FullOS Engine — First-boot and reboot resume orchestrator (architecture v2).
 
@@ -819,14 +819,19 @@ function Disable-LiteDeployFullOSShielding {
             Remove-Item -LiteralPath $backupKey -Recurse -Force -ErrorAction SilentlyContinue
         }
 
-        # 5. Remove shielding markers
+        # 5. Clean up AutoLogon password if left in registry
+        if (Test-Path -LiteralPath $winlogonKey) {
+            Remove-ItemProperty -LiteralPath $winlogonKey -Name 'DefaultPassword' -Force -ErrorAction SilentlyContinue
+        }
+
+        # 6. Remove shielding markers
         if (Test-Path -LiteralPath $markerKey) {
             Remove-ItemProperty -LiteralPath $markerKey -Name 'ShieldingActive' -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -LiteralPath $markerKey -Name 'ShieldingUser' -Force -ErrorAction SilentlyContinue
         }
         $result.ShieldingRemoved = $true
 
-        # 6. Trigger gpupdate /force in background if not skipped
+        # 7. Trigger gpupdate /force in background if not skipped
         if (-not $SkipGpUpdate) {
             try {
                 $p = Start-Process -FilePath 'gpupdate.exe' -ArgumentList '/force' -NoNewWindow -PassThru -ErrorAction SilentlyContinue
@@ -890,6 +895,99 @@ function Set-LiteDeployFullOSRunKey {
         LocalRootName = $LocalRootName
         OsDriveLetter = $OsDriveLetter
     }
+}
+
+function Set-LiteDeployFullOSAutoLogon {
+    <#
+    .SYNOPSIS
+        Re-arms Winlogon AutoAdminLogon before a mid-deployment reboot.
+    .DESCRIPTION
+        Windows purges DefaultPassword from Winlogon upon initial interactive logon, and Active Directory
+        domain join alters DefaultDomainName to the domain NetBIOS name.
+        Before an intermediate restart (e.g. exit code 3010), this function restores unattended logon
+        by re-injecting DefaultPassword, DefaultUserName, forcing DefaultDomainName = '.' (or local computer),
+        and setting AutoAdminLogon = '1' with AutoLogonCount = 999.
+        Credentials can be supplied directly or retrieved in memory via WinPECT ('LocalServiceAccount').
+    .PARAMETER UserName
+        The local user account to logon as (e.g. 'LD-<UID>' or 'Administrator').
+    .PARAMETER Password
+        Plain text password to inject into DefaultPassword.
+    .PARAMETER Domain
+        Default domain for Winlogon (default: '.' to enforce local machine authentication).
+    .PARAMETER LocalRoot
+        Path to local ~LiteDeploy directory to resolve WinPECT 'LocalServiceAccount' secret if Password is not supplied.
+    .OUTPUTS
+        [pscustomobject] containing Success, UserName, Domain, AutoLogonArmed, and Message.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$UserName = '',
+        [string]$Password = '',
+        [string]$Domain = '.',
+        [string]$LocalRoot = ''
+    )
+
+    $result = [pscustomobject]@{
+        Success        = $true
+        UserName       = $UserName
+        Domain         = $Domain
+        AutoLogonArmed = $false
+        Message        = ''
+    }
+
+    try {
+        $winlogonKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+        if (-not (Test-Path -LiteralPath $winlogonKey)) {
+            $null = New-Item -Path $winlogonKey -Force -ErrorAction Stop
+        }
+
+        # If Password was not supplied, try retrieving 'LocalServiceAccount' from WinPECT in memory
+        if ([string]::IsNullOrWhiteSpace($Password) -and -not [string]::IsNullOrWhiteSpace($LocalRoot)) {
+            if (Get-Command Get-LiteDeployFullOSSecret -ErrorAction SilentlyContinue) {
+                $sec = Get-LiteDeployFullOSSecret -LocalRoot $LocalRoot -SecretId 'LocalServiceAccount'
+                if ($sec -and $sec.Success -and $sec.Credential) {
+                    if ([string]::IsNullOrWhiteSpace($UserName)) {
+                        $UserName = $sec.UserName
+                        $result.UserName = $UserName
+                    }
+                    $Password = $sec.Credential.GetNetworkCredential().Password
+                }
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($UserName)) {
+            # Check current identity or Winlogon DefaultUserName
+            $existing = Get-ItemProperty -LiteralPath $winlogonKey -Name 'DefaultUserName' -ErrorAction SilentlyContinue
+            if ($existing -and $existing.PSObject.Properties['DefaultUserName'] -and -not [string]::IsNullOrWhiteSpace($existing.DefaultUserName)) {
+                $UserName = [string]$existing.DefaultUserName
+                $result.UserName = $UserName
+            }
+        }
+
+        Set-ItemProperty -LiteralPath $winlogonKey -Name 'AutoAdminLogon' -Value '1' -Type String -Force -ErrorAction Stop
+        Set-ItemProperty -LiteralPath $winlogonKey -Name 'AutoLogonCount' -Value 999 -Type DWord -Force -ErrorAction Stop
+
+        if (-not [string]::IsNullOrWhiteSpace($UserName)) {
+            Set-ItemProperty -LiteralPath $winlogonKey -Name 'DefaultUserName' -Value $UserName -Type String -Force -ErrorAction Stop
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($Password)) {
+            Set-ItemProperty -LiteralPath $winlogonKey -Name 'DefaultPassword' -Value $Password -Type String -Force -ErrorAction Stop
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($Domain)) {
+            Set-ItemProperty -LiteralPath $winlogonKey -Name 'DefaultDomainName' -Value $Domain -Type String -Force -ErrorAction Stop
+        }
+
+        $result.AutoLogonArmed = $true
+        $result.Message = "Winlogon AutoAdminLogon armed for user '$UserName' (Domain='$Domain', Count=999)."
+    }
+    catch {
+        $result.Success = $false
+        $result.Message = "Failed to set Winlogon AutoLogon: $($_.Exception.Message)"
+    }
+
+    return $result
 }
 
 function Restore-LiteDeployFullOSUacBypass {

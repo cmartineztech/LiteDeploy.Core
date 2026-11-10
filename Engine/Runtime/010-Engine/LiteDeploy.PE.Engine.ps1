@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Engine  -  WinPE install pipeline (architecture v2).
 
@@ -707,6 +707,9 @@ function Complete-LiteDeployWinPECredentialHandoff {
     if ($secretMap) { foreach ($k in @($secretMap.Keys)) { $null = $availableIds.Add([string]$k) } }
     if ($null -ne $shareCred) { $null = $availableIds.Add('DeploymentShare') }
     $enforceRequired = @($workflowRequiredIds | Where-Object { $availableIds.Contains($_) })
+    if ($availableIds.Contains('LocalServiceAccount') -and $enforceRequired.Count -gt 0 -and $enforceRequired -notcontains 'LocalServiceAccount') {
+        $enforceRequired += 'LocalServiceAccount'
+    }
     $missingRequired = @($workflowRequiredIds | Where-Object { -not $availableIds.Contains($_) })
     if ($missingRequired.Count -gt 0) {
         Write-LiteDeployLog ("Workflow RequiredCredentialIds not in memory (skipped until DeployVault): {0}" -f ($missingRequired -join ', ')) -Level WARNING -Component "PE.Engine"
