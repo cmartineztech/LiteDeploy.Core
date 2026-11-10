@@ -457,16 +457,6 @@ function Get-LiteDeployOperatingSystemsCatalog {
     }
 }
 
-function Test-JSONFormat {
-    <#
-    .SYNOPSIS
-        True when the file exists and parses as JSON (same contract as the WorkflowSelection helper).
-    #>
-    param([string]$Path)
-
-    return (Test-LiteDeployJsonFile -Path $Path)
-}
-
 function Get-LiteDeployNativeArchitecture {
     <#
     .SYNOPSIS

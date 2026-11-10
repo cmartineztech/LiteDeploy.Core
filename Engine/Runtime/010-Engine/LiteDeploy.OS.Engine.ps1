@@ -1123,27 +1123,6 @@ function Clear-LiteDeployFullOSSetupCmdLine {
     }
 }
 
-# Legacy aliases kept so older call sites / docs referring to "SetupCmdLine arm" still resolve to Run.
-function Set-LiteDeployFullOSSetupCmdLine {
-    <#
-    .SYNOPSIS
-        Legacy compatibility shim: redirects Setup\CmdLine arming to Set-LiteDeployFullOSRunKey.
-    .DESCRIPTION
-        Arming Setup\CmdLine caused Windows Setup-continue reboot loops. LiteDeploy FullOS
-        standardized on HKLM\...\Run for interactive Administrator logon resume. This shim
-        clears any legacy LiteDeploy Setup CmdLine hijack and arms HKLM Run instead.
-    #>
-    param(
-        [string]$LocalRootName = '~LiteDeploy',
-        [string]$OsDriveLetter = $env:SystemDrive,
-        [string]$FullOSPath = '',
-        [string]$RegistryRoot = 'HKLM:\SYSTEM\Setup'
-    )
-    # Do not arm Setup continue — that caused reboot loops. Arm HKLM Run; only clear LiteDeploy hijacks.
-    $null = Clear-LiteDeployFullOSSetupCmdLine -RegistryRoot $RegistryRoot
-    return Set-LiteDeployFullOSRunKey -LocalRootName $LocalRootName -OsDriveLetter $OsDriveLetter
-}
-
 # ==============================================================================
 # 4. SHARE CONNECTION HELPER
 # ==============================================================================
