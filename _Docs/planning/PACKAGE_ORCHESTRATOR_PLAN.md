@@ -1,9 +1,9 @@
 # Package Orchestrator Plan
 
 **Status:** Plan only — not implemented.  
-**Updated:** 2026-10-14  
-**Depends on:** FullOS HKLM Run resume, WinPECT, `WorkflowTag.Actions`, existing `LiteDeploy.Packages.ps1` (Invoke/Install).  
-**Related:** [IDEAS §6](IDEAS_FOR_IMPLEMENTATION.md) (Remote/Local), [Catalog/Workflow Spec](../architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md), [LOCAL_TODO](../LOCAL_TODO.md).
+**Updated:** 2026-11-10  
+**Depends on:** FullOS HKLM Run resume, WinPECT, `WorkflowTag.Actions`, existing `LiteDeploy.Packages.ps1` (Invoke/Install), Universal High Performance, FullOS Environment Shielding.  
+**Related:** [IDEAS §6](IDEAS_FOR_IMPLEMENTATION.md) (Remote/Local), [FullOS Shielding Matrix](../architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md), [Catalog/Workflow Spec](../architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md), [LOCAL_TODO](../LOCAL_TODO.md).
 
 ---
 
@@ -29,11 +29,13 @@ flowchart TD
 
     subgraph FirstBoot["First FullOS logon"]
         Run["HKLM Run → LiteDeploy.OS.Engine.ps1"]
+        Power["Set-LiteDeployFullOSHighPerformance<br/>(Universal · 0 timeouts)"]
+        Shield["Enable-LiteDeployFullOSShielding<br/>(Freeze GPO · CAD/Notice blanking)"]
         WinPECT["WinPECT unseal"]
         Z["New-SmbMapping Z:"]
         Lock["Acquire orchestration lock"]
         Orch["Start-LiteDeployPackageOrchestration"]
-        Run --> WinPECT --> Z --> Lock --> Orch
+        Run --> Power --> Shield --> WinPECT --> Z --> Lock --> Orch
     end
 
     StateOut -->|reboot into OS| Run
@@ -61,7 +63,7 @@ flowchart TD
     WaitRB --> Next
 
     subgraph Finish["Queue empty"]
-        Clear["Clear Run + restore EnableLUA"]
+        Clear["Clear-LiteDeployFullOSRunKey<br/>• Restore EnableLUA=1<br/>• Disable-LiteDeployFullOSShielding (unfreeze GPO)<br/>• gpupdate /force<br/>• Delete LD-&lt;UID&gt; account & profile"]
         Complete["Status = Completed"]
         Clear --> Complete
     end
@@ -157,7 +159,7 @@ Rules:
 - [ ] `Start-LiteDeployPackageOrchestration` (FullOS or thin helper; reuse `Invoke-`/`Install-LiteDeployPackage`).
 - [ ] Implement status machine + Index + WaitingReboot anti-loop.
 - [ ] ExecutionSource Remote vs Local (stage under `C:\~LiteDeploy\Content\Packages\<id>`).
-- [ ] Orchestration lock; Clear Run + UAC restore when queue finishes or Stop-on-error.
+- [ ] Orchestration lock; Clear Run + FullOS shielding teardown (`Disable-LiteDeployFullOSShielding`) + UAC restore (`Restore-LiteDeployFullOSUacBypass`) + account cleanup when queue finishes or Stop-on-error.
 - [ ] Wire call after Z:/WinPECT in `LiteDeploy.OS.Engine.ps1` (replace “packages pending” log).
 
 ### Phase C — Hardening
@@ -181,5 +183,6 @@ Rules:
 1. Standard workflow with 2+ actions completes without re-reading catalog after handoff.  
 2. Mid-queue 3010 resumes at **next** package, not the same one.  
 3. Failed Stop clears HKLM Run (no eternal FullOS logon loop).  
+4. Final queue cleanup restores power scheme, reenables GPO, restores legal notice / CAD, restores UAC, and deletes ephemeral service account if present (see `_Docs/architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md`).  
 4. State mirrored to `WorkLogs\Deployments\<UID>` when Network.  
 5. No Task Scheduler required.

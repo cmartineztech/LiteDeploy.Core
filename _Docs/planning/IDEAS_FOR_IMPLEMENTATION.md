@@ -2,54 +2,60 @@
 
 This document tracks agreed-upon architectural ideas, designs, and feature enhancements for upcoming LiteDeploy phases.
 
-> **Current implemented baseline (2026-10-17):** First FullOS launch is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** when workflow actions > 0 (short `reg add` / `REG_EXPAND_SZ`; not `auditUser`). On direct execution, before resume, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. FullOS may re-arm Run for mid-deploy reboots (scheduled tasks gated off), kills `sysprep.exe` while leaving stock Setup CmdLine intact, and starts Interactive Probe in a second window. Workflow Selection titles use `editionName` and append ` (version)` only when the name does not already contain it. Domain Join (non-Audit, actions > 0) may temporarily set `EnableLUA=0` in specialize and restore UAC on FullOS cleanup. Stock **MDT** resume is Startup `LiteTouch.lnk` / `RunOnce` / `FirstLogonCommands`→`LTIBootstrap` — not Task Scheduler. Sections below that still mention `SetupComplete.cmd` / Session 0 `LiteDeploy_SystemEngine` / Setup CmdLine resume / `auditUser` first entry are **future exploration or historical proposals**, not the live path.
+> **Current implemented baseline (2026-11-10):** First FullOS launch is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** when workflow actions > 0 (short `reg add` / `REG_EXPAND_SZ`; not `auditUser`). On direct execution, before resume, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. FullOS applies High Performance power plan universally (`Set-LiteDeployFullOSHighPerformance`), enables FullOS Environment Shielding (`Enable-LiteDeployFullOSShielding`: `DisableGPO=1`, legal notice blanking, `DisableCAD=1`, `NoLockScreen=1`, `AutoLogonCount=999`), and restores everything on teardown (`Disable-LiteDeployFullOSShielding`, `Restore-LiteDeployFullOSUacBypass`, `gpupdate /force`). AutoLogon credentials for Domain Join use ephemeral service account `LD-<UID>` (`<!--LocalServiceAccount-->` / `<!--AutoLogonServiceAccount-->`), while Workgroup / Audit uses local Administrator. FullOS may re-arm Run for mid-deploy reboots (scheduled tasks gated off), kills `sysprep.exe` while leaving stock Setup CmdLine intact, and starts Interactive Probe in a second window. Workflow Selection titles use `editionName` and append ` (version)` only when the name does not already contain it. Domain Join (non-Audit, actions > 0) temporarily sets `EnableLUA=0` in specialize and restores UAC on FullOS cleanup. Stock **MDT** resume is Startup `LiteTouch.lnk` / `RunOnce` / `FirstLogonCommands`→`LTIBootstrap` — not Task Scheduler. Sections below that still mention `SetupComplete.cmd` / Session 0 `LiteDeploy_SystemEngine` / Setup CmdLine resume / `auditUser` first entry are **future exploration or historical proposals**, not the live path.
 
 ---
 
 ## 1. Standard Workflow: FullOS Phase 6 Orchestration & GPO Immunization Plan
+
+> **Status: Implemented in v2.** Universal High Performance power scheme and FullOS Environment Shielding are fully implemented via `Set-LiteDeployFullOSHighPerformance`, `Enable-LiteDeployFullOSShielding`, and `Disable-LiteDeployFullOSShielding` in `LiteDeploy.OS.Engine.ps1`. The launch is triggered interactively via unattend `specialize` HKLM Run (`LiteDeployFullOS`) under the deployment user account (ephemeral `LD-<UID>` for Domain Join; local `Administrator` for Workgroup/Audit). For the complete contract and registry key mappings, see the master reference in [`FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md`](../architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md).
 
 ### Overview
 The **Standard Workflow** enables deployment scenarios requiring domain membership, corporate security agents, application packaging, and interactive desktop execution without risk of Group Policy (GPO) or power timeouts interrupting AutoLogon.
 
 ```mermaid
 flowchart TD
-    Start["Phase 6: First Boot (SetupComplete.cmd as SYSTEM)"] --> Power["1. Set High Performance & Disable Sleep/Screen Lock"]
-    Power --> WinPECT["2. WinPECT: Decrypt Transfer Package & Import to SYSTEM DPAPI"]
+    Start["Phase 6: First Boot (Interactive HKLM Run)"] --> Power["1. Set High Performance & 0 Timeouts (AC/DC)"]
+    Power --> WinPECT["2. WinPECT: Decrypt Transfer Package & Import DPAPI"]
     WinPECT --> DomainJoin["3. Join Corporate Domain (Active Directory / Entra ID)"]
-    DomainJoin --> BlockGPO["4. Immunize Registry: Disable Background GPO Processing"]
-    BlockGPO --> DesktopLogon["5. AutoLogon into Ephemeral Service Account (LD_<UID>)"]
-    DesktopLogon --> ProgressUI["6. Launch FullOS Full-Screen Progress Host (WPF via Task)"]
+    DomainJoin --> BlockGPO["4. Shielding: DisableGPO=1, Blank Notices, DisableCAD, NoLockScreen"]
+    BlockGPO --> DesktopLogon["5. AutoLogon (LD-<UID> or Administrator, AutoLogonCount=999)"]
+    DesktopLogon --> ProgressUI["6. Launch FullOS Progress Host & Interactive Probe"]
     ProgressUI --> PackageLoop["7. Execute Software Packages (Ordered Dependencies)"]
     PackageLoop --> RebootCheck{"Package requests Reboot (3010)?"}
-    RebootCheck -- Yes --> PreRebootHook["8. Pre-Reboot Hook: Re-inject Winlogon Keys -> Restart"]
+    RebootCheck -- Yes --> PreRebootHook["8. Pre-Reboot Hook: Re-inject Run Key & Winlogon -> Restart"]
     PreRebootHook --> DesktopLogon
-    RebootCheck -- No / Done --> FinalClean["9. Teardown: Remove Account, Purge Profile, Unblock GPO"]
-    FinalClean --> GPUpdate["10. Run gpupdate /force -> Final Restart to Corporate Logon"]
+    RebootCheck -- No / Done --> FinalClean["9. Teardown: Remove Account, Purge Profile, Disable-LiteDeployFullOSShielding"]
+    FinalClean --> GPUpdate["10. Restore UAC -> Run gpupdate /force -> Final Restart"]
 ```
 
 ### Key Technical Measures
 
-#### A. Power Plan & Sleep Suppression
-Immediately at first boot, enforce High Performance to prevent Windows from locking the screen during long silent installs:
+#### A. Power Plan & Sleep Suppression (Universal)
+Applied universally to all deployment types (Domain Join, Workgroup, Intune/Entra ID) via `Set-LiteDeployFullOSHighPerformance`:
 ```powershell
 powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
 powercfg /change monitor-timeout-ac 0
+powercfg /change monitor-timeout-dc 0
 powercfg /change standby-timeout-ac 0
+powercfg /change standby-timeout-dc 0
 powercfg /change hibernate-timeout-ac 0
+powercfg /change hibernate-timeout-dc 0
 ```
 
-#### B. GPO Immunization during Provisioning
-Prevent background GPO refresh from restoring `Ctrl+Alt+Del`, legal notice banners, or screen savers while package installation is active:
+#### B. FullOS Environment Shielding during Provisioning
+Applied via `Enable-LiteDeployFullOSShielding` in `LiteDeploy.OS.Engine.ps1` to prevent background GPO refresh from restoring `Ctrl+Alt+Del`, legal notice banners, lock screens, or screen savers while package installation is active:
 ```powershell
 # Disable background GPO refresh during deployment
 $gpoRegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System"
 if (-not (Test-Path $gpoRegPath)) { New-Item -Path $gpoRegPath -Force }
 Set-ItemProperty -Path $gpoRegPath -Name "DisableGPO" -Value 1
 
-# Disable CAD and Legal Notice prompts locally
+# Disable CAD, Legal Notice, Lock Screen, and Screen Saver prompts locally
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "DisableCAD" -Value 1
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "legalnoticecaption" -Value ""
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "legalnoticetext" -Value ""
+Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization" -Name "NoLockScreen" -Value 1
 Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop" -Name "ScreenSaveActive" -Value "0"
 ```
 
@@ -63,20 +69,23 @@ Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -
 ```
 
 #### D. Teardown & Final Polish
-Once all packages finish successfully:
-1. Remove temporary service account (`Remove-LocalUser -Name $tempAdminUser`).
+Once all packages finish successfully, `Disable-LiteDeployFullOSShielding` and `Clear-LiteDeployFullOSRunKey` execute teardown:
+1. Remove temporary service account (`Remove-LocalUser -Name $tempAdminUser`) if non-built-in.
 2. Purge user profile directory (`Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*$tempAdminUser*" } | Remove-CimInstance`).
 3. Clean up AutoLogon registry keys from `Winlogon`.
-4. Remove `DisableGPO` registry block and trigger `gpupdate /force`.
-5. Clean `C:\Windows\Panther` temporary installation artifacts.
-6. Clean reboot to company branded login screen.
+4. Remove `DisableGPO`, restore legal notice values, restore CAD/LockScreen policies, and trigger `gpupdate /force`.
+5. Restore UAC if temporarily bypassed (`Restore-LiteDeployFullOSUacBypass`).
+6. Clean `C:\Windows\Panther` temporary installation artifacts.
+7. Clean reboot to company branded login screen.
 
 ---
 
 ## 2. Persistent `SYSTEM` Worker Daemon & Interactive Task Dispatch
 
+> **Status: Future exploration.** The live v2 engine uses interactive logon via HKLM Run (`LiteDeployFullOS`) with `Set-LiteDeployFullOSHighPerformance` and `Enable-LiteDeployFullOSShielding`. Session 0 persistent SYSTEM daemon with interactive task dispatch was analyzed to overcome interactive constraints, but scheduled tasks firing `AtLogOn` encountered the `Queued` state in Audit mode (see Section 11). This section is retained for future headless/daemon exploration.
+
 ### Concept
-`NT AUTHORITY\SYSTEM` acts as the persistent master engine (Session 0) across all FullOS phases and intermediate reboots. It maintains the authenticated SMB connection to the Deployment Share via DPAPI secrets, streams logs in real-time to the server, and dispatches interactive UI/processes into the ephemeral `LD_<UID>` user desktop (Session 1) using native Scheduled Tasks.
+`NT AUTHORITY\SYSTEM` acts as the persistent master engine (Session 0) across all FullOS phases and intermediate reboots. It maintains the authenticated SMB connection to the Deployment Share via DPAPI secrets, streams logs in real-time to the server, and dispatches interactive UI/processes into the ephemeral `LD-<UID>` user desktop (Session 1) using native Scheduled Tasks.
 
 ```mermaid
 flowchart TD
@@ -89,8 +98,8 @@ flowchart TD
         MountSMB --> PkgExec["5. Orchestrate Package Downloads & Silent Installs"]
     end
 
-    subgraph Session1["Session 1: Ephemeral Desktop (LD_<UID>)"]
-        UserLogon["AutoLogon as LD_<UID>"]
+    subgraph Session1["Session 1: Ephemeral Desktop (LD-<UID>)"]
+        UserLogon["AutoLogon as LD-<UID>"]
         DispatchTask --> LaunchUI["Scheduled Task executes LiteDeploy.UI.Progress.ps1"]
         LaunchUI --> RenderUI["Display Full-Screen WPF Progress to Technician"]
         RenderUI -.->|Read MMF / State JSON| LiveLogSync
@@ -108,20 +117,20 @@ flowchart TD
 
 2. **SYSTEM-to-User Interactive UI Dispatch (Session 1)**:
    ```powershell
-   # SYSTEM launches the WPF Progress UI inside LD_<UID>'s active desktop session
+   # SYSTEM launches the WPF Progress UI inside LD-<UID>'s active desktop session
    $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
-   $uiPrincipal = New-ScheduledTaskPrincipal -UserId "LD_$shortUid" -LogonType InteractiveToken -RunLevel Highest
+   $uiPrincipal = New-ScheduledTaskPrincipal -UserId "LD-$shortUid" -LogonType InteractiveToken -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_UI_Host" -Action $uiAction -Principal $uiPrincipal -Force
    Start-ScheduledTask -TaskName "LiteDeploy_UI_Host"
    ```
 
-3. **Visible Network Drive Mapping (`Z:`) in `LD_<UID>` Explorer**:
-   - When `LD_<UID>` logs in, a visible Network Drive (`Z:`) pointing to the Deployment Share (`\\Server\DeploymentShare$`) is mounted in Windows Explorer.
+3. **Visible Network Drive Mapping (`Z:`) in `LD-<UID>` Explorer**:
+   - When `LD-<UID>` logs in, a visible Network Drive (`Z:`) pointing to the Deployment Share (`\\Server\DeploymentShare$`) is mounted in Windows Explorer.
    - **Technician Visibility:** Technicians can open File Explorer / This PC and directly access `Z:\WorkLogs\Deployments\<UID>\LiteDeploy.Execution.log` using CMTrace or Notepad in real-time.
    - **Package Access:** Installers running in the user session can read `Z:\Content\Packages\...` seamlessly.
    - **Secure Teardown:** Cleanly unmapped via `Remove-SmbMapping -LocalPath "Z:" -Force` during final cleanup before account deletion.
    ```powershell
-   # Mount visible share inside LD_<UID> session using DPAPI credentials
+   # Mount visible share inside LD-<UID> session using DPAPI credentials
    New-SmbMapping -LocalPath "Z:" `
                   -RemotePath "\\Server\DeploymentShare$" `
                   -UserName $shareCred.UserName `
@@ -165,13 +174,15 @@ sequenceDiagram
 
 ---
 
-## 4. Ephemeral Deployment Service Account (`LD_<UID>`)
+## 4. Ephemeral Deployment Service Account (`LD-<UID>`)
+
+> **Status: Implemented in v2.** For Domain Join workflows with post-deployment actions, `LiteDeploy.Image.ps1` dynamically generates an ephemeral `LD-<UID>` account and stages it into `DomainJoin.xml` via `<!--LocalServiceAccount-->` and `<!--AutoLogonServiceAccount-->`. The account is granted local Administrator membership, logs in automatically with `AutoLogonCount = 999`, runs FullOS orchestration under shielding, and is cleanly removed during teardown.
 
 ### Concept
 For standard workflows requiring interactive desktop sessions (FullOS Phase 6 for user-facing application installers, WPF desktop progress display, or GPU/per-user configuration), create a temporary, highly secure administrator account unique to each deployment.
 
 ### Key Specifications
-- **Username Naming Convention:** `LD_<ShortUID>` (e.g. `LD_A8F29C`).
+- **Username Naming Convention:** `LD-<ShortUID>` (e.g. `LD-A8F29C`).
   - Constrained within the 20-character Windows SAM/NetBIOS limit.
   - Directly maps 1:1 to the deployment ID and server log folder (`Z:\WorkLogs\Deployments\<DeploymentUid>`).
   - 100% traceable in Windows Event Viewer (`Security Event ID 4624 / 4672`).
@@ -184,18 +195,15 @@ For standard workflows requiring interactive desktop sessions (FullOS Phase 6 fo
 
 ## 5. `SetupComplete.cmd` Orchestration Trigger
 
-> **Implemented (entry):** staged from WinPE; calls `LiteDeploy.OS.Engine.ps1` (same Engine, not a separate FullOS bootstrap). Remaining: power plan / GPO immunization / Packages from that entry.
+> **Status: Historical / Alternative Exploration.** In the live v2 architecture, `SetupComplete.cmd` is **not staged**. First FullOS execution is triggered via unattend `specialize` `Microsoft-Windows-Deployment\RunSynchronous` injecting the `HKLM\...\Run\LiteDeployFullOS` key, ensuring execution occurs directly in the interactive desktop session of the deployment user (`LD-<UID>` or `Administrator`). This section is retained as an architectural record.
 
 ### Concept
-Instead of injecting complex post-install command scripts into `unattend.xml` (`<FirstLogonCommands>`), stage an offline `SetupComplete.cmd` directly in WinPE.
+Instead of injecting complex post-install command scripts into `unattend.xml` (`<FirstLogonCommands>`), staging an offline `SetupComplete.cmd` directly in WinPE was explored as a pre-logon hook.
 
 ### Key Specifications
 - **Target Path:** `W:\Windows\Setup\Scripts\SetupComplete.cmd`
 - **Execution Context:** Native `NT AUTHORITY\SYSTEM` rights before user logon.
-- **Responsibilities (current):**
-  - Launch `LiteDeploy.OS.Engine.ps1` (tee to `WorkLogs\SetupComplete.log`).
-  - Engine: WinPECT import, Network Z: reconnect, log mirror, register `LiteDeploy_SystemEngine`.
-- **Still planned from this entry:** High Performance power plan, GPO immunization, Packages orchestration.
+- **Architectural Note:** In practice, because standard software installers and UI components require Session 1 desktop context, and because `SetupComplete.cmd` does not run if an OEM product key is used or during some sysprep paths, LiteDeploy v2 standardizes on specialize HKLM Run with environment shielding instead.
 
 ---
 
@@ -269,12 +277,14 @@ Support zero-touch enrollment into Microsoft Intune / Entra ID via Provisioning 
 
 ## 9. Standard & Workgroup Workflow: Pre-OOBE Silent Application Installation & Native User Handoff
 
+> **Status: Architectural Design.** For Workgroup deployments with post-installation actions, the live v2 engine uses interactive AutoLogon as local `Administrator` (or Audit Mode) via specialize HKLM Run, shielded with `Enable-LiteDeployFullOSShielding` and `Set-LiteDeployFullOSHighPerformance`. Upon completion, teardown executes `Disable-LiteDeployFullOSShielding`, clears credentials, and seals the machine to native OOBE as illustrated below.
+
 ### Overview
 In the **Standard** (Standalone / Workgroup / Kiosk) workflow, application installations are orchestrated **silently at the system level before OOBE starts**, ensuring that when the end user completes the initial setup, their user account lands on a desktop that is 100% configured with all software ready to use.
 
 ```mermaid
 flowchart TD
-    WinPE["1. WinPE Phase: Image Applied, Drivers & Packages Staged"] --> FirstBoot["2. First Boot: SetupComplete.cmd runs as NT AUTHORITY\\SYSTEM"]
+    WinPE["1. WinPE Phase: Image Applied, Drivers & Packages Staged"] --> FirstBoot["2. First Boot: HKLM Run under local Administrator (Shielded)"]
     FirstBoot --> SilentApps["3. LiteDeploy FullOS Engine Installs Software Packages Silently"]
     SilentApps --> SystemReady["4. Apps Installed to Program Files & Public Desktop -> Exit 0"]
     SystemReady --> OOBEStart["5. Windows Launches Native OOBE (msoobe.exe)"]
@@ -285,9 +295,9 @@ flowchart TD
 
 ### Key Technical Characteristics
 
-1. **Pre-OOBE System Execution (Phase 6 / `SetupComplete.cmd`):**
-   - Runs under `NT AUTHORITY\SYSTEM` before `msoobe.exe` initializes.
-   - Screen displays the standard Windows *"Just a moment..."* / *"Getting ready..."* screen or custom LiteDeploy progress host.
+1. **Pre-OOBE Servicing Execution (Phase 6):**
+   - Runs under interactive Administrator desktop context with FullOS Shielding active before final reseal to OOBE.
+   - Screen displays the custom LiteDeploy progress host while suppressing power timeouts and background interference.
    - Executes system-level installers (MSI, EXE, silent scripts) for standard tools (browsers, runtimes, utilities, corporate management agents).
    - Global shortcuts and associations are placed in `C:\Users\Public\Desktop` and `C:\ProgramData\Microsoft\Windows\Start Menu`.
 

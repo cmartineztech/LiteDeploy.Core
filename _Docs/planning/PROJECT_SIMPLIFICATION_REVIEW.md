@@ -2,10 +2,7 @@
 
 Reviewed October 13, 2026 against the current working tree, including untracked source.
 
-**Currency (2026-10-15):** Flat editable `Engine/Scripts` mirrors were removed and gitignored;
-architecture suite moved to `_Tests\`; component templates/inventory moved to `_Templates\`.
-Latest architecture smoke with DeploymentShare Runtime: **155 / 155**. Historical counts and
-“divergent flat copy” findings below describe the tree as of the review date.
+**Currency (2026-11-10):** Flat editable mirrors eliminated; canonical numbered source adopted; strict mode 2.0 active. Current architecture test suite (`_Tests\Test-LiteDeployArchitectureV2.ps1`): **136 / 136 passed** (standalone dev mode) and **158 / 158 passed** (published runtime). High Performance and FullOS Shielding implemented in `LiteDeploy.OS.Engine.ps1` (see `_Docs/architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md`). Historical counts below reflect the baseline at original audit date.
 
 ## Verdict
 

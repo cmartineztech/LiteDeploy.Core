@@ -1,11 +1,9 @@
 # LiteDeploy Core refactor plan
 
-Prepared October 13, 2026 from a second inspection of the current working tree.
-Status: planned; application code has not been refactored.
+Prepared October 13, 2026 from an inspection of the working tree.
+Status: Core refactoring stages largely completed. Canonical layout, strict mode 2.0, renamed components (`PE.Boot`, `PE.Engine`, `OS.Engine`, `Session`), WinPE Software-Only WPF rendering, universal High Performance power scheme (`Set-LiteDeployFullOSHighPerformance`), and FullOS Environment Shielding (`Enable-LiteDeployFullOSShielding` / `Disable-LiteDeployFullOSShielding`) are implemented.
 
-**Currency (2026-10-15):** Flat editable Engine Script mirrors removed/gitignored; smoke suite
-at `_Tests\` (**155 / 155** with published Runtime); templates/inventory at `_Templates\`.
-Counts and divergent-copy notes below are historical to the plan date.
+**Currency (2026-11-10):** Numbered source folders canonicalized; flat editable mirrors eliminated; strict mode 2.0 enforced across Runtime and Admin; architecture test suite at `_Tests\Test-LiteDeployArchitectureV2.ps1` returns **136 / 136 passed** in standalone dev mode and **158 / 158 passed** against published runtime (`C:\DeploymentShare\Engine\Runtime`). Counts and divergent-copy notes below are historical to the initial plan date.
 
 ## Objective
 
