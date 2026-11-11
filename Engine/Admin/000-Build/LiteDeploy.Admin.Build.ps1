@@ -209,13 +209,6 @@ function Get-RepoComponentFiles {
         } | ForEach-Object {
             $uiAssets.Add($_)
         }
-
-        # FullOS SetupComplete.cmd lives beside Engine (published flat into Runtime\, not Admin).
-        Get-ChildItem -Path $runtimeDir -Recurse -File -Filter "SetupComplete.cmd" | Where-Object {
-            $_.FullName -match '(?i)[\\/]Runtime[\\/]\d{3}-'
-        } | ForEach-Object {
-            $runtimeFiles.Add($_)
-        }
     }
 
     # WinPE bootstrap payload map (structured ~LiteDeploy layout)
