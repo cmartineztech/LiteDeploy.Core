@@ -529,12 +529,43 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
 
     $targetRoot = Join-Path "$drive\" $LocalRootName
     $destRuntime = Join-Path $targetRoot 'Engine\Runtime'
+    $destRuntimeUi = Join-Path $destRuntime 'UI'
     $destTools = Join-Path $targetRoot 'Engine\Tools'
 
     $null = New-Item -Path $destRuntime -ItemType Directory -Force -ErrorAction Stop
+    $null = New-Item -Path $destRuntimeUi -ItemType Directory -Force -ErrorAction Stop
 
-    # Runtime only (flat published scripts + UI). Never Admin.
-    Copy-Item -Path (Join-Path $srcRuntime '*') -Destination $destRuntime -Recurse -Force -ErrorAction Stop
+    # Stage strictly FullOS and Universal Runtime components to target OS volume (omit WinPE-only components)
+    $fullOsRuntimeFiles = @(
+        'LiteDeploy.OS.Engine.ps1',
+        'LiteDeploy.Environment.ps1',
+        'LiteDeploy.Session.ps1',
+        'LiteDeploy.Hardware.ps1',
+        'LiteDeploy.Packages.ps1'
+    )
+    foreach ($file in $fullOsRuntimeFiles) {
+        $srcFile = Join-Path $srcRuntime $file
+        if (Test-Path -LiteralPath $srcFile -PathType Leaf) {
+            Copy-Item -LiteralPath $srcFile -Destination (Join-Path $destRuntime $file) -Force -ErrorAction Stop
+        }
+    }
+
+    # Stage FullOS and Universal UI components / assets (HostShell, Progress, Theme)
+    $srcUi = Join-Path $srcRuntime 'UI'
+    if (Test-Path -LiteralPath $srcUi -PathType Container) {
+        $fullOsUiFiles = @(
+            'LiteDeploy.UI.HostShell.ps1',
+            'LiteDeploy.UI.Progress.ps1',
+            'LiteDeploy.UI.Progress.xaml',
+            'LiteDeploy.UI.Theme.xaml'
+        )
+        foreach ($uiFile in $fullOsUiFiles) {
+            $srcUiFile = Join-Path $srcUi $uiFile
+            if (Test-Path -LiteralPath $srcUiFile -PathType Leaf) {
+                Copy-Item -LiteralPath $srcUiFile -Destination (Join-Path $destRuntimeUi $uiFile) -Force -ErrorAction Stop
+            }
+        }
+    }
 
     $srcTools = Join-Path $shareRoot 'Engine\Tools'
     if (-not (Test-Path -LiteralPath $srcTools -PathType Container)) {
@@ -547,7 +578,7 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         foreach ($file in @(Get-ChildItem -LiteralPath $srcTools -Recurse -File -Force -ErrorAction Stop)) {
             $relative = $file.FullName.Substring($srcTools.Length).TrimStart('\', '/')
             if ($relative -match $excludeDirPattern) { continue }
-            if ($relative -match '(?i)^BunWinPeSuite\\' -and $file.Extension -match '(?i)^\.(exe|zip|7z)$') { continue }
+            if ($relative -match '(?i)^BunWinPeSuite\\' -or $file.Extension -match '(?i)^\.(zip|7z)$') { continue }
             $targetFile = Join-Path $destTools $relative
             $targetParent = Split-Path -Parent $targetFile
             if (-not (Test-Path -LiteralPath $targetParent)) {
@@ -564,13 +595,27 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         Remove-Item -LiteralPath $legacySetupComplete -Force -ErrorAction SilentlyContinue
     }
 
-    $engineDest = Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1'
     $fullOsDest = Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'
-    if (-not (Test-Path -LiteralPath $engineDest -PathType Leaf)) {
-        throw "PE Engine missing after Runtime copy: $engineDest"
-    }
     if (-not (Test-Path -LiteralPath $fullOsDest -PathType Leaf)) {
         throw "OS Engine missing after Runtime copy: $fullOsDest"
+    }
+
+    # Verify that required FullOS and Universal components were staged
+    foreach ($req in @('LiteDeploy.Environment.ps1', 'LiteDeploy.Session.ps1', 'LiteDeploy.Hardware.ps1', 'LiteDeploy.Packages.ps1')) {
+        $reqPath = Join-Path $destRuntime $req
+        if (-not (Test-Path -LiteralPath $reqPath -PathType Leaf)) {
+            throw "Required FullOS component missing after copy: $reqPath"
+        }
+    }
+
+    # Verify that WinPE-only components were NOT staged
+    $peEngineDest = Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1'
+    if (Test-Path -LiteralPath $peEngineDest -PathType Leaf) {
+        throw "PE Engine must not be staged to FullOS: $peEngineDest"
+    }
+    $peBootDest = Join-Path $destRuntime 'LiteDeploy.PE.Boot.ps1'
+    if (Test-Path -LiteralPath $peBootDest -PathType Leaf) {
+        throw "PE Boot must not be staged to FullOS: $peBootDest"
     }
 
     return [pscustomobject]@{
@@ -579,9 +624,9 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         RuntimeDestination = $destRuntime
         ToolsDestination   = $destTools
         ToolsFilesCopied   = $toolsCopied
-        EnginePath         = $engineDest
+        EnginePath         = $fullOsDest
         FullOSPath         = $fullOsDest
-        Message            = "Staged Runtime + Tools (no Admin) under $targetRoot; SetupComplete not staged"
+        Message            = "Staged FullOS Runtime + Tools under $targetRoot; WinPE components excluded"
     }
 }
 

@@ -457,7 +457,7 @@ try {
     Assert-Condition ($script:mockRebootToolCalls.Count -eq 1) "Zero actions reaches reboot"
     Assert-Condition ($stateZeroActions.Execution.FullOSPayload.Staged -eq $false) "Zero actions skips FullOS payload staging"
     Assert-Condition ($script:mockRemoveItemCalls -contains 'C:\~LiteDeploy') "Zero actions removes ~LiteDeploy from OS volume"
-    Remove-Item function:Remove-Item -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Remove-Item -ErrorAction SilentlyContinue
 
     # 8e: Default log path fallback without global override under StrictMode2
     $script:logFallbackOk = $false
@@ -487,14 +487,15 @@ try {
     $global:LiteDeploySessionLogDir = $localLogDir
 
     # Clean up handoff mocks
-    Remove-Item function:Test-LiteDeployWinPE -ErrorAction SilentlyContinue
-    Remove-Item function:Test-Path -ErrorAction SilentlyContinue
-    Remove-Item function:Save-LiteDeployDeploymentState -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployFullOSPayloadToOsVolume -ErrorAction SilentlyContinue
-    Remove-Item function:Complete-LiteDeployWinPECredentialHandoff -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue
-    Remove-Item function:Start-Process -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:New-Item -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Test-LiteDeployWinPE -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Test-Path -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Save-LiteDeployDeploymentState -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployFullOSPayloadToOsVolume -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Complete-LiteDeployWinPECredentialHandoff -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Start-Process -ErrorAction SilentlyContinue
 
     # -------------------------------------------------------------------------
     # 9. DISM Image Apply Duration Stopwatch (Requirement 2)

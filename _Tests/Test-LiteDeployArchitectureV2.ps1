@@ -523,6 +523,74 @@ try {
 }
 catch { Assert-True $false "Central layout regressions: $_" }
 
+# FullOS payload staging: stages strictly FullOS and Universal components (and WinPECT), excluding WinPE scripts
+try {
+    $stageChecks = & {
+        $peEnginePath = Join-Path $scriptsRoot 'Runtime\010-Engine\LiteDeploy.PE.Engine.ps1'
+        $peTree = [System.Management.Automation.Language.Parser]::ParseFile($peEnginePath, [ref]$null, [ref]$null)
+        $syncNode = $peTree.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Sync-LiteDeployFullOSPayloadToOsVolume' }, $true)
+        . ([scriptblock]::Create($syncNode.Extent.Text))
+
+        $mockShare = Join-Path $TestRoot 'MockShare'
+        $mockShareRuntime = Join-Path $mockShare 'Engine\Runtime'
+        $mockShareRuntimeUi = Join-Path $mockShareRuntime 'UI'
+        $mockShareTools = Join-Path $mockShare 'Engine\Tools\WinPECT'
+        $null = New-Item -ItemType Directory -Path $mockShareRuntimeUi, $mockShareTools -Force
+
+        foreach ($f in @('LiteDeploy.OS.Engine.ps1', 'LiteDeploy.Environment.ps1', 'LiteDeploy.Session.ps1', 'LiteDeploy.Hardware.ps1', 'LiteDeploy.Packages.ps1', 'LiteDeploy.PE.Boot.ps1', 'LiteDeploy.PE.Engine.ps1', 'LiteDeploy.Disk.ps1', 'LiteDeploy.Drivers.ps1', 'LiteDeploy.Image.ps1')) {
+            Set-Content (Join-Path $mockShareRuntime $f) "# $f"
+        }
+        foreach ($u in @('LiteDeploy.UI.HostShell.ps1', 'LiteDeploy.UI.Progress.ps1', 'LiteDeploy.UI.Progress.xaml', 'LiteDeploy.UI.Theme.xaml', 'LiteDeploy.UI.HardwarePrecheck.ps1', 'LiteDeploy.UI.WorkflowSelection.ps1')) {
+            Set-Content (Join-Path $mockShareRuntimeUi $u) "# $u"
+        }
+        Set-Content (Join-Path $mockShareTools 'WinPECT.Engine.ps1') '# winpect'
+
+        $mockDriveLetter = 'T'
+        if (Get-PSDrive -Name $mockDriveLetter -ErrorAction SilentlyContinue) {
+            Remove-PSDrive -Name $mockDriveLetter -Force -ErrorAction SilentlyContinue
+        }
+        $mockDriveRoot = Join-Path $TestRoot 'MockDriveT'
+        $null = New-Item -ItemType Directory -Path (Join-Path $mockDriveRoot 'Windows') -Force
+        $null = New-PSDrive -Name $mockDriveLetter -PSProvider FileSystem -Root $mockDriveRoot -ErrorAction Stop
+
+        try {
+            $payload = Sync-LiteDeployFullOSPayloadToOsVolume `
+                -RuntimePaths ([pscustomobject]@{ DeploymentRoot = $mockShare }) `
+                -OsDriveLetter "$($mockDriveLetter):" `
+                -LocalRootName '~LiteDeploy'
+
+            $destRuntime = $payload.RuntimeDestination
+            $destUi = Join-Path $destRuntime 'UI'
+            $destTools = $payload.ToolsDestination
+
+            [pscustomobject]@{
+                Success              = $payload.Success
+                OsEnginePresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'))
+                EnvironmentPresent   = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Environment.ps1'))
+                SessionPresent       = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Session.ps1'))
+                HardwarePresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Hardware.ps1'))
+                PackagesPresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Packages.ps1'))
+                HostShellPresent     = (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.HostShell.ps1'))
+                ProgressPresent      = (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.Progress.ps1'))
+                WinpectPresent       = (Test-Path -LiteralPath (Join-Path $destTools 'WinPECT\WinPECT.Engine.ps1'))
+                PeEngineOmitted      = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1')))
+                PeBootOmitted        = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.PE.Boot.ps1')))
+                DiskOmitted          = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Disk.ps1')))
+                ImageOmitted         = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Image.ps1')))
+                PrecheckOmitted      = (-not (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.HardwarePrecheck.ps1')))
+                WorkflowSelOmitted   = (-not (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.WorkflowSelection.ps1')))
+                EnginePathPointsToOS = ($payload.EnginePath -eq (Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'))
+            }
+        }
+        finally {
+            Remove-PSDrive -Name $mockDriveLetter -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Assert-True ($stageChecks.Success -and $stageChecks.OsEnginePresent -and $stageChecks.EnvironmentPresent -and $stageChecks.SessionPresent -and $stageChecks.HardwarePresent -and $stageChecks.PackagesPresent -and $stageChecks.HostShellPresent -and $stageChecks.ProgressPresent -and $stageChecks.WinpectPresent) 'FullOS payload staging copies all required FullOS/Universal runtime and UI components and WinPECT'
+    Assert-True ($stageChecks.PeEngineOmitted -and $stageChecks.PeBootOmitted -and $stageChecks.DiskOmitted -and $stageChecks.ImageOmitted -and $stageChecks.PrecheckOmitted -and $stageChecks.WorkflowSelOmitted -and $stageChecks.EnginePathPointsToOS) 'FullOS payload staging strictly excludes WinPE components and wires EnginePath to LiteDeploy.OS.Engine.ps1'
+}
+catch { Assert-True $false "FullOS payload staging: $_" }
+
 Write-Host ""
 # The real selection contract returns configuration in memory, not in its JSON copy.
 try {
