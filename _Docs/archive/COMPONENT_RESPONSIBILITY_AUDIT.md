@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** This document is an audit from October 8, 2026. Code duplications identified between Workflow and UI have since been resolved. Preserved for provenance; see [`_Docs/COMPONENT_GUIDE.md`](../COMPONENT_GUIDE.md) and [`_Docs/guides/ENGINE_READING_GUIDE.md`](../guides/ENGINE_READING_GUIDE.md).
+
 # LiteDeploy Runtime Component Responsibility Audit
 
 **Date:** 2026-10-08  

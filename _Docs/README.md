@@ -9,7 +9,7 @@ Repo tooling (not published to the share):
 | Path | Role |
 | :--- | :--- |
 | [`_Templates/`](../_Templates/README.md) | Component blueprint + `-Metadata` inventory scanner |
-| [`_Tests/`](../_Tests/README.md) | Architecture smoke suite (`Test-LiteDeployArchitectureV2.ps1` — 142 dev / 164 published tests; 591 total across all suites) |
+| [`_Tests/`](../_Tests/README.md) | Architecture smoke suite (`Test-LiteDeployArchitectureV2.ps1` — 142 dev / 164 published tests; 664 total across all 5 suites) |
 
 ## Live baseline (do not contradict)
 
@@ -31,10 +31,11 @@ Repo tooling (not published to the share):
 | :--- | :--- |
 | [`COMPONENT_GUIDE.md`](COMPONENT_GUIDE.md) | Index of every component README + tests/templates |
 | [`LOCAL_TODO.md`](LOCAL_TODO.md) | Active local roadmap / session checklist |
-| [`architecture/`](architecture/) | Specs, status, E2E mermaid + overview image |
-| [`guides/`](guides/) | Operator / engineer how-tos (WinPE, Engine, drivers, logging, maintenance, ComputerSetup) |
+| [`architecture/`](architecture/) | Specs, status, E2E mermaid, shielding matrix, statecharts |
+| [`guides/`](guides/) | Operator / engineer how-tos (WinPE, Engine, drivers, logging, maintenance) |
 | [`integrations/Credentials/`](integrations/Credentials/) | WinPECT credential handoff |
-| [`planning/`](planning/) | Ideas, package orchestrator plan, refactor notes — **not** the live FullOS path until implemented |
+| [`planning/`](planning/) | Ideas, package orchestrator plan — future designs |
+| [`archive/`](archive/) | Historical refactoring plans, past audits, and superseded proposals (provenance) |
 
 ## Start here
 

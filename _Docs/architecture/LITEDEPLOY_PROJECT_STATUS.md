@@ -24,8 +24,8 @@ Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy name
 - **WorkflowTag.Actions gating & Zero-Action Cleanup:** Tag carries `Actions`; Image gates FullOS Run + Audit reseal on `actions.Count > 0` (Intune Ready with 0 actions stays OOBE-only). For zero-action workflows (`actions == 0`), `Complete-LiteDeployWinPEHandoff` syncs final state and logs to the share and completely deletes `W:\~LiteDeploy` from the OS volume before reboot, ensuring a 100% clean disk for Autopilot/OOBE.
 - **Console & Logging Experience**: PowerShell host console window remains open and visible in background during all phases for live technician monitoring and troubleshooting
 - **Single Responsibility & Architecture**:
-  - Component Responsibility Audit report ([COMPONENT_RESPONSIBILITY_AUDIT.md](COMPONENT_RESPONSIBILITY_AUDIT.md)) completed
-  - Architecture suite: **142 passing** in standalone dev mode; **164 / 164** passing when checking published share (`_Tests\Test-LiteDeployArchitectureV2.ps1 -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Runtime'`). Full test battery: 591 / 591 passing across all 5 test suites.
+  - Component Responsibility Audit report ([COMPONENT_RESPONSIBILITY_AUDIT.md](../archive/COMPONENT_RESPONSIBILITY_AUDIT.md)) archived (resolved)
+  - Architecture suite: **142 passing** in standalone dev mode; **164 / 164** passing when checking published share (`_Tests\Test-LiteDeployArchitectureV2.ps1 -PublishedRuntimeRoot 'C:\DeploymentShare\Engine\Runtime'`). Full cross-suite pass rate: 664 / 664 passing across all 5 test suites.
   - Repo tooling layout: component blueprints/inventory under `_Templates\`; smoke suite under `_Tests\` (neither is published to the share)
 
 ### In progress / gaps & future exploration

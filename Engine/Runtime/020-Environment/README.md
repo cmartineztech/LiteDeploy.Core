@@ -19,7 +19,7 @@ Boot owns the live WinPE share mount used by the deployment pipeline.
 Consumers (Engine, Image, Drivers, UI, Admin) must use Environment APIs or Engine-supplied
 RuntimeFiles — not `$PSScriptRoot` walks to `DeploymentShare`, silent `Z:\` defaults in the
 live pipeline, or parallel path maps. See
-[_Docs/architecture/LITEDEPLOY_COMPONENT_REFACTOR_V2.md](../../../_Docs/architecture/LITEDEPLOY_COMPONENT_REFACTOR_V2.md).
+[_Docs/archive/LITEDEPLOY_COMPONENT_REFACTOR_V2.md](../../../_Docs/archive/LITEDEPLOY_COMPONENT_REFACTOR_V2.md).
 
 Load Environment once before source components:
 

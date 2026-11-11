@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** This document tracks the completed 8-phase migration plan to architecture v2 (Oct 2026). It is preserved for historical provenance. For current active tracking, see [`_Docs/LOCAL_TODO.md`](../LOCAL_TODO.md) and [`_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md`](../architecture/LITEDEPLOY_PROJECT_STATUS.md).
+
 # LiteDeploy Core refactor plan
 
 Prepared October 13, 2026 from an inspection of the working tree.

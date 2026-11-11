@@ -1,6 +1,6 @@
 # Component documentation index
 
-See [ComputerSetup mapping](guides/COMPUTER_SETUP_MAPPING.md) for configuration-to-UI/state/answer-file behavior, including `SkipSetupHardwareRequirements` (Setup.exe WinPE LabConfig/MoSetup) vs `Startup.SkipHardwarePreCheck` (Precheck UI).
+See [ComputerSetup mapping](architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md#14-computersetup-mapping-overrides--unattend-archetypes) for configuration-to-UI/state/answer-file behavior, including `SkipSetupHardwareRequirements` (Setup.exe WinPE LabConfig/MoSetup) vs `Startup.SkipHardwarePreCheck` (Precheck UI).
 
 Guides cover entry points, dependencies, parameters, effects, results and limits. Examples use Windows PowerShell 5.1 from the repository root. Sample paths are **generic lab placeholders** only (`C:\DeploymentShare`, `C:\LiteDeploy-Staging`, `\\Server\Share$`, `X:\` / `Z:\` / `W:\`) — do not commit personal profile paths (`C:\Users\<you>\…`, Desktop checkouts). Documentation review does not certify WinPE or end-to-end deployment.
 
@@ -46,8 +46,7 @@ FullOS (`LiteDeploy.OS.Engine.ps1`: HKLM Run first launch staged by Image specia
 - [Driver handling](guides/DRIVER_HANDLING.md): matching, SHA-256 verification, staging, extraction and offline DISM injection.
 - [Logging and failures](guides/LOGGING_AND_FAILURE_DESIGN.md): console, credentials, inventory, notices and all major Boot branches.
 - [Architecture diagrams](architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md): full end-to-end pipeline diagrams.
-- [Component Responsibility Audit](architecture/COMPONENT_RESPONSIBILITY_AUDIT.md): audit of single-responsibility adherence and deduplication opportunities across components.
-- [Fast Transition Spec & Rollback Plan](architecture/FAST_TRANSITION_NETWORK_SPECIFICATION.md): sub-second (<0.4s) network transition specification, RAM catalog caching rules, and rollback procedure.
+- [Historical Document Archive](archive/README.md): historical audits (Component Responsibility, Fast Transition Spec, Refactor Plan).
 - [Credentials / WinPECT](integrations/Credentials/README.md): WinPE → FullOS credential handoff and FullOS entry.
 - [Deployment share template](../DeploymentShare/README.md): publish layout, flat runtime, Tools sync.
 - [FullOS Shielding & Teardown Matrix](architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md): complete matrix of power plans, GPO freezes, legal notices, CAD, UAC bypass, and cleanup restoration.

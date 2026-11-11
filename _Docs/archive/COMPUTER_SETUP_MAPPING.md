@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive / Consolidated:** The contents of this document have been consolidated into [`_Docs/architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md#14-computersetup-mapping-overrides--unattend-archetypes`](../architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md#14-computersetup-mapping-overrides--unattend-archetypes). Preserved here for historical provenance.
+
 # ComputerSetup mapping
 
 ComputerSetup belongs to BootConfig. Engine passes the configuration to Image and the

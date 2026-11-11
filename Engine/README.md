@@ -65,7 +65,7 @@ startnet → LiteDeploy.PE.Boot.ps1 → LiteDeploy.PE.Engine.ps1
 
 BootConfig hardware-related flags: `Startup.SkipHardwarePreCheck` (Precheck UI) vs
 `ComputerSetup.SkipSetupHardwareRequirements` (Setup.exe WinPE registry bypass). See
-[_Docs/guides/COMPUTER_SETUP_MAPPING.md](../_Docs/guides/COMPUTER_SETUP_MAPPING.md).
+[_Docs/architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md](../_Docs/architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md#14-computersetup-mapping-overrides--unattend-archetypes).
 
 ## Admin (dev folders)
 
@@ -90,7 +90,7 @@ Admin may reuse Runtime helpers. Runtime never depends on Admin.
 2. Keep one clear responsibility per component; split only when it makes maintenance easier
 3. Standalone Disk/Image are non-destructive unless explicit switches
 4. Credentials: `_Docs/integrations/Credentials/`
-5. Architecture: `_Docs/architecture/LITEDEPLOY_COMPONENT_REFACTOR_V2.md`
+5. Architecture: `_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md` & `_Docs/archive/README.md`
 
 See [operation and maintenance](../_Docs/guides/MAINTENANCE.md) for current support limits
 and the Windows PowerShell 5.1 smoke-test command. The architecture suite lives at

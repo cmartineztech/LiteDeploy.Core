@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** Early deployment sequence proposal. Preserved for provenance; see active diagrams in [`_Docs/architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md`](../architecture/LITEDEPLOY_DEPLOYMENT_DIAGRAM.md) and [`_Docs/architecture/LITEDEPLOY_STATECHART_DIAGRAMS.md`](../architecture/LITEDEPLOY_STATECHART_DIAGRAMS.md).
+
 # LiteDeploy Deployment Plan (Architecture v2)
 
 ## Goal

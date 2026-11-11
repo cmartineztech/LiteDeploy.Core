@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** This document is an architecture review from October 13, 2026. Its recommendations (flat mirror elimination, workflow deduplication, DISM stopwatch retention) have been fully implemented. Preserved for provenance; see [`_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md`](../architecture/LITEDEPLOY_PROJECT_STATUS.md).
+
 # LiteDeploy Core simplification review
 
 Reviewed October 13, 2026 against the current working tree, including untracked source.

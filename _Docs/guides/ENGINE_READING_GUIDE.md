@@ -17,7 +17,7 @@ Engine calls its `ValidateEngineOnly` check before any UI or disk changes. An ab
 `ComputerSetup.SkipSetupHardwareRequirements` (default `false`) is Setup.exe-only: when `true`,
 Image writes WinPE `LabConfig` / `MoSetup` registry bypasses immediately before launching Setup.
 `/Compat IgnoreWarning` is not used (not applicable from WinPE). See
-[ComputerSetup mapping](COMPUTER_SETUP_MAPPING.md) and the Image README.
+[ComputerSetup mapping](../architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md#14-computersetup-mapping-overrides--unattend-archetypes) and the Image README.
 
 ## Where to look
 

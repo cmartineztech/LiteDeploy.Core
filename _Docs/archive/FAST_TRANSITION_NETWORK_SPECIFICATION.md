@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** This specification for fast network transition and in-memory hardware reuse has been implemented in `LiteDeploy.Drivers.ps1` and `LiteDeploy.Workflow.ps1`. Preserved for provenance; see [`_Docs/architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md`](../architecture/LITEDEPLOY_CATALOG_WORKFLOW_SPEC.md).
+
 # Fast Transition Specification & Rollback Plan (Network Deployments)
 
 **Document:** `FAST_TRANSITION_NETWORK_SPECIFICATION.md`  

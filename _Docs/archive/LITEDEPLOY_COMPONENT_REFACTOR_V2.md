@@ -1,3 +1,6 @@
+> [!NOTE]
+> **Historical Archive:** Early draft of the v2 component architecture (Oct 2026). Preserved for provenance; see active component guide in [`_Docs/COMPONENT_GUIDE.md`](../COMPONENT_GUIDE.md) and [`_Docs/architecture/LITEDEPLOY_PROJECT_STATUS.md`](../architecture/LITEDEPLOY_PROJECT_STATUS.md).
+
 # LiteDeploy Component Architecture v2
 
 **Status:** Active (v2 is the only Runtime/Admin layout in this repo)  
