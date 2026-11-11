@@ -529,12 +529,43 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
 
     $targetRoot = Join-Path "$drive\" $LocalRootName
     $destRuntime = Join-Path $targetRoot 'Engine\Runtime'
+    $destRuntimeUi = Join-Path $destRuntime 'UI'
     $destTools = Join-Path $targetRoot 'Engine\Tools'
 
     $null = New-Item -Path $destRuntime -ItemType Directory -Force -ErrorAction Stop
+    $null = New-Item -Path $destRuntimeUi -ItemType Directory -Force -ErrorAction Stop
 
-    # Runtime only (flat published scripts + UI). Never Admin.
-    Copy-Item -Path (Join-Path $srcRuntime '*') -Destination $destRuntime -Recurse -Force -ErrorAction Stop
+    # Stage strictly FullOS and Universal Runtime components to target OS volume (omit WinPE-only components)
+    $fullOsRuntimeFiles = @(
+        'LiteDeploy.OS.Engine.ps1',
+        'LiteDeploy.Environment.ps1',
+        'LiteDeploy.Session.ps1',
+        'LiteDeploy.Hardware.ps1',
+        'LiteDeploy.Packages.ps1'
+    )
+    foreach ($file in $fullOsRuntimeFiles) {
+        $srcFile = Join-Path $srcRuntime $file
+        if (Test-Path -LiteralPath $srcFile -PathType Leaf) {
+            Copy-Item -LiteralPath $srcFile -Destination (Join-Path $destRuntime $file) -Force -ErrorAction Stop
+        }
+    }
+
+    # Stage FullOS and Universal UI components / assets (HostShell, Progress, Theme)
+    $srcUi = Join-Path $srcRuntime 'UI'
+    if (Test-Path -LiteralPath $srcUi -PathType Container) {
+        $fullOsUiFiles = @(
+            'LiteDeploy.UI.HostShell.ps1',
+            'LiteDeploy.UI.Progress.ps1',
+            'LiteDeploy.UI.Progress.xaml',
+            'LiteDeploy.UI.Theme.xaml'
+        )
+        foreach ($uiFile in $fullOsUiFiles) {
+            $srcUiFile = Join-Path $srcUi $uiFile
+            if (Test-Path -LiteralPath $srcUiFile -PathType Leaf) {
+                Copy-Item -LiteralPath $srcUiFile -Destination (Join-Path $destRuntimeUi $uiFile) -Force -ErrorAction Stop
+            }
+        }
+    }
 
     $srcTools = Join-Path $shareRoot 'Engine\Tools'
     if (-not (Test-Path -LiteralPath $srcTools -PathType Container)) {
@@ -547,7 +578,7 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         foreach ($file in @(Get-ChildItem -LiteralPath $srcTools -Recurse -File -Force -ErrorAction Stop)) {
             $relative = $file.FullName.Substring($srcTools.Length).TrimStart('\', '/')
             if ($relative -match $excludeDirPattern) { continue }
-            if ($relative -match '(?i)^BunWinPeSuite\\' -and $file.Extension -match '(?i)^\.(exe|zip|7z)$') { continue }
+            if ($relative -match '(?i)^BunWinPeSuite\\' -or $file.Extension -match '(?i)^\.(zip|7z)$') { continue }
             $targetFile = Join-Path $destTools $relative
             $targetParent = Split-Path -Parent $targetFile
             if (-not (Test-Path -LiteralPath $targetParent)) {
@@ -564,13 +595,27 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         Remove-Item -LiteralPath $legacySetupComplete -Force -ErrorAction SilentlyContinue
     }
 
-    $engineDest = Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1'
     $fullOsDest = Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'
-    if (-not (Test-Path -LiteralPath $engineDest -PathType Leaf)) {
-        throw "PE Engine missing after Runtime copy: $engineDest"
-    }
     if (-not (Test-Path -LiteralPath $fullOsDest -PathType Leaf)) {
         throw "OS Engine missing after Runtime copy: $fullOsDest"
+    }
+
+    # Verify that required FullOS and Universal components were staged
+    foreach ($req in @('LiteDeploy.Environment.ps1', 'LiteDeploy.Session.ps1', 'LiteDeploy.Hardware.ps1', 'LiteDeploy.Packages.ps1')) {
+        $reqPath = Join-Path $destRuntime $req
+        if (-not (Test-Path -LiteralPath $reqPath -PathType Leaf)) {
+            throw "Required FullOS component missing after copy: $reqPath"
+        }
+    }
+
+    # Verify that WinPE-only components were NOT staged
+    $peEngineDest = Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1'
+    if (Test-Path -LiteralPath $peEngineDest -PathType Leaf) {
+        throw "PE Engine must not be staged to FullOS: $peEngineDest"
+    }
+    $peBootDest = Join-Path $destRuntime 'LiteDeploy.PE.Boot.ps1'
+    if (Test-Path -LiteralPath $peBootDest -PathType Leaf) {
+        throw "PE Boot must not be staged to FullOS: $peBootDest"
     }
 
     return [pscustomobject]@{
@@ -579,9 +624,9 @@ function Sync-LiteDeployFullOSPayloadToOsVolume {
         RuntimeDestination = $destRuntime
         ToolsDestination   = $destTools
         ToolsFilesCopied   = $toolsCopied
-        EnginePath         = $engineDest
+        EnginePath         = $fullOsDest
         FullOSPath         = $fullOsDest
-        Message            = "Staged Runtime + Tools (no Admin) under $targetRoot; SetupComplete not staged"
+        Message            = "Staged FullOS Runtime + Tools under $targetRoot; WinPE components excluded"
     }
 }
 
@@ -755,7 +800,14 @@ function Complete-LiteDeployWinPEHandoff {
     .SYNOPSIS
         Persists a reboot request and verified OS-volume artifacts before requesting WinPE reboot.
     #>
-    param([psobject]$DeploymentState, [psobject]$RuntimePaths, [string]$OsDriveLetter, [string]$LocalRootName, [psobject]$BootCtx = $null)
+    param(
+        [psobject]$DeploymentState,
+        [psobject]$RuntimePaths,
+        [string]$OsDriveLetter,
+        [string]$LocalRootName,
+        [psobject]$BootCtx = $null,
+        [psobject]$WorkflowSelection = $null
+    )
     if (-not (Test-LiteDeployWinPE)) { throw 'Automatic deployment reboot is only supported in WinPE.' }
     if ($DeploymentState.Status -ne 'Completed' -or -not $DeploymentState.OSInstall.Applied) {
         throw 'Reboot requires successful OS imaging.'
@@ -766,81 +818,159 @@ function Complete-LiteDeployWinPEHandoff {
     $rebootTool = Join-Path $env:SystemRoot 'System32\wpeutil.exe'
     if (-not (Test-Path -LiteralPath $rebootTool -PathType Leaf)) { throw 'wpeutil.exe is missing; automatic reboot unavailable.' }
 
-    $DeploymentState.Execution.CurrentStep = 'FullOSPayloadStaging'
-    Write-LiteDeployLog 'Staging Engine Runtime + Tools (no Admin) onto the installed OS volume.' -Level INFO -Component "PE.Engine" -NoConsole
-    $payload = Sync-LiteDeployFullOSPayloadToOsVolume `
-        -RuntimePaths $RuntimePaths `
-        -OsDriveLetter $OsDriveLetter `
-        -LocalRootName $LocalRootName
-    $DeploymentState.Execution | Add-Member -NotePropertyName FullOSPayload -NotePropertyValue ([pscustomobject]@{
-            Staged             = $true
-            RuntimeDestination = [string]$payload.RuntimeDestination
-            ToolsDestination   = [string]$payload.ToolsDestination
-            EnginePath         = [string]$payload.EnginePath
-            FullOSPath         = [string]$payload.FullOSPath
-            ToolsFilesCopied   = [int]$payload.ToolsFilesCopied
-            StagedTimeUtc      = [DateTime]::UtcNow.ToString('o')
-        }) -Force
-    Write-LiteDeployLog $payload.Message -Level SUCCESS -Component "PE.Engine" -NoConsole
-    Write-LiteDeployLog 'HKLM Run LiteDeployFullOS is staged by Image specialize (when actions > 0); FullOS may re-arm it at interactive logon - not offline in WinPE.' -Level INFO -Component "PE.Engine" -NoConsole
-
-    # Persist share target for FullOS Z: remount (never persist passwords - only UNC + drive + secret Id).
-    $networkPath = $null
-    if ($BootCtx -and $BootCtx.PSObject.Properties['NetworkPath'] -and $BootCtx.NetworkPath) {
-        $networkPath = [string]$BootCtx.NetworkPath
+    # Workflow actions gate FullOS payload staging and WinPECT credential handoff.
+    $workflowActionCount = $null
+    $actionSources = @()
+    if ($WorkflowSelection) {
+        $actionSources += $WorkflowSelection
+        if ($WorkflowSelection.PSObject.Properties['WorkflowTag'] -and $WorkflowSelection.WorkflowTag -and ($WorkflowSelection.WorkflowTag -isnot [string])) {
+            $actionSources += $WorkflowSelection.WorkflowTag
+        }
     }
-    elseif ($BootCtx -and $BootCtx.PSObject.Properties['Config'] -and $BootCtx.Config -and
-        $BootCtx.Config.PSObject.Properties['Deployment'] -and $BootCtx.Config.Deployment -and
-        $BootCtx.Config.Deployment.PSObject.Properties['NetworkPath'] -and $BootCtx.Config.Deployment.NetworkPath) {
-        $networkPath = [string]$BootCtx.Config.Deployment.NetworkPath
+    if ($DeploymentState -and $DeploymentState.PSObject.Properties['Workflow'] -and $DeploymentState.Workflow) {
+        $wf = $DeploymentState.Workflow
+        $actionSources += $wf
+        if ($wf.PSObject.Properties['SelectionData'] -and $wf.SelectionData) {
+            $actionSources += $wf.SelectionData
+            if ($wf.SelectionData.PSObject.Properties['WorkflowTag'] -and $wf.SelectionData.WorkflowTag -and ($wf.SelectionData.WorkflowTag -isnot [string])) {
+                $actionSources += $wf.SelectionData.WorkflowTag
+            }
+        }
     }
-    elseif ((Get-Variable -Name 'EngineBootConfig' -Scope Script -ErrorAction SilentlyContinue) -and
-        $EngineBootConfig -and $EngineBootConfig.PSObject.Properties['Deployment'] -and $EngineBootConfig.Deployment -and
-        $EngineBootConfig.Deployment.PSObject.Properties['NetworkPath'] -and $EngineBootConfig.Deployment.NetworkPath) {
-        $networkPath = [string]$EngineBootConfig.Deployment.NetworkPath
-    }
-    $deploymentType = 'Media'
-    if ($BootCtx -and $BootCtx.PSObject.Properties['DeploymentType'] -and $BootCtx.DeploymentType) {
-        $deploymentType = [string]$BootCtx.DeploymentType
-    }
-    elseif ($networkPath) {
-        $deploymentType = 'Network'
-    }
-    $DeploymentState.Execution | Add-Member -NotePropertyName FullOSShare -NotePropertyValue ([pscustomobject]@{
-            DeploymentType = $deploymentType
-            NetworkPath    = $networkPath
-            DriveLetter    = 'Z:'
-            CredentialId   = 'DeploymentShare'
-            CredentialDir  = (Join-Path $LocalRootName 'Content\Credentials')
-            ReconnectOnBoot = ($deploymentType -eq 'Network')
-        }) -Force
-    if ($deploymentType -eq 'Network' -and $networkPath) {
-        Write-LiteDeployLog "FullOS (Network): reconnect Z: each boot and mirror logs to the share ($networkPath)." -Level INFO -Component "PE.Engine" -NoConsole
-    }
-    elseif ($deploymentType -eq 'Media') {
-        Write-LiteDeployLog 'FullOS (Media): no DeploymentShare reconnect; logs stay local/OS-volume only.' -Level INFO -Component "PE.Engine" -NoConsole
+    foreach ($actionSource in $actionSources) {
+        foreach ($actionProp in @('actions', 'Actions')) {
+            if ($actionSource.PSObject.Properties[$actionProp] -and $null -ne $actionSource.$actionProp) {
+                $workflowActionCount = @($actionSource.$actionProp).Count
+                break
+            }
+        }
+        if ($null -ne $workflowActionCount) { break }
     }
 
-    $DeploymentState.Execution.CurrentStep = 'CredentialHandoff'
-    Write-LiteDeployLog 'Staging WinPECT credential handoff onto the installed OS volume (when credentials are in memory).' -Level INFO -Component "PE.Engine" -NoConsole
-    $null = Complete-LiteDeployWinPECredentialHandoff `
-        -DeploymentState $DeploymentState `
-        -RuntimePaths $RuntimePaths `
-        -OsDriveLetter $OsDriveLetter `
-        -LocalRootName $LocalRootName `
-        -BootCtx $BootCtx
+    # If an explicit workflow defines 0 actions, FullOS payload staging and WinPECT are skipped.
+    # Default to true for backward compatibility when no workflow object is present (e.g. test fixtures).
+    $hasFullOsActions = if ($null -ne $workflowActionCount) { ($workflowActionCount -gt 0) } else { $true }
+
+    if ($hasFullOsActions) {
+        $DeploymentState.Execution.CurrentStep = 'FullOSPayloadStaging'
+        Write-LiteDeployLog 'Staging Engine Runtime + Tools (no Admin) onto the installed OS volume.' -Level INFO -Component "PE.Engine" -NoConsole
+        $payload = Sync-LiteDeployFullOSPayloadToOsVolume `
+            -RuntimePaths $RuntimePaths `
+            -OsDriveLetter $OsDriveLetter `
+            -LocalRootName $LocalRootName
+        $DeploymentState.Execution | Add-Member -NotePropertyName FullOSPayload -NotePropertyValue ([pscustomobject]@{
+                Staged             = $true
+                RuntimeDestination = [string]$payload.RuntimeDestination
+                ToolsDestination   = [string]$payload.ToolsDestination
+                EnginePath         = [string]$payload.EnginePath
+                FullOSPath         = [string]$payload.FullOSPath
+                ToolsFilesCopied   = [int]$payload.ToolsFilesCopied
+                StagedTimeUtc      = [DateTime]::UtcNow.ToString('o')
+            }) -Force
+        Write-LiteDeployLog $payload.Message -Level SUCCESS -Component "PE.Engine" -NoConsole
+        Write-LiteDeployLog 'HKLM Run LiteDeployFullOS is staged by Image specialize (when actions > 0); FullOS may re-arm it at interactive logon - not offline in WinPE.' -Level INFO -Component "PE.Engine" -NoConsole
+
+        # Persist share target for FullOS Z: remount (never persist passwords - only UNC + drive + secret Id).
+        $networkPath = $null
+        if ($BootCtx -and $BootCtx.PSObject.Properties['NetworkPath'] -and $BootCtx.NetworkPath) {
+            $networkPath = [string]$BootCtx.NetworkPath
+        }
+        elseif ($BootCtx -and $BootCtx.PSObject.Properties['Config'] -and $BootCtx.Config -and
+            $BootCtx.Config.PSObject.Properties['Deployment'] -and $BootCtx.Config.Deployment -and
+            $BootCtx.Config.Deployment.PSObject.Properties['NetworkPath'] -and $BootCtx.Config.Deployment.NetworkPath) {
+            $networkPath = [string]$BootCtx.Config.Deployment.NetworkPath
+        }
+        elseif ((Get-Variable -Name 'EngineBootConfig' -Scope Script -ErrorAction SilentlyContinue) -and
+            $EngineBootConfig -and $EngineBootConfig.PSObject.Properties['Deployment'] -and $EngineBootConfig.Deployment -and
+            $EngineBootConfig.Deployment.PSObject.Properties['NetworkPath'] -and $EngineBootConfig.Deployment.NetworkPath) {
+            $networkPath = [string]$EngineBootConfig.Deployment.NetworkPath
+        }
+        $deploymentType = 'Media'
+        if ($BootCtx -and $BootCtx.PSObject.Properties['DeploymentType'] -and $BootCtx.DeploymentType) {
+            $deploymentType = [string]$BootCtx.DeploymentType
+        }
+        elseif ($networkPath) {
+            $deploymentType = 'Network'
+        }
+        $DeploymentState.Execution | Add-Member -NotePropertyName FullOSShare -NotePropertyValue ([pscustomobject]@{
+                DeploymentType = $deploymentType
+                NetworkPath    = $networkPath
+                DriveLetter    = 'Z:'
+                CredentialId   = 'DeploymentShare'
+                CredentialDir  = (Join-Path $LocalRootName 'Content\Credentials')
+                ReconnectOnBoot = ($deploymentType -eq 'Network')
+            }) -Force
+        if ($deploymentType -eq 'Network' -and $networkPath) {
+            Write-LiteDeployLog "FullOS (Network): reconnect Z: each boot and mirror logs to the share ($networkPath)." -Level INFO -Component "PE.Engine" -NoConsole
+        }
+        elseif ($deploymentType -eq 'Media') {
+            Write-LiteDeployLog 'FullOS (Media): no DeploymentShare reconnect; logs stay local/OS-volume only.' -Level INFO -Component "PE.Engine" -NoConsole
+        }
+
+        $DeploymentState.Execution.CurrentStep = 'CredentialHandoff'
+        Write-LiteDeployLog 'Staging WinPECT credential handoff onto the installed OS volume (when credentials are in memory).' -Level INFO -Component "PE.Engine" -NoConsole
+        $null = Complete-LiteDeployWinPECredentialHandoff `
+            -DeploymentState $DeploymentState `
+            -RuntimePaths $RuntimePaths `
+            -OsDriveLetter $OsDriveLetter `
+            -LocalRootName $LocalRootName `
+            -BootCtx $BootCtx
+
+        # Stage Unattend-OOBE.xml from RAM if not already staged
+        $targetContentDir = Join-Path ($OsDriveLetter.TrimEnd('\').TrimEnd(':') + ':\') ($LocalRootName.TrimStart('\') + '\Content')
+        $targetOobeUnattend = Join-Path $targetContentDir 'Unattend-OOBE.xml'
+        if (-not (Test-Path -LiteralPath $targetOobeUnattend -PathType Leaf)) {
+            $ramCandidates = @('X:\Unattend-OOBE.xml')
+            if ($env:TEMP) { $ramCandidates += (Join-Path $env:TEMP 'Unattend-OOBE.xml') }
+            foreach ($candidate in $ramCandidates) {
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    if (-not (Test-Path -LiteralPath $targetContentDir)) {
+                        $null = New-Item -Path $targetContentDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+                    }
+                    Copy-Item -LiteralPath $candidate -Destination $targetOobeUnattend -Force -ErrorAction SilentlyContinue
+                    Write-LiteDeployLog "Staged OOBE reseal answer file to OS volume: $targetOobeUnattend" -Level SUCCESS -Component "PE.Engine" -NoConsole
+                    break
+                }
+            }
+        }
+    }
+    else {
+        Write-LiteDeployLog 'Workflow defines 0 FullOS actions: Skipping FullOS payload staging and WinPECT credential handoff.' -Level INFO -Component "PE.Engine"
+        $DeploymentState.Execution | Add-Member -NotePropertyName FullOSPayload -NotePropertyValue ([pscustomobject]@{
+                Staged        = $false
+                Message       = 'Zero workflow actions; FullOS staging skipped'
+                StagedTimeUtc = [DateTime]::UtcNow.ToString('o')
+            }) -Force
+    }
 
     $DeploymentState.Execution.CurrentStep = 'RebootRequested'
     $DeploymentState.Execution | Add-Member -NotePropertyName RebootRequestedTime -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
-    Write-LiteDeployLog 'WinPE imaging completed. Reboot requested; verifying logs and state on the installed OS volume before restarting.' -Level INFO -Component "PE.Engine"
+    Write-LiteDeployLog 'WinPE imaging completed. Reboot requested; verifying logs and state before restarting.' -Level INFO -Component "PE.Engine"
     Save-LiteDeployDeploymentState -DeploymentState $DeploymentState
     Sync-LiteDeployLogsToShare -RuntimePaths $RuntimePaths -RemoteLogDir $DeploymentState.Execution.RemoteLogDir
-    $handoff = Sync-LiteDeployArtifactsToOsVolume -RuntimePaths $RuntimePaths -OsDriveLetter $OsDriveLetter -DeploymentState $DeploymentState -LocalRootName $LocalRootName
-    if (-not $handoff.Success -or -not $handoff.StateCopied -or $handoff.LogsCopied -lt 1) {
-        throw "Reboot cancelled: logs/state handoff failed. $($handoff.Message)"
+
+    if ($hasFullOsActions) {
+        $handoff = Sync-LiteDeployArtifactsToOsVolume -RuntimePaths $RuntimePaths -OsDriveLetter $OsDriveLetter -DeploymentState $DeploymentState -LocalRootName $LocalRootName
+        if (-not $handoff.Success -or -not $handoff.StateCopied -or $handoff.LogsCopied -lt 1) {
+            throw "Reboot cancelled: logs/state handoff failed. $($handoff.Message)"
+        }
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog 'Handoff verified. Ready to restart.' -Level SUCCESS -ForegroundColor Green -Component "PE.Engine"
     }
-    Write-LiteDeployLog -Message ''
-    Write-LiteDeployLog 'Handoff verified. Ready to restart.' -Level SUCCESS -ForegroundColor Green -Component "PE.Engine"
+    else {
+        # With 0 actions, all logs and state are already safely synchronized to the deployment share (and preserved in WinPE RAM).
+        # Clean up temporary ~LiteDeploy staging directory from the installed OS volume so the target disk is completely clean.
+        $osDriveClean = ($OsDriveLetter.TrimEnd('\').TrimEnd(':') + ':\')
+        $osTargetRoot = Join-Path $osDriveClean $LocalRootName
+        if (Test-Path -LiteralPath $osTargetRoot) {
+            Write-LiteDeployLog "Zero workflow actions: Cleaning up temporary deployment folder from OS volume ($osTargetRoot)..." -Level INFO -Component "PE.Engine"
+            Remove-Item -LiteralPath $osTargetRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Write-LiteDeployLog "Target OS volume cleaned (no ~LiteDeploy folder left behind)." -Level SUCCESS -ForegroundColor Green -Component "PE.Engine"
+        }
+        Write-LiteDeployLog -Message ''
+        Write-LiteDeployLog 'Zero-action deployment completed and verified. Ready to restart.' -Level SUCCESS -ForegroundColor Green -Component "PE.Engine"
+    }
+
     $targetDisk = if ($DeploymentState -and $DeploymentState.PSObject.Properties['Disk'] -and $DeploymentState.Disk -and $DeploymentState.Disk.PSObject.Properties['DiskNumber'] -and $DeploymentState.Disk.DiskNumber -ne $null) {
         $DeploymentState.Disk.DiskNumber
     } else { '?' }
@@ -856,8 +986,8 @@ function Complete-LiteDeployWinPEHandoff {
     $exitCode = if ($DeploymentState -and $DeploymentState.PSObject.Properties['OSInstall'] -and $DeploymentState.OSInstall -and $DeploymentState.OSInstall.PSObject.Properties['ExitCode'] -and $DeploymentState.OSInstall.ExitCode -ne $null) {
         $DeploymentState.OSInstall.ExitCode
     } else { 0 }
-    Write-LiteDeployLog ("WinPE phase completed: Target={0} (OS: {1}), Image={2} (ExitCode={3}), Handoff=Verified." -f `
-        $targetDisk, $OsDriveLetter, $imageName, $exitCode) `
+    Write-LiteDeployLog ("WinPE phase completed: Target={0} (OS: {1}), Image={2} (ExitCode={3}), Actions={4}." -f `
+        $targetDisk, $OsDriveLetter, $imageName, $exitCode, $(if ($null -ne $workflowActionCount) { $workflowActionCount } else { 'default' })) `
         -Level INFO -Component "PE.Engine" -NoConsole
     # All required writes precede this call. A requested reboot is not proof the next OS started.
     $process = Start-Process -FilePath $rebootTool -ArgumentList 'Reboot' -Wait -PassThru -NoNewWindow -ErrorAction Stop
@@ -1477,7 +1607,7 @@ function Start-LiteDeployPipeline {
 
         try {
             Stop-LiteDeployProgressHost
-            Complete-LiteDeployWinPEHandoff -DeploymentState $deployment -RuntimePaths $RuntimePaths -OsDriveLetter $osDriveForHandoff -LocalRootName $localRootName -BootCtx $BootObject
+            Complete-LiteDeployWinPEHandoff -DeploymentState $deployment -RuntimePaths $RuntimePaths -OsDriveLetter $osDriveForHandoff -LocalRootName $localRootName -BootCtx $BootObject -WorkflowSelection $workflowResult
         }
         catch {
             $deployment.Status = 'Failed'

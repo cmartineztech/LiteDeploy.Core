@@ -40,7 +40,6 @@ DeploymentShare/Engine/Tools/**/LICENSE
 # Flat LiteDeploy.*.ps1 (+ UI\) belong on DeploymentShare (or another publish root), not here.
 /Engine/Runtime/LiteDeploy.*.ps1
 /Engine/Runtime/LiteDeploy.DeploymentEngine.ps1
-/Engine/Runtime/SetupComplete.cmd
 /Engine/Runtime/UI/
 /Engine/Admin/LiteDeploy.Admin.*.ps1
 /Engine/Admin/UI/

@@ -72,6 +72,10 @@
 
 - [x] **specialize HKLM Run + WinPECT Credential Bridge:**
   - [x] Stage Runtime/Tools only (no Admin, no SetupComplete); Image stages HKLM Run; logon launches `LiteDeploy.OS.Engine.ps1`.
+  - [x] Eliminate `SetupComplete.cmd` asset completely and remove its discovery logic from `LiteDeploy.Admin.Build.ps1`.
+  - [x] Zero-Action Deployment Cleanup: for zero-action workflows (`actions == 0`, e.g. Intune Ready), sync final state/logs to share and completely delete `W:\~LiteDeploy` from OS volume before reboot.
+  - [x] Selective FullOS Payload Staging: `Sync-LiteDeployFullOSPayloadToOsVolume` copies strictly FullOS/Universal components (`OS.Engine`, `Environment`, `Session`, `Hardware`, `Packages`, `HostShell`, `Progress`, `WinPECT`) and strictly excludes WinPE components.
+  - [x] Audit Mode OOBE Reseal: stage `Unattend-OOBE.xml` to `Content\` and implement `Invoke-LiteDeploySysprepReseal` in `LiteDeploy.OS.Engine.ps1` for clean post-action sysprep resealing into OOBE.
   - [x] Vendor WinPECT under repo `Engine\Tools\WinPECT\` (trimmed) + `LiteDeploy.WinPECT.ps1`; Admin.Build publishes to share; Engine WinPE handoff stages package when secrets are in memory.
   - [x] Publish `LiteDeploy.DeploymentEngine.ps1` as byte-identical Engine alias for legacy BootInitializer (subsequently retired in Phase 8).
   - [x] In-memory secret retrieval (`Get-LiteDeployFullOSSecret`) avoiding disk DPAPI `.xml` exports.

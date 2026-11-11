@@ -429,7 +429,37 @@ try {
     Assert-Condition ($incompleteThrew) "Incomplete OS imaging throws before handoff"
     Assert-Condition ($script:mockRebootToolCalls.Count -eq 0) "Incomplete OS imaging never requests reboot"
 
-    # 8d: Default log path fallback without global override under StrictMode2
+    # 8d: Zero workflow actions skips FullOS staging and cleans target OS volume before reboot
+    $stateZeroActions = [PSCustomObject]@{
+        Status    = 'Completed'
+        Disk      = [PSCustomObject]@{ DiskNumber = 0; Formatted = $true }
+        OSInstall = [PSCustomObject]@{ Applied = $true; ImagePath = 'C:\Images\install.wim'; ExitCode = 0; DurationSeconds = 45 }
+        Execution = [PSCustomObject]@{ CurrentStep = 'OSInstallation'; RemoteLogDir = 'Z:\Logs\TEST-ZERO' }
+        Workflow  = [PSCustomObject]@{
+            SelectionData = [PSCustomObject]@{
+                actions = @()
+            }
+        }
+    }
+    $script:mockRebootToolCalls.Clear()
+    $script:mockRemoveItemCalls = [System.Collections.Generic.List[string]]::new()
+    function Remove-Item {
+        param($LiteralPath, [switch]$Recurse, [switch]$Force, $ErrorAction)
+        $script:mockRemoveItemCalls.Add([string]$LiteralPath)
+    }
+
+    Complete-LiteDeployWinPEHandoff `
+        -DeploymentState $stateZeroActions `
+        -RuntimePaths ([PSCustomObject]@{}) `
+        -OsDriveLetter 'C:' `
+        -LocalRootName '~LiteDeploy'
+
+    Assert-Condition ($script:mockRebootToolCalls.Count -eq 1) "Zero actions reaches reboot"
+    Assert-Condition ($stateZeroActions.Execution.FullOSPayload.Staged -eq $false) "Zero actions skips FullOS payload staging"
+    Assert-Condition ($script:mockRemoveItemCalls -contains 'C:\~LiteDeploy') "Zero actions removes ~LiteDeploy from OS volume"
+    Microsoft.PowerShell.Management\Remove-Item function:Remove-Item -ErrorAction SilentlyContinue
+
+    # 8e: Default log path fallback without global override under StrictMode2
     $script:logFallbackOk = $false
     $script:logOverrideOk = $false
     & {
@@ -457,14 +487,15 @@ try {
     $global:LiteDeploySessionLogDir = $localLogDir
 
     # Clean up handoff mocks
-    Remove-Item function:Test-LiteDeployWinPE -ErrorAction SilentlyContinue
-    Remove-Item function:Test-Path -ErrorAction SilentlyContinue
-    Remove-Item function:Save-LiteDeployDeploymentState -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployFullOSPayloadToOsVolume -ErrorAction SilentlyContinue
-    Remove-Item function:Complete-LiteDeployWinPECredentialHandoff -ErrorAction SilentlyContinue
-    Remove-Item function:Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue
-    Remove-Item function:Start-Process -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:New-Item -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Test-LiteDeployWinPE -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Test-Path -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Save-LiteDeployDeploymentState -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployLogsToShare -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployFullOSPayloadToOsVolume -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Complete-LiteDeployWinPECredentialHandoff -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Sync-LiteDeployArtifactsToOsVolume -ErrorAction SilentlyContinue
+    Microsoft.PowerShell.Management\Remove-Item function:Start-Process -ErrorAction SilentlyContinue
 
     # -------------------------------------------------------------------------
     # 9. DISM Image Apply Duration Stopwatch (Requirement 2)

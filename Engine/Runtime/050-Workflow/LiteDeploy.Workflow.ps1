@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Workflow - workflow catalog, validation, and plan resolution (business logic only; no UI).
 
@@ -278,6 +278,10 @@ function Resolve-LiteDeployWorkflowShareRoot {
         }
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot)) {
+        return $env:LiteDeployShareRoot.Trim().TrimEnd('\')
+    }
+
     return $global:LiteDeployWorkflowDefaultShareRoot
 }
 
@@ -451,16 +455,6 @@ function Get-LiteDeployOperatingSystemsCatalog {
         CatalogPath      = $catalogPath
         OperatingSystems = @($catalogData.operatingSystems)
     }
-}
-
-function Test-JSONFormat {
-    <#
-    .SYNOPSIS
-        True when the file exists and parses as JSON (same contract as the WorkflowSelection helper).
-    #>
-    param([string]$Path)
-
-    return (Test-LiteDeployJsonFile -Path $Path)
 }
 
 function Get-LiteDeployNativeArchitecture {

@@ -162,6 +162,8 @@ Action count comes from `WorkflowSelection` / `WorkflowTag.Actions` (Tag must ca
 ### Audit Mode Reseal (`<!--AuditMode-->`)
 Filled only when the template has `<!--AuditMode-->` **and** workflow actions > 0. Standard gets Audit + Admin desktop; Intune with empty actions clears it; Domain Join has no placeholder (OOBE AutoLogon instead). There is **no** `auditUser` RunSynchronous — FullOS starts from the HKLM Run value at interactive logon.
 
+When `<!--AuditMode-->` is present and actions > 0, `Start-LiteDeployImage` extracts the `oobeSystem` configuration from the template and generates `X:\Unattend-OOBE.xml` configured with `<Reseal><Mode>OOBE</Mode></Reseal>`. This file is automatically staged to `W:\~LiteDeploy\Content\Unattend-OOBE.xml`. When FullOS completes package installation, `LiteDeploy.OS.Engine.ps1` invokes `Invoke-LiteDeploySysprepReseal` (`sysprep.exe /oobe /reboot /unattend:C:\~LiteDeploy\Content\Unattend-OOBE.xml`) to reseal cleanly into OOBE without audit loops.
+
 ### Dynamic Placeholders
 - **Computer Name & Description**: Name from `WorkflowSelection` / `BootConfig`. Description always staged via Order 1 `reg add` (see above).
 - **Disk & Partition**: `<!--DiskID-->` and `<!--PartitionID-->` mapped from `DiskResult` / target disk index.

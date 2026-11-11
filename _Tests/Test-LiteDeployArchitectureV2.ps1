@@ -281,6 +281,20 @@ foreach ($engineTarget in $engineTargets) {
             if ($null -eq $localAcctNode -or $localAcctNode.InnerText -cne "LD-$testUid") { $mapped = $false }
             if ($null -eq $autoLogonUserNode -or $autoLogonUserNode.InnerText -cne "LD-$testUid") { $mapped = $false }
 
+            # Verify AuditMode with actions generates Unattend-OOBE.xml with Mode=OOBE
+            $stdTmplPath = Join-Path $RepoRoot "DeploymentShare\Content\Unattend\Standard.xml"
+            $null = New-LiteDeployUnattendXml -TemplateFile $stdTmplPath -TargetOutputFile $answer -ConfigObj $config -WorkflowData $wfWithActions
+            $oobeAnswer = Join-Path (Split-Path -Parent $answer) 'Unattend-OOBE.xml'
+            $oobeValid = $false
+            if (Test-Path -LiteralPath $oobeAnswer) {
+                [xml]$oobeXml = Get-Content $oobeAnswer -Raw
+                $resealNode = $oobeXml.SelectSingleNode("//*[local-name()='Reseal']/*[local-name()='Mode']")
+                if ($resealNode -and $resealNode.InnerText -eq 'OOBE') {
+                    $oobeValid = $true
+                }
+            }
+            if (-not $oobeValid) { $mapped = $false }
+
             [pscustomobject]@{ Omitted = $optionalClean; Preserved = $allPreserved; Mapped = $mapped; IdentityPolicies = $identityPolicies }
         }
         Assert-True $registrationChecks.Omitted "Blank registration omitted from state and answer file ($($engineTarget.Mode))"
@@ -441,6 +455,39 @@ try {
     $fnNames = @('Set-LiteDeployFullOSHighPerformance', 'Enable-LiteDeployFullOSShielding', 'Disable-LiteDeployFullOSShielding', 'Set-LiteDeployFullOSAutoLogon', 'Clear-LiteDeployFullOSRunKey', 'Restore-LiteDeployFullOSUacBypass')
     $foundFns = @($osAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $fnNames }, $true))
     Assert-True ($foundFns.Count -eq $fnNames.Count) 'FullOS Engine implements HighPerformance, Shielding, AutoLogon, and Teardown lifecycle functions'
+
+    # Security Hardening: Hardware inventory contains no hardcoded mock debug returns
+    $hwPath = Join-Path $sourceRuntimeRoot '040-Hardware\LiteDeploy.Hardware.ps1'
+    $hwContent = Get-Content -LiteralPath $hwPath -Raw
+    $noMocks = ($hwContent -notmatch '(?m)^\s*return\s+["'']Dell Inc\.["'']') -and
+               ($hwContent -notmatch '(?m)^\s*return\s+["'']Latitude 7450["'']') -and
+               ($hwContent -notmatch '(?m)^\s*return\s+["'']0CC1["'']')
+    Assert-True $noMocks 'Hardware inventory contains no hardcoded Dell/Latitude/0CC1 mock returns'
+
+    # Security Hardening: Disk safety guard rails (Assert-LiteDeployTargetDiskIdentity)
+    $diskPath = Join-Path $sourceRuntimeRoot '060-Disk\LiteDeploy.Disk.ps1'
+    $diskAst = [System.Management.Automation.Language.Parser]::ParseFile($diskPath, [ref]$null, [ref]$null)
+    $assertDiskFn = $diskAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-LiteDeployTargetDiskIdentity' }, $true)
+    Assert-True ($null -ne $assertDiskFn -and $assertDiskFn.Count -gt 0) 'Disk component implements Assert-LiteDeployTargetDiskIdentity safety gate'
+
+    # Functional test for disk guard rails
+    if ($assertDiskFn.Count -gt 0) {
+        . ([scriptblock]::Create($assertDiskFn[0].Extent.Text))
+    }
+    $usbBlocked = $false
+    try {
+        Assert-LiteDeployTargetDiskIdentity -Disk ([pscustomobject]@{ Number = 0; BusType = 'USB'; IsBoot = $false; IsSystem = $false; Size = 64GB })
+    }
+    catch {
+        $usbBlocked = ($_.Exception.Message -match 'USB')
+    }
+    Assert-True $usbBlocked 'Assert-LiteDeployTargetDiskIdentity blocks wipe of USB removable/boot media'
+
+    # Security Hardening: Preflight Unattend XML validation (Test-LiteDeployUnattendDocument)
+    $imagePath = Join-Path $sourceRuntimeRoot '080-Image\LiteDeploy.Image.ps1'
+    $imageAst = [System.Management.Automation.Language.Parser]::ParseFile($imagePath, [ref]$null, [ref]$null)
+    $assertUnattendFn = $imageAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-LiteDeployUnattendDocument' }, $true)
+    Assert-True ($null -ne $assertUnattendFn -and $assertUnattendFn.Count -gt 0) 'Image component implements Test-LiteDeployUnattendDocument preflight check'
 }
 catch { Assert-True $false "Explicit Environment paths: $_" }
 
@@ -475,6 +522,74 @@ try {
     Assert-True $checks.LogCopied 'Session copies the expected content using explicit RuntimePaths'
 }
 catch { Assert-True $false "Central layout regressions: $_" }
+
+# FullOS payload staging: stages strictly FullOS and Universal components (and WinPECT), excluding WinPE scripts
+try {
+    $stageChecks = & {
+        $peEnginePath = Join-Path $scriptsRoot 'Runtime\010-Engine\LiteDeploy.PE.Engine.ps1'
+        $peTree = [System.Management.Automation.Language.Parser]::ParseFile($peEnginePath, [ref]$null, [ref]$null)
+        $syncNode = $peTree.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Sync-LiteDeployFullOSPayloadToOsVolume' }, $true)
+        . ([scriptblock]::Create($syncNode.Extent.Text))
+
+        $mockShare = Join-Path $TestRoot 'MockShare'
+        $mockShareRuntime = Join-Path $mockShare 'Engine\Runtime'
+        $mockShareRuntimeUi = Join-Path $mockShareRuntime 'UI'
+        $mockShareTools = Join-Path $mockShare 'Engine\Tools\WinPECT'
+        $null = New-Item -ItemType Directory -Path $mockShareRuntimeUi, $mockShareTools -Force
+
+        foreach ($f in @('LiteDeploy.OS.Engine.ps1', 'LiteDeploy.Environment.ps1', 'LiteDeploy.Session.ps1', 'LiteDeploy.Hardware.ps1', 'LiteDeploy.Packages.ps1', 'LiteDeploy.PE.Boot.ps1', 'LiteDeploy.PE.Engine.ps1', 'LiteDeploy.Disk.ps1', 'LiteDeploy.Drivers.ps1', 'LiteDeploy.Image.ps1')) {
+            Set-Content (Join-Path $mockShareRuntime $f) "# $f"
+        }
+        foreach ($u in @('LiteDeploy.UI.HostShell.ps1', 'LiteDeploy.UI.Progress.ps1', 'LiteDeploy.UI.Progress.xaml', 'LiteDeploy.UI.Theme.xaml', 'LiteDeploy.UI.HardwarePrecheck.ps1', 'LiteDeploy.UI.WorkflowSelection.ps1')) {
+            Set-Content (Join-Path $mockShareRuntimeUi $u) "# $u"
+        }
+        Set-Content (Join-Path $mockShareTools 'WinPECT.Engine.ps1') '# winpect'
+
+        $mockDriveLetter = 'T'
+        if (Get-PSDrive -Name $mockDriveLetter -ErrorAction SilentlyContinue) {
+            Remove-PSDrive -Name $mockDriveLetter -Force -ErrorAction SilentlyContinue
+        }
+        $mockDriveRoot = Join-Path $TestRoot 'MockDriveT'
+        $null = New-Item -ItemType Directory -Path (Join-Path $mockDriveRoot 'Windows') -Force
+        $null = New-PSDrive -Name $mockDriveLetter -PSProvider FileSystem -Root $mockDriveRoot -ErrorAction Stop
+
+        try {
+            $payload = Sync-LiteDeployFullOSPayloadToOsVolume `
+                -RuntimePaths ([pscustomobject]@{ DeploymentRoot = $mockShare }) `
+                -OsDriveLetter "$($mockDriveLetter):" `
+                -LocalRootName '~LiteDeploy'
+
+            $destRuntime = $payload.RuntimeDestination
+            $destUi = Join-Path $destRuntime 'UI'
+            $destTools = $payload.ToolsDestination
+
+            [pscustomobject]@{
+                Success              = $payload.Success
+                OsEnginePresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'))
+                EnvironmentPresent   = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Environment.ps1'))
+                SessionPresent       = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Session.ps1'))
+                HardwarePresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Hardware.ps1'))
+                PackagesPresent      = (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Packages.ps1'))
+                HostShellPresent     = (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.HostShell.ps1'))
+                ProgressPresent      = (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.Progress.ps1'))
+                WinpectPresent       = (Test-Path -LiteralPath (Join-Path $destTools 'WinPECT\WinPECT.Engine.ps1'))
+                PeEngineOmitted      = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.PE.Engine.ps1')))
+                PeBootOmitted        = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.PE.Boot.ps1')))
+                DiskOmitted          = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Disk.ps1')))
+                ImageOmitted         = (-not (Test-Path -LiteralPath (Join-Path $destRuntime 'LiteDeploy.Image.ps1')))
+                PrecheckOmitted      = (-not (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.HardwarePrecheck.ps1')))
+                WorkflowSelOmitted   = (-not (Test-Path -LiteralPath (Join-Path $destUi 'LiteDeploy.UI.WorkflowSelection.ps1')))
+                EnginePathPointsToOS = ($payload.EnginePath -eq (Join-Path $destRuntime 'LiteDeploy.OS.Engine.ps1'))
+            }
+        }
+        finally {
+            Remove-PSDrive -Name $mockDriveLetter -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Assert-True ($stageChecks.Success -and $stageChecks.OsEnginePresent -and $stageChecks.EnvironmentPresent -and $stageChecks.SessionPresent -and $stageChecks.HardwarePresent -and $stageChecks.PackagesPresent -and $stageChecks.HostShellPresent -and $stageChecks.ProgressPresent -and $stageChecks.WinpectPresent) 'FullOS payload staging copies all required FullOS/Universal runtime and UI components and WinPECT'
+    Assert-True ($stageChecks.PeEngineOmitted -and $stageChecks.PeBootOmitted -and $stageChecks.DiskOmitted -and $stageChecks.ImageOmitted -and $stageChecks.PrecheckOmitted -and $stageChecks.WorkflowSelOmitted -and $stageChecks.EnginePathPointsToOS) 'FullOS payload staging strictly excludes WinPE components and wires EnginePath to LiteDeploy.OS.Engine.ps1'
+}
+catch { Assert-True $false "FullOS payload staging: $_" }
 
 Write-Host ""
 # The real selection contract returns configuration in memory, not in its JSON copy.

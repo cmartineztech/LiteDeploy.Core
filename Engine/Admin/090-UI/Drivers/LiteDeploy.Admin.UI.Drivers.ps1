@@ -536,15 +536,6 @@ function Resolve-InitialSharePath {
     if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot) -and (Test-Path -LiteralPath $env:LiteDeployShareRoot)) {
         return (Resolve-Path -LiteralPath $env:LiteDeployShareRoot).Path
     }
-    $probe = $PSScriptRoot
-    for ($i = 0; $i -lt 8 -and $probe; $i++) {
-        if ((Test-Path (Join-Path $probe "Content")) -and (Test-Path (Join-Path $probe "Engine"))) {
-            return (Resolve-Path -LiteralPath $probe).Path
-        }
-        $parent = Split-Path -Parent $probe
-        if (-not $parent -or $parent -eq $probe) { break }
-        $probe = $parent
-    }
     if (Test-Path "C:\DeploymentShare") { return "C:\DeploymentShare" }
     return ""
 }

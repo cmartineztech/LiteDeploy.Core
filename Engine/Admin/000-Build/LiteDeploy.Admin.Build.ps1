@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     LiteDeploy Component Synchronization & Distribution Engine.
 
@@ -141,21 +141,19 @@ function Write-SyncLog {
 # ==============================================================================
 
 function Get-RepoRootPath {
-    # Resolve repository root from Engine\Admin\<component>
-    $cursor = $PSScriptRoot
-    for ($i = 0; $i -lt 8; $i++) {
-        if (-not $cursor) { break }
-        $check = Resolve-Path -Path $cursor -ErrorAction SilentlyContinue
-        if ($check) {
-            $engineDir = Join-Path $check.Path "Engine"
-            $gitDir = Join-Path $check.Path ".git"
-            if ((Test-Path -LiteralPath $engineDir) -and (Test-Path -LiteralPath $gitDir)) {
-                return $check.Path
-            }
+    # Resolve repository root deterministically from Engine\Admin\<component>
+    if ($PSScriptRoot) {
+        $parent3 = (Get-Item $PSScriptRoot).Parent.Parent.Parent
+        if ($parent3 -and (Test-Path -LiteralPath (Join-Path $parent3.FullName "Engine"))) {
+            return $parent3.FullName
         }
-        $parent = Split-Path -Parent $cursor
-        if (-not $parent -or $parent -eq $cursor) { break }
-        $cursor = $parent
+        $parent2 = (Get-Item $PSScriptRoot).Parent.Parent
+        if ($parent2 -and (Test-Path -LiteralPath (Join-Path $parent2.FullName "Engine"))) {
+            return $parent2.FullName
+        }
+    }
+    if (Test-Path -LiteralPath (Join-Path (Get-Location).Path "Engine")) {
+        return (Get-Location).Path
     }
     return (Get-Location).Path
 }
@@ -210,13 +208,6 @@ function Get-RepoComponentFiles {
             $_.FullName -match '(?i)[\\/]Runtime[\\/]\d{3}-'
         } | ForEach-Object {
             $uiAssets.Add($_)
-        }
-
-        # FullOS SetupComplete.cmd lives beside Engine (published flat into Runtime\, not Admin).
-        Get-ChildItem -Path $runtimeDir -Recurse -File -Filter "SetupComplete.cmd" | Where-Object {
-            $_.FullName -match '(?i)[\\/]Runtime[\\/]\d{3}-'
-        } | ForEach-Object {
-            $runtimeFiles.Add($_)
         }
     }
 

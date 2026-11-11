@@ -405,12 +405,13 @@ function Get-LiteDeployImageDeploymentRoot {
         }
     }
 
-    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-    if ($scriptDir) {
-        $candidateRoot = Join-Path $scriptDir "..\..\..\..\DeploymentShare"
-        if (Test-Path -LiteralPath $candidateRoot) {
-            return (Resolve-Path -LiteralPath $candidateRoot).Path
-        }
+    if (Get-Command Get-LiteDeployRoot -ErrorAction SilentlyContinue) {
+        $root = Get-LiteDeployRoot -ErrorAction SilentlyContinue
+        if ($root -and (Test-Path -LiteralPath $root)) { return (Resolve-Path -LiteralPath $root).Path }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LiteDeployShareRoot) -and (Test-Path -LiteralPath $env:LiteDeployShareRoot)) {
+        return (Resolve-Path -LiteralPath $env:LiteDeployShareRoot).Path
     }
 
     return (Get-Location).Path
@@ -595,6 +596,141 @@ function Resolve-UnattendTemplate {
 # ==============================================================================
 # REGION 4: UNATTENDED ANSWER FILE GENERATION & SUBSTITUTION
 # ==============================================================================
+
+function Test-LiteDeployUnattendDocument {
+    <#
+    .SYNOPSIS
+        Validates an unattended XML template or generated answer file against schema, placeholder,
+        ComputerName, and RunSynchronous ordering policies.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$XmlContent = "",
+
+        [Parameter(Mandatory = $false)]
+        [xml]$XmlDocument = $null,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Path = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IsTemplate,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$PassThru
+    )
+
+    $rawXml = $XmlContent
+    if ([string]::IsNullOrWhiteSpace($rawXml) -and (-not [string]::IsNullOrWhiteSpace($Path))) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Unattended XML file not found at '$Path'."
+        }
+        $rawXml = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    }
+
+    $doc = $XmlDocument
+    if ($null -eq $doc) {
+        if ([string]::IsNullOrWhiteSpace($rawXml)) {
+            throw "Unattended XML content is empty."
+        }
+        try {
+            $doc = [xml]$rawXml
+        }
+        catch {
+            throw "Malformed unattended XML document: $($_.Exception.Message)"
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace($rawXml)) {
+        $rawXml = $doc.OuterXml
+    }
+
+    if ($null -eq $doc.DocumentElement -or $doc.DocumentElement.LocalName -ne 'unattend') {
+        throw "Invalid unattended XML root element. Expected '<unattend>'."
+    }
+
+    if (-not $IsTemplate) {
+        $prohibitedPlaceholders = @(
+            '<!--WorkflowInfo-->',
+            '<!--DiskID-->',
+            '<!--PartitionID-->',
+            '<!--SetupUILanguage-->',
+            '<!--UILanguage-->',
+            '<!--InputLocale-->',
+            '<!--SystemLocale-->',
+            '<!--UserLocale-->',
+            '<!--ComputerName-->',
+            '<!--TimeZone-->',
+            '<!--Timezone-->',
+            '<!--RegisteredOwner-->',
+            '<!--RegisteredOrganization-->',
+            '<!--JoinWorkGroup-->',
+            '<!--JoinWorkgroup-->',
+            '<!--JoinDomain-->',
+            '<!--MachineObjectOU-->',
+            '<!--ComputerDescription-->',
+            '<!--LiteDeployFullOSRun-->',
+            '<!--DisableUacForFullOS-->',
+            '<!--AuditMode-->',
+            '<!--Architecture-->',
+            '<!--Arch-->',
+            '<!--ImageIndex-->'
+        )
+        foreach ($placeholder in $prohibitedPlaceholders) {
+            if ($rawXml.IndexOf($placeholder, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "Generated unattended XML still contains unreplaced template placeholder '$placeholder'."
+            }
+        }
+    }
+
+    $computerNameNodes = $doc.SelectNodes("//*[local-name()='ComputerName']")
+    if ($null -ne $computerNameNodes) {
+        foreach ($cnNode in $computerNameNodes) {
+            $cnText = ([string]$cnNode.InnerText).Trim()
+            if ([string]::IsNullOrEmpty($cnText) -or $cnText -eq '*') {
+                continue
+            }
+            if ($cnText.Length -gt 15 -or
+                $cnText.StartsWith('-') -or
+                $cnText.EndsWith('-') -or
+                ($cnText -notmatch '^[A-Za-z0-9-]+$') -or
+                ($cnText -match '^\d+$')) {
+                throw "Invalid ComputerName '$cnText' in unattended XML. ComputerName must be 1-15 NetBIOS characters (letters, digits, hyphens) and not all-numeric."
+            }
+        }
+    }
+
+    $runSyncBlocks = $doc.SelectNodes("//*[local-name()='RunSynchronous']")
+    if ($null -ne $runSyncBlocks) {
+        foreach ($runSync in $runSyncBlocks) {
+            $seenOrders = @{}
+            $cmdNodes = $runSync.SelectNodes("*[local-name()='RunSynchronousCommand']")
+            if ($null -eq $cmdNodes) { continue }
+            foreach ($cmdNode in $cmdNodes) {
+                $orderNode = $cmdNode.SelectSingleNode("*[local-name()='Order']")
+                $orderText = if ($null -ne $orderNode) { ([string]$orderNode.InnerText).Trim() } else { "" }
+                $orderInt = 0
+                if ([string]::IsNullOrWhiteSpace($orderText) -or (-not [int]::TryParse($orderText, [ref]$orderInt)) -or $orderInt -lt 1) {
+                    throw "Invalid or missing <Order> '$orderText' in <RunSynchronousCommand>. Orders must be positive integers (>= 1)."
+                }
+                if ($seenOrders.ContainsKey($orderInt)) {
+                    throw "Duplicate <RunSynchronousCommand> Order '$orderInt' detected within <RunSynchronous>."
+                }
+                $seenOrders[$orderInt] = $true
+            }
+        }
+    }
+
+    if ($PassThru) {
+        return [PSCustomObject]@{
+            Passed     = $true
+            IsTemplate = [bool]$IsTemplate
+            Document   = $doc
+        }
+    }
+
+    return $true
+}
 
 function New-LiteDeployUnattendXml {
     <#
@@ -1114,8 +1250,64 @@ function New-LiteDeployUnattendXml {
         $null = New-Item -Path $targetFolder -ItemType Directory -Force -ErrorAction SilentlyContinue
     }
 
+    # Preflight validation: verify XML syntax, root element, placeholders, ComputerName, and RunSynchronous orders
+    try {
+        [void](Test-LiteDeployUnattendDocument -XmlContent $generatedContent)
+    }
+    catch {
+        Write-ComponentLog "Preflight Unattend validation failed: $($_.Exception.Message)" -Level "ERROR" -ForegroundColor Red
+        throw
+    }
+
     Set-Content -LiteralPath $effectiveOutputPath -Value $generatedContent -Encoding UTF8 -Force
     Write-ComponentLog "Unattended answer file written to: $effectiveOutputPath" -Level "SUCCESS" -ForegroundColor Green
+
+    # When Audit Mode with actions is active, stage the OOBE reseal answer file (first in RAM, then to OS volume)
+    if ($hasFullOsActions -and ($generatedContent -match '<Mode>Audit</Mode>')) {
+        try {
+            [xml]$finalXml = $generatedContent
+            $oobeNode = $finalXml.SelectSingleNode("//*[local-name()='settings'][@pass='oobeSystem']")
+            if ($null -ne $oobeNode) {
+                $resealMode = $oobeNode.SelectSingleNode("//*[local-name()='Reseal']/*[local-name()='Mode']")
+                if ($null -ne $resealMode) {
+                    $resealMode.InnerText = 'OOBE'
+                }
+                $oobeXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+$($oobeNode.OuterXml)
+</unattend>
+"@
+                [void](Test-LiteDeployUnattendDocument -XmlContent $oobeXml)
+
+                # 1. Save in RAM alongside effective output (e.g. X:\Unattend-OOBE.xml)
+                $outputDir = Split-Path -Path $effectiveOutputPath -Parent
+                if ($outputDir -and (Test-Path -LiteralPath $outputDir)) {
+                    $ramOobePath = Join-Path $outputDir 'Unattend-OOBE.xml'
+                    Set-Content -LiteralPath $ramOobePath -Value $oobeXml -Encoding UTF8 -Force
+                    Write-ComponentLog "OOBE reseal answer file saved in RAM: $ramOobePath" -Level "SUCCESS" -ForegroundColor Green
+                }
+
+                # 2. Stage to target OS volume if destination drive is available
+                if ($DiskData -and $DiskData.PSObject.Properties['OSDriveLetter'] -and $DiskData.OSDriveLetter) {
+                    $osDriveClean = ($DiskData.OSDriveLetter -replace '[\\/]+$', '').Trim()
+                    if ($osDriveClean.Length -eq 1) { $osDriveClean += ':' }
+                    $targetOsContent = Join-Path "$osDriveClean\" '~LiteDeploy\Content'
+                    if (Test-Path -LiteralPath "$osDriveClean\") {
+                        if (-not (Test-Path -LiteralPath $targetOsContent)) {
+                            $null = New-Item -Path $targetOsContent -ItemType Directory -Force -ErrorAction SilentlyContinue
+                        }
+                        $osOobePath = Join-Path $targetOsContent 'Unattend-OOBE.xml'
+                        Set-Content -LiteralPath $osOobePath -Value $oobeXml -Encoding UTF8 -Force
+                        Write-ComponentLog "OOBE reseal answer file staged on OS volume: $osOobePath" -Level "SUCCESS" -ForegroundColor Green
+                    }
+                }
+            }
+        }
+        catch {
+            Write-ComponentLog "Warning: Could not generate OOBE reseal answer file: $($_.Exception.Message)" -Level WARNING
+        }
+    }
 
     return $effectiveOutputPath
 }
@@ -1760,21 +1952,13 @@ function Invoke-SetupEngine {
                     $latestSubPhase = $currSub
 
                     $displayPct = if ($pctVal -eq [Math]::Floor($pctVal)) { "$([int]$pctVal)" } else { ("{0:F1}" -f $pctVal) }
-                    $phaseContext = ""
-                    if ($null -ne $currPhase) {
-                        if ($null -ne $currSub) {
-                            $phaseContext = " (Phase: $currPhase, SubPhase: $currSub)"
-                        } else {
-                            $phaseContext = " (Phase: $currPhase)"
-                        }
-                    }
 
-                    Write-Host -NoNewline ("`r [INFO   ] Windows Setup progress: $displayPct%$phaseContext  ")
+                    Write-Host -NoNewline ("`r [INFO   ] Windows Setup progress: $displayPct%  ")
                     $hasRenderedProgress = $true
 
                     if ($pctVal -ge $nextMilestone) {
                         Write-Host -NoNewline "`r                                                                `r"
-                        Write-ComponentLog "Windows Setup progress: $displayPct%$phaseContext" -Level "INFO"
+                        Write-ComponentLog "Windows Setup progress: $displayPct%" -Level "INFO"
                         $currentDecade = [int]([Math]::Floor($pctVal / 10.0) * 10)
                         $nextMilestone = $currentDecade + 10
                     }
