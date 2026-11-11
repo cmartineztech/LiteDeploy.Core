@@ -44,7 +44,7 @@ param(
     [Parameter(Mandatory = $false)]
     [switch]$Metadata,
 
-    # FullOS first-boot resume (Setup CmdLine / FullOS.ps1; Engine -ResumeFullOS remains for compat).
+    # FullOS first-boot resume (Setup CmdLine / LiteDeploy.OS.Engine.ps1; Engine -ResumeFullOS remains for compat).
     [switch]$ResumeFullOS,
 
     [string]$LocalRootName = '~LiteDeploy',

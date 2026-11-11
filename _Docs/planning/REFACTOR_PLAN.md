@@ -14,7 +14,7 @@ Keep the existing PowerShell 5.1 scripts, numbered source folders, and flat publ
 ## Current baseline and corrections to the earlier review
 
 - FullOS first launch is now `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\LiteDeployFullOS`, staged in unattend specialize when the workflow has actions (short `reg add` / `REG_EXPAND_SZ`; not `auditUser`). FullOS may re-arm the same Run key for mid-deploy reboot survival. SYSTEM deferral and cleanup of LiteDeploy-owned legacy startup settings are existing behavior to preserve.
-- Scheduled tasks are legacy cleanup, not the current resume mechanism. SetupComplete is not staged by the current Engine handoff, although Build still discovers the legacy asset.
+- Scheduled tasks are legacy cleanup, not the current resume mechanism. SetupComplete is permanently eliminated (deleted from repository and Build discovery logic purged); FullOS entry is specialize-staged HKLM Run.
 - FullOS package orchestration is still pending at `Runtime/010-Engine/LiteDeploy.OS.Engine.ps1:1008`. Loading package helpers and reconnecting after reboot are not an implemented automatic package loop.
 - A fresh Windows PowerShell 5.1 architecture run returned **185 passed, 1 failed**. The numbered source FullOS script fails parsing at line 329. PowerShell 7 parsed it successfully, so verification must use the supported 5.1 host. Investigate file encoding and the non-ASCII punctuation on that line before broader work; the exact encoding cause has not yet been proven.
 - Text comparison, ignoring line endings and surrounding whitespace, still finds 10 divergent copies. The current mismatch set includes the flat Engine FullOS copy; the prior published Engine mismatch is no longer in that set.
@@ -86,7 +86,7 @@ Use numbered folders as canonical source. Reconcile flat Engine copies and move 
 
 Admin.Build should reject destination filename collisions, honor Overwrite, list the exact payload, and emit a small file/hash manifest. Retain target-specific bootstrap/share/media maps. Do not add a package manager or build framework.
 
-Treat DeploymentEngine as a generated compatibility artifact. Keep its existing semantics until boot-media callers are checked. Exclude SetupComplete from the normal current release payload after verifying legacy requirements; leave any supported legacy packaging explicit.
+Treat DeploymentEngine as a generated compatibility artifact. (Note: in Phase 8, LiteDeploy.DeploymentEngine.ps1 was permanently retired and purged across the repository; SetupComplete.cmd was permanently eliminated).
 
 **Gate:** two scratch publishes from the same source produce the same payload/hashes; Overwrite=false preserves existing files; Overwrite=true replaces them; published artifacts parse under 5.1.
 

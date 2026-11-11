@@ -21,7 +21,7 @@
       Invoke-LiteDeployWorkflow    PLAN STUB: resolves the plan and walks every step without executing it.
       Invoke-LiteDeployStep        STUB: reports what a single step would do.
 
-    Catalog / selection helpers (extracted from LiteDeploy.WorkflowSelection.ps1):
+    Catalog / selection helpers (extracted from LiteDeploy.UI.WorkflowSelection.ps1):
       Get-LiteDeployOperatingSystemsCatalog
       Get-LiteDeployWorkflowSelectionJsonPath
       Save-LiteDeployWorkflowSelectionJson

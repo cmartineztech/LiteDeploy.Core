@@ -8,7 +8,7 @@ Architecture v2 is the sole Runtime/Admin layout in this repository. Legacy name
 
 ### Done
 
-- **Domain Runtime components**: Boot, Logs, Environment, Hardware, State, Workflow, Disk, Drivers, Image, Packages, Engine
+- **Domain Runtime components**: Boot (`LiteDeploy.PE.Boot.ps1`), Environment (`LiteDeploy.Environment.ps1`), Session (`LiteDeploy.Session.ps1`, consolidating State and Logs), Hardware (`LiteDeploy.Hardware.ps1`), Workflow (`LiteDeploy.Workflow.ps1`), Disk (`LiteDeploy.Disk.ps1`), Drivers (`LiteDeploy.Drivers.ps1`), Image (`LiteDeploy.Image.ps1`), Packages (`LiteDeploy.Packages.ps1`), Engine (`LiteDeploy.PE.Engine.ps1` and `LiteDeploy.OS.Engine.ps1`)
 - **UI Screens & Shells**: HardwarePrecheck, WorkflowSelection (+ DriverPicker), Progress (bypassed in background to prevent WinPE RAM exhaustion), Theme tokens, HostShell
 - **Admin Tools**: Build, Content, Images, Drivers, Packages, Workflows, Config, Validation, Utilities, Admin UI Images
 - **Environment Management**: Single path authority — Environment normalizes Development/Production layouts and maps Engine-required component names to files (`Get-LiteDeployComponentPath`, `Get-LiteDeployRuntimePaths`, `Resolve-LiteDeployContentPath`). Consumers must not guess alternate roots or create layout trees unsolicited (see architecture v2 path contract)

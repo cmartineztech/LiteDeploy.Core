@@ -140,9 +140,9 @@ Rules:
 
 | Package kind | Pattern |
 | :--- | :--- |
-| First-party `.ps1` | Prefer **same-process** `& script` after Logs already loaded → `Write-LiteDeployLog -Component Pkg.<id>` |
+| First-party `.ps1` | Prefer **same-process** `& script` after Session already loaded → `Write-LiteDeployLog -Component Pkg.<id>` |
 | MSI/EXE vendor | Child process; orchestrator logs start/end/exit; stdout capture only |
-| Fallback | Env `LITEDEPLOY_RUNTIME_ROOT` + dot-source Logs in child |
+| Fallback | Env `LITEDEPLOY_RUNTIME_ROOT` + dot-source Session in child |
 
 ---
 

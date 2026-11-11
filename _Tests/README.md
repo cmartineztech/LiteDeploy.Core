@@ -34,7 +34,7 @@ performs read-only hardware/storage queries. Use a dedicated directory. Imported
 may initialize session state or local logging. Exit 0 means these checks passed; exit 1 means
 one or more failed. The console reports counts and individual failures.
 
-**Current baseline (2026-10-15):** 158 / 158 with DeploymentShare published Runtime.
+**Current baseline (2026-11-10):** 142 / 142 passed in Development mode; 164 / 164 passed with DeploymentShare published Runtime. Total cross-suite pass rate is 591 / 591 across all 5 test suites.
 
 Actual WinPE boot, WPF rendering, share credentials, disk deployment and reboot/resume are
 not covered. See the [maintenance guide](../_Docs/guides/MAINTENANCE.md) for the release checks.

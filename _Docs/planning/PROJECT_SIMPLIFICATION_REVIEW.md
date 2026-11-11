@@ -26,9 +26,9 @@ Separate temporary fixtures reproduced malformed-JSON validation and overwrite b
 
 ### 1. Establish one editable source and generated publish outputs — highest cleanup value
 
-Many components exist in numbered source folders, flat Engine/Scripts folders, and DeploymentShare. Comparing text after normalizing line endings found **10 divergent copies**: nine flat Engine copies (Boot, Disk, Drivers, Workflow, HostShell, and the HardwarePrecheck/WorkflowSelection scripts and XAML) and the published DeploymentShare Engine.
+Many components historically existed in numbered source folders, legacy Engine/Scripts folders, and DeploymentShare. Comparing text after normalizing line endings found **10 divergent copies**: nine flat Engine copies (Boot, Disk, Drivers, Workflow, HostShell, and the HardwarePrecheck/WorkflowSelection scripts and XAML) and the published DeploymentShare Engine. (Note: `Engine\Scripts\` has since been eliminated and flattened into `Engine\Runtime\` and `Engine\Admin\`).
 
-Admin.Build discovers numbered sources at `Engine/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1` (SetupComplete is not staged; no `auditUser`).
+Admin.Build discovers numbered sources at `Engine/Admin/000-Build/LiteDeploy.Admin.Build.ps1:180`. The flat Engine copies are excluded by that discovery rule. Editing one of those copies can therefore leave the actual next publish unaffected. The published Engine difference historically concerned SetupComplete; FullOS entry is now specialize-staged HKLM Run → `LiteDeploy.OS.Engine.ps1` (SetupComplete is permanently eliminated and deleted; no `auditUser`).
 
 Keep numbered folders as the editable source for the first cleanup. Generate flat deployment output into a clearly identified staging/output folder. Add a publish manifest or content comparison so a tested release can be tied to its source. Before retiring existing flat copies, preserve and compare their differences and inspect external launchers. Do not indiscriminately delete DeploymentShare: it also contains configuration and deployment content.
 
@@ -86,7 +86,7 @@ FullOS still has scheduled-task helper functions, but registration is gated off 
 
 Thin public wrappers around Disk/Image/Drivers are not automatically wasteful: they support standalone inspection and explicit destructive-operation gates. Get-LiteDeployComponentMetadata and -Metadata support inventory tooling. Preserve these interfaces unless usage evidence supports removal.
 
-The compatibility DeploymentEngine alias and Engine -ResumeFullOS delegation can eventually become small wrappers after old boot-media callers are accounted for. Remove obsolete examples and version banners alongside that migration.
+The compatibility DeploymentEngine alias was permanently retired in Phase 8 (all scripts use canonical LiteDeploy.PE.Engine.ps1); Engine -ResumeFullOS delegation remains a compat path. Obsolete examples and version banners were removed alongside that migration.
 
 Experiments contain alternate driver/workflow implementations and third-party reference projects. Keep them out of production discovery and label their status. BunWinPeSuite's ddd.ts and catalogNormalize.ts repeat XML/catalog utilities; consolidate them only if both remain maintained. There is no demonstrated need to unify the experimental Bun runtime and production PowerShell engine.
 

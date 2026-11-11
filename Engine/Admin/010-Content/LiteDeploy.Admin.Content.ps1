@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    LiteDeploy.SetDeploymentShareAcl.ps1
+    LiteDeploy.Admin.Content.ps1
     Configures a deployment share, SMB share permissions, and granular NTFS log ACLs.
 
 .DESCRIPTION
@@ -11,7 +11,7 @@
     - Applies granular CREATOR OWNER permissions on WorkLogs\Deployments so callers can write logs isolated to their own subfolders.
 
 .EXAMPLE
-    .\LiteDeploy.SetDeploymentShareAcl.ps1 -SharePath "C:\DeploymentShare" -ShareName "DeploymentShare$" -LocalUser "deployer" -ADGroups "CORP\DeployAdmins", "CORP\FieldTechs"
+    .\LiteDeploy.Admin.Content.ps1 -SharePath "C:\DeploymentShare" -ShareName "DeploymentShare$" -LocalUser "deployer" -ADGroups "CORP\DeployAdmins", "CORP\FieldTechs"
 #>
 
 [CmdletBinding()]

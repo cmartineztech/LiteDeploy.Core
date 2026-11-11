@@ -18,7 +18,7 @@ for Engine and UI. PowerShell 7 is not the validation baseline for this project.
 | Precheck, selection, progress | Requires a boot image with working UI dependencies | WPF requires an interactive STA session |
 | Disk and OS installation | Current Engine path; validate on disposable VM | Engine is not a post-reboot package runner |
 | Package helpers | Only WinPE-compatible payloads can run | Helpers exist; automatic post-reboot phase unfinished |
-| Resume | State/logs copied to OS volume | No completed automatic resume orchestration |
+| Resume | State/logs copied to OS volume | FullOS resume implemented (`LiteDeploy.OS.Engine.ps1`); package execution loop pending |
 
 The current Engine reports `Completed` after OS installation. It does not mean drivers,
 applications, or post-reboot steps completed. Driver application and the FullOS package

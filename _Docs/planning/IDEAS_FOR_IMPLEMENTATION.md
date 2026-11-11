@@ -111,7 +111,7 @@ flowchart TD
 ### Key Technical Implementation
 1. **Persistent Startup Task (SYSTEM)**:
    ```powershell
-   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\LiteDeploy.FullOS.Engine.ps1'"
+   $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\010-Engine\LiteDeploy.OS.Engine.ps1'"
    $trigger   = New-ScheduledTaskTrigger -AtStartup
    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_SystemEngine" -Action $action -Trigger $trigger -Principal $principal -Force
@@ -120,7 +120,7 @@ flowchart TD
 2. **SYSTEM-to-User Interactive UI Dispatch (Session 1)**:
    ```powershell
    # SYSTEM launches the WPF Progress UI inside LD-<UID>'s active desktop session
-   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\UI\LiteDeploy.UI.Progress.ps1'"
+   $uiAction    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File 'C:\~LiteDeploy\Engine\Runtime\100-UI\Progress\LiteDeploy.UI.Progress.ps1'"
    $uiPrincipal = New-ScheduledTaskPrincipal -UserId "LD-$shortUid" -LogonType InteractiveToken -RunLevel Highest
    Register-ScheduledTask -TaskName "LiteDeploy_UI_Host" -Action $uiAction -Principal $uiPrincipal -Force
    Start-ScheduledTask -TaskName "LiteDeploy_UI_Host"
@@ -153,10 +153,10 @@ Use [WinPECT](https://github.com/cmartinezone/WinPECT) (WinPECredentialTransfer)
 ### Workflow & Protocol
 ```mermaid
 sequenceDiagram
-    participant WinPE as WinPE (LiteDeploy.Engine Phase 5)
+    participant WinPE as WinPE (LiteDeploy.PE.Engine Phase 5)
     participant Disk as Target Disk (W:\~LiteDeploy\Content\Credentials)
     participant Reg as Offline Registry (SOFTWARE\LiteDeploy\CredentialTransfer)
-    participant FullOS as FullOS (SetupComplete → Engine -ResumeFullOS SYSTEM)
+    participant FullOS as FullOS (HKLM Run → LiteDeploy.OS.Engine.ps1)
 
     Note over WinPE: In-memory PSCredential (BootObject / SecretMap)
     WinPE->>Disk: Export-LiteDeployWinPECTCredentials → CredentialTransfer.bin
@@ -345,7 +345,7 @@ For enterprise mass deployment, the target architecture separates the **Worker E
 ```mermaid
 flowchart TD
     subgraph Session0["Session 0 (Headless NT AUTHORITY\\SYSTEM)"]
-        Engine["LiteDeploy.FullOS Worker Engine"]
+        Engine["LiteDeploy.OS.Engine Worker Engine"]
         Engine --> StateFile["DeploymentState.json / MMF"]
         Engine --> PkgInst["Silent Package Execution (Timeout Watchdog)"]
         Engine --> NetAccess["Direct UNC Access \\\\Server\\Share$\\..."]

@@ -1,14 +1,14 @@
 # Console, logging, and failure design
 
-Updated 2026-10-07. **Logging changes are approved direction, not implemented.** The separate returned-BootConfig/confirmed-target safeguard is now implemented. Examples below are proposed output. Current Logs writes console and CMTrace entries; centralized NDJSON, DEBUG, hardware-inventory snapshots, and uniform failure presentation are not complete.
+Updated 2026-10-07. **Logging changes are approved direction, not implemented.** The separate returned-BootConfig/confirmed-target safeguard is now implemented. Examples below are proposed output. Current Session (`LiteDeploy.Session.ps1`, consolidating State and Logs) writes console and CMTrace entries; centralized NDJSON, DEBUG, hardware-inventory snapshots, and uniform failure presentation are not complete.
 
 ## Ownership and formats
 
-Keep Write-LiteDeployLog in Logs as the central entry point; small component wrappers may forward to it. Separate severity from component. Render INFO/Boot as [BOOT], INFO/Disk as [DISK], and results as [SUCCESS], [WARNING], [ERROR], [RETRY], or [NOTICE]. Other activity labels: CONFIG, MODE, NETWORK, SHARE, ENGINE, HARDWARE, WORKFLOW, DRIVERS, IMAGE, PACKAGES, STATE. No normal console timestamps, duplicate tags, raw stack traces, or repeated percentage output. Use color as reinforcement, never the sole meaning.
+Keep Write-LiteDeployLog in Session as the central entry point; small component wrappers may forward to it. Separate severity from component. Render INFO/Boot as [BOOT], INFO/Disk as [DISK], and results as [SUCCESS], [WARNING], [ERROR], [RETRY], or [NOTICE]. Other activity labels: CONFIG, MODE, NETWORK, SHARE, ENGINE, HARDWARE, WORKFLOW, DRIVERS, IMAGE, PACKAGES, STATE. No normal console timestamps, duplicate tags, raw stack traces, or repeated percentage output. Use color as reinforcement, never the sole meaning.
 
 Keep LiteDeploy.Execution.log in CMTrace format. Do not mix bracketed plain-text records into it. Optional LiteDeploy.Execution.ndjson holds structured events. Use Level=DEBUG for file-only details, not a separate custom -Debug switch. Prefer existing NoConsole and LogPath concepts, one banner helper and one failure-summary helper over many formatting functions.
 
-Fields: UTC timestamp, level, component, environment (WinPE/FullOS), phase, step, deploymentId, computerName, message; exception type/message, source script/line and process exit code when relevant. Use one deploymentId, not an independent ID per component. Before selection it is null; preserve original startup events when copying logs after confirmation. Never log passwords, credentials, tokens, product keys or decrypted secrets; sanitize messages and command arguments before every sink. Current State still retains ProductKey during serialization: that is a separate unresolved defect, not a guarantee of the current implementation.
+Fields: UTC timestamp, level, component, environment (WinPE/FullOS), phase, step, deploymentId, computerName, message; exception type/message, source script/line and process exit code when relevant. Use one deploymentId, not an independent ID per component. Before selection it is null; preserve original startup events when copying logs after confirmation. Never log passwords, credentials, tokens, product keys or decrypted secrets; sanitize messages and command arguments before every sink. Session enforces strict property filtering and redaction during serialization; sensitive keys and credentials are never persisted to disk.
 
 ```json
 {"timestamp":"2026-10-07T19:11:32.412Z","level":"SUCCESS","component":"Disk","environment":"WinPE","phase":"DiskPreparation","step":"ValidateLayout","deploymentId":"261007-A3F1","computerName":"CONF-12345","message":"Disk layout validated."}
@@ -72,7 +72,7 @@ Only print success when verified. Optional computer/registration values appear o
 | Condition | Current branch and proposed presentation |
 | --- | --- |
 | Metadata request | Return metadata before initialization; no normal boot output. |
-| Bootstrap Environment/Logs/Hardware missing | Can throw before current catch. Planned minimal console fallback if Logs cannot load; no promise a file was written. |
+| Bootstrap Environment/Session/Hardware missing | Can throw before current catch. Planned minimal console fallback if Session cannot load; no promise a file was written. |
 | WinPE initialization/power operation fails | Some failures are currently suppressed. Check results before success messages; distinguish optional tuning from required initialization. |
 | Explicit configuration path supplied | Checked first; missing explicit file currently falls back to RAM/media. Make fallback visible. |
 | No explicit configuration found | In WinPE check system-drive ~LiteDeploy\Config, then external media. First discovered candidate wins. |

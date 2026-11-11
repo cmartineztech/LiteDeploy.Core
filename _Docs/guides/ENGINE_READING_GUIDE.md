@@ -45,7 +45,7 @@ Published share holds flat runtime scripts at `C:\DeploymentShare\Engine\Runtime
 | `$EngineRequirements` | Shared, WinPE, FullOS (implemented resume), and optional FullOS component names |
 | `$BootObject` | Boot's source, configuration, and in-memory credential context |
 | `$RuntimePaths` | Environment's single path plan for this Engine invocation |
-| `$RequiredFiles` | Named files from that plan, such as `.Logs`, `.Disk`, `.HardwarePrecheck` |
+| `$RequiredFiles` | Named files from that plan, such as `.Session`, `.Disk`, `.HardwarePrecheck` |
 | `$EngineBootConfig` | Configuration passed by Boot, or read once from the declared file |
 | `$deploymentUid` | ID used for this deployment's logs/state |
 | `$precheckResult` | Readiness result from HardwarePrecheck |
@@ -59,7 +59,7 @@ Load Environment once with `-Mode Development` or `-Mode Production` (default). 
 
 The environment lists near the top of Engine are intentionally simple:
 
-- **Shared:** Environment, BootConfig, Logs, State.
+- **Shared:** Environment, BootConfig, Session (consolidating State and Logs).
 - **WinPE:** Hardware, Drivers, the precheck/selection/picker screens and their views,
   HostShell, Progress, Disk, Image.
 - **FullOS:** Shared plus Hardware, Packages, HostShell. Progress is optional for interactive use.
@@ -83,9 +83,8 @@ Environment resolves the names selected by Engine; it never imports them automat
 | Component | How Engine uses it | Expected result / stop condition |
 | :--- | :--- | :--- |
 | Environment | Load once; build paths and check requirements | Complete path list; report all missing files and stop |
-| Logs | Dot-source once | `Write-LiteDeployLog`; no standalone logging action on import |
+| Session | Dot-source once | State persistence, JSON serialization, CMTrace/console logging (`Write-LiteDeployLog`, `Save-LiteDeployDeploymentState`), and log/artifact sync |
 | Hardware | Dot-source once | Inventory functions used by the screens |
-| State | Dot-source once | Create/save deployment state |
 | Drivers | Dot-source once | Driver detection, staging, SHA-256 validation and archive extraction |
 | HardwarePrecheck | Execute in the current STA process | Object with boolean `Passed`; Inventory when available. Empty/cancelled results stop |
 | WorkflowSelection | Execute in the current STA process | Object with boolean `Passed` and integer `TargetDiskIndex`. Explicit DriveSelection=false resolves Disk 0; otherwise require the selected disk |
@@ -147,7 +146,7 @@ execution/import also requires Windows PowerShell `-STA`. Engine never silently 
 - Standalone Drivers and selection screens require Environment to be loaded first. They reuse loaded helpers and named paths. Admin Drivers UI also uses the named AdminDrivers path.
 - Add future dependencies to Engine's environment lists and Environment's path map, then add a visible import or
   phase call and document its inputs/result. Avoid hidden import registries or auto-discovery.
-- Logs owns log-copy and OS handoff functions. Engine passes RuntimePaths explicitly. UI.HostShell owns console window controls; importing it does not change the window.
+- Session owns state persistence, log-copy, and OS handoff functions. Engine passes RuntimePaths explicitly. UI.HostShell owns console window controls; importing it does not change the window.
 - Offline driver staging and offline DISM servicing are operational. FullOS resume (WinPECT, Z: reconnect, **HKLM Run** specialize-staged / re-armed, universal High Performance power plan, Environment Shielding, and Pre-Reboot Hook `Set-LiteDeployFullOSAutoLogon`) is implemented; package execution loop and interactive Progress dispatch after reboot remain open. See [Credentials](../integrations/Credentials/README.md) and [Shielding Matrix](../architecture/FULLOS_SHIELDING_AND_CLEANUP_MATRIX.md).
 
 ## One layout setting
@@ -165,8 +164,8 @@ For a different boot staging folder, pass Boot an explicit `-EnvironmentPath`.
 ## Component size
 
 Aim for fewer than 1,000 lines per non-UI component. Split by responsibility, never by an
-arbitrary line count. Environment now owns configuration and platform helpers; Logs owns
-log storage; UI.HostShell owns console presentation; Engine owns execution order.
+arbitrary line count. Environment now owns configuration and platform helpers; Session owns
+state and log storage; UI.HostShell owns console presentation; Engine owns execution order.
 UI components may stay larger when keeping event handlers and their screen together makes the behavior easier to follow.
 
 ## Deployment ID and log-folder timing

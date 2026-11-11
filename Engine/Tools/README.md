@@ -22,14 +22,14 @@ WinPE handoff copies **Runtime + Tools only** — never `Engine\Admin`:
 
 ```text
 W:\~LiteDeploy\
-  Engine\Runtime\     # Environment, Session, Hardware, Packages, PE.Engine, OS.Engine, …
+  Engine\Runtime\     # Environment, Session, Hardware, Packages, OS.Engine, HostShell, Progress, Theme (PE-only scripts excluded)
   Engine\Tools\WinPECT\
   Content\Credentials\        # CredentialTransfer.bin (encrypted package; unsealed directly in RAM)
   WorkLogs\
   DeploymentState.json
 ```
 
-SetupComplete.cmd is **not** staged. There is **no** `auditUser` FullOS launch. Image stages `HKLM\...\Run\LiteDeployFullOS` in unattend **specialize** when the workflow has actions; FullOS starts at the first interactive logon. Domain Join (no Audit marker) stages temporary `EnableLUA=0` and AutoLogon for the ephemeral `LD-<UID>` account.
+SetupComplete.cmd is **not** staged (permanently eliminated). There is **no** `auditUser` FullOS launch. Image stages `HKLM\...\Run\LiteDeployFullOS` in unattend **specialize** when the workflow has actions; FullOS starts at the first interactive logon. Domain Join (no Audit marker) stages temporary `EnableLUA=0` and AutoLogon for the ephemeral `LD-<UID>` account.
 
 ## FullOS entry
 

@@ -10,9 +10,7 @@
       -DeploymentUid         optional session ID from Engine (footer display)
     On confirm: writes X:\WorkflowSelection.json AND returns a selection object (Passed=$true).
     On cancel/fail: returns Passed=$false (no JSON written).
-    UI markup: LiteDeploy.WorkflowSelection.UI.xaml (theme tokens at load).
-    Inlined-XAML variant: SingleFile\LiteDeploy.WorkflowSelection.ps1
-    Keep SingleFile in sync when changing production logic or .UI.xaml (and DriverPicker pair).
+    UI markup: LiteDeploy.UI.WorkflowSelection.xaml (theme tokens at load).
 #>
 
 [CmdletBinding()]

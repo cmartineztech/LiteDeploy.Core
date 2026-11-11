@@ -276,9 +276,10 @@ function Sync-DeploymentShareTarget {
         }
     }
 
-    # Directed cleanup of obsolete fused/probe scripts: remove old LiteDeploy.Logs.ps1, LiteDeploy.State.ps1,
-    # and LiteDeploy.OS.InteractiveProbe.ps1 even when CleanTarget is false, ensuring published Engine\Runtime does not retain stale split components.
-    foreach ($obsoleteScript in @('LiteDeploy.Logs.ps1', 'LiteDeploy.State.ps1', 'LiteDeploy.OS.InteractiveProbe.ps1')) {
+    # Directed cleanup of obsolete fused/probe/legacy scripts: remove old LiteDeploy.Logs.ps1, LiteDeploy.State.ps1,
+    # LiteDeploy.OS.InteractiveProbe.ps1, LiteDeploy.Boot.ps1, LiteDeploy.Engine.ps1, LiteDeploy.FullOS.ps1, and LiteDeploy.DeploymentEngine.ps1
+    # even when CleanTarget is false, ensuring published Engine\Runtime does not retain stale split or legacy components.
+    foreach ($obsoleteScript in @('LiteDeploy.Logs.ps1', 'LiteDeploy.State.ps1', 'LiteDeploy.OS.InteractiveProbe.ps1', 'LiteDeploy.Boot.ps1', 'LiteDeploy.Engine.ps1', 'LiteDeploy.FullOS.ps1', 'LiteDeploy.DeploymentEngine.ps1')) {
         $obsoletePath = Join-Path $runtimeDest $obsoleteScript
         if (Test-Path -LiteralPath $obsoletePath -PathType Leaf) {
             Write-SyncLog "Removing obsolete fused script '$obsoleteScript' from '$runtimeDest'..." -Level "INFO" -ForegroundColor DarkGray
@@ -472,7 +473,7 @@ function Sync-MediaRootTarget {
     Write-SyncLog "Syncing components to Media Root: '$MediaRootPath'..." -Level "INFO" -ForegroundColor Cyan
     Write-SyncLog "------------------------------------------------------------------" -Level "INFO" -ForegroundColor Cyan
 
-    # Sync Engine publish layouts on media (flat + Scripts\Runtime tree)
+    # Sync Engine publish layouts on media (flat + Engine\Runtime tree)
     Sync-DeploymentShareTarget -SharePath $MediaRootPath -Components $Components -CleanTarget $CleanTarget -RepoRoot $RepoRoot
 
     # Ensure Media standard folders exist (Config, Content, WorkFlows)

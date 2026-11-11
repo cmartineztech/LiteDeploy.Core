@@ -1,7 +1,7 @@
 # ComputerSetup mapping
 
 ComputerSetup belongs to BootConfig. Engine passes the configuration to Image and the
-selection screen. State retains the configuration under BootObject.Config when supplied by
+selection screen. Session retains the configuration under BootObject.Config when supplied by
 Boot; it does not turn UI policy settings into unattend elements.
 
 | Property | Consumer and effect |
@@ -23,7 +23,7 @@ Boot; it does not turn UI policy settings into unattend elements.
 | MachineObjectOU | Image fills MachineObjectOU template placeholders only for nonblank text; persisted state omits null/empty/whitespace values |
 | ProductKey (optional) | Image adds a format-validated installation key to windowsPE Setup/UserData; see Image README |
 
-State serialization omits only blank RegisteredOrganization/RegisteredOwner/JoinWorkGroup/JoinDomain/MachineObjectOU fields under this
+Session serialization omits only blank RegisteredOrganization/RegisteredOwner/JoinWorkGroup/JoinDomain/MachineObjectOU fields under this
 rule. It preserves populated strings, false booleans, numeric settings and a null
 ComputerNamePrefix. It does not modify the caller's BootConfig object. Existing credential
 filtering still applies. This policy is applied to dictionary and JSON-object property bags.
