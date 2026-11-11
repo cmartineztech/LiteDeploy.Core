@@ -44,14 +44,21 @@ sequenceDiagram
     PE->>OSVol: Apply OS image (WIM / Setup.exe)
     PE->>OSVol: Stage drivers under ~LiteDeploy/Content/Drivers
     PE->>OSVol: Stage unattend.xml (specialize Run + Audit/AutoLogon)
-    PE->>OSVol: Copy Runtime and Tools under ~LiteDeploy
-    PE->>OSVol: WinPECT seals credentials in SOFTWARE hive
-    PE->>OSVol: Save DeploymentState.json
-    PE->>WSetup: Reboot into Windows
 
-    alt No workflow actions (e.g. Intune Ready)
-        WSetup->>WSetup: Specialize skips FullOS Run - continue to OOBE only
-    else Workflow has actions
+    alt No workflow actions (actions == 0, e.g. Intune Ready)
+        PE->>Share: Mirror final state & logs to DeploymentShare
+        PE->>OSVol: Purge ~LiteDeploy from OS volume (100% clean disk)
+        PE->>WSetup: Reboot directly into OOBE / Autopilot
+        WSetup->>WSetup: Specialize skips FullOS Run - direct to OOBE
+    else Workflow has actions (actions > 0)
+        PE->>OSVol: Selective FullOS staging (FullOS/Universal only; WinPE excluded)
+        opt Audit Mode workflow
+            PE->>OSVol: Stage Unattend-OOBE.xml to Content/
+        end
+        PE->>OSVol: WinPECT seals credentials in SOFTWARE hive
+        PE->>OSVol: Save DeploymentState.json
+        PE->>WSetup: Reboot into Windows
+
         Note over WSetup,Admin: 2. Specialize arms Run - first interactive FullOS
         WSetup->>WSetup: Order 1 description - Order 2 reg add HKLM Run
         opt Domain Join without AuditMode marker
@@ -90,6 +97,9 @@ sequenceDiagram
         Admin->>OSVol: Restore-LiteDeployFullOSUacBypass (restore EnableLUA=1)
         opt Ephemeral account cleanup
             Admin->>OSVol: Delete LD-<UID> & purge user profile
+        end
+        opt Audit Mode with actions
+            Admin->>OSVol: Invoke-LiteDeploySysprepReseal (sysprep /oobe /reboot /unattend:Unattend-OOBE.xml)
         end
         Admin->>OSVol: Save DeploymentState.json Status Completed
         Admin->>Share: Final log mirror
@@ -159,9 +169,15 @@ flowchart TD
         Disk --> Image["LiteDeploy.Image -ExecuteSetup"]
     end
 
-    subgraph HandoffPhase["Phase 5: Handoff and Staging"]
-        Image --> StagePayload["Stage Runtime + Tools"]
-        StagePayload --> WinPECT["WinPECT export (RAM secrets + SOFTWARE hive)"]
+    subgraph HandoffPhase["Phase 5: Handoff & Staging"]
+        Image --> ActionsGate{"actions > 0?"}
+        ActionsGate -->|No (Zero-Action)| CleanPurge["Zero-Action Purge:<br/>Sync Logs to Share Z: & Delete ~LiteDeploy from OS Volume"]
+        CleanPurge --> RebootDirect["Reboot directly to OOBE / Autopilot<br/>(100% clean disk)"]
+        ActionsGate -->|Yes| StagePayload["Stage Selective FullOS Payload<br/>(FullOS/Universal only; WinPE excluded)"]
+        StagePayload --> AuditReseal{"Audit Mode?"}
+        AuditReseal -->|Yes| StageOOBE["Stage Unattend-OOBE.xml to Content/"]
+        AuditReseal -->|No| WinPECT["WinPECT export (RAM secrets + SOFTWARE hive)"]
+        StageOOBE --> WinPECT
         WinPECT --> HandoffLogs["Logs and State Mirror to W:/~LiteDeploy"]
         HandoffLogs --> StopProgress["Stop-LiteDeployProgressHost"]
         HandoffLogs --> RebootTarget["Reboot into installed Windows"]
@@ -240,9 +256,9 @@ flowchart LR
         BuildProc --> FlatUI["Runtime/UI/"]
         BuildProc --> FlatAdmin["Engine/Admin/"]
         BuildProc --> FlatTools["Engine/Tools/WinPECT/"]
-        FlatTools --> StageOS["WinPE handoff to OS volume"]
-        FlatRuntime --> StageOS
+        FlatTools --> StageOS["Selective FullOS handoff to OS volume<br/>(FullOS/Universal only; WinPE scripts excluded)"]
         FlatFullOS --> StageOS
+        FlatUI --> StageOS
     end
 ```
 

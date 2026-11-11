@@ -71,7 +71,7 @@ flowchart TD
     Probe -.->|reboot 3010| Hook["Pre-Reboot Hook: Set-LiteDeployFullOSAutoLogon<br/>(re-inject password, domain='.')"]
     Hook --> Reboot["Reboot → AutoLogon → Run relaunches FullOS"]
     Reboot --> Run
-    Probe --> Done["Teardown: Disable-LiteDeployFullOSShielding (gpupdate)<br/>+ Clear Run + restore UAC + delete LD-UID"]
+    Probe --> Done["Teardown: Disable-LiteDeployFullOSShielding (gpupdate)<br/>+ Clear Run + restore UAC + delete LD-UID<br/>+ sysprep reseal to OOBE via Unattend-OOBE.xml (if Audit)"]
 ```
 
 Interactive model: **Session 1** (Standard = Audit + built-in Administrator; Domain Join = AutoLogon ephemeral local `LD-<UID>` + temporary UAC bypass + Environment Shielding) with `EnableLinkedConnections = 1` for Explorer-visible `Z:`. Universal High Performance power scheme and FullOS Environment Shielding protect execution. On load, FullOS writes the HKCU console handoff so later consoles use Windows Terminal. Pre-Reboot Hook (`Set-LiteDeployFullOSAutoLogon`) re-injects credentials with `DefaultDomainName = '.'` before intermediate restarts to guarantee AutoLogon survival. First arm of Run = unattend specialize; FullOS re-arms for mid-deploy reboots; stock Setup sysprep left intact; probe = independent second window; keep HKLM Run as primary resume. Note: SYSTEM Session 0 daemon has been retired from the roadmap; all FullOS execution is interactive desktop (Session 1).

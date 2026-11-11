@@ -54,10 +54,18 @@ sequenceDiagram
     participant Admin as LiteDeploy.OS.Engine.ps1
 
     Note over WinPE: In-memory PSCredential (DeploymentShare / SecretMap)
-    WinPE->>Disk: Export-LiteDeployWinPECTCredentials → Content\Credentials\CredentialTransfer.bin
-    WinPE->>Reg: Bootstrap under LiteDeploy\CredentialTransfer
-    WinPE->>Disk: Stage Runtime + Engine\Tools\WinPECT
-    WinPE->>Admin: Reboot into Windows Setup
+    alt Zero workflow actions (actions == 0)
+        WinPE->>Disk: Purge ~LiteDeploy after share log sync
+        WinPE->>Admin: Direct reboot to OOBE / Autopilot (clean disk)
+    else Workflow has actions (actions > 0)
+        WinPE->>Disk: Export-LiteDeployWinPECTCredentials → Content\Credentials\CredentialTransfer.bin
+        WinPE->>Reg: Bootstrap under LiteDeploy\CredentialTransfer
+        WinPE->>Disk: Stage selective FullOS Runtime + Engine\Tools\WinPECT
+        opt Audit Mode workflow
+            WinPE->>Disk: Stage Unattend-OOBE.xml to Content\
+        end
+        WinPE->>Admin: Reboot into Windows Setup
+    end
 
     Note over Admin: specialize (actions>0): Run + optional DJ EnableLUA=0 → logon → HKLM Run FullOS
     Admin->>Admin: HKCU console handoff for later windows
@@ -73,7 +81,7 @@ sequenceDiagram
         Admin->>Admin: Set-LiteDeployFullOSAutoLogon (Pre-Reboot Hook: re-inject password, domain='.')
         Admin->>Admin: Restart-Computer
     end
-    Admin->>Admin: Mirror logs; packages planned; teardown: unshield + restore UAC on finish
+    Admin->>Admin: Mirror logs; packages planned; teardown: unshield + restore UAC + sysprep reseal to OOBE (if Audit)
 ```
 
 ---

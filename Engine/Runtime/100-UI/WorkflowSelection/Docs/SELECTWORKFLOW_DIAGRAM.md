@@ -8,7 +8,7 @@ Published location: `Engine\Runtime\UI`.
 ```mermaid
 flowchart TD
     Input["Engine supplies configuration, source root, RuntimeFiles, and theme"] --> STA["Use the existing STA session"]
-    STA --> Helpers["Reuse Logs, Hardware, Drivers; import only missing helpers"]
+    STA --> Helpers["Reuse Session, Hardware, Drivers; import only missing helpers"]
     Helpers --> Picker["Load DriverPicker once from its named path"]
     Picker --> View["Load RuntimeFiles.WorkflowSelectionView"]
     View --> Config["Read initial configuration and apply policies"]

@@ -88,16 +88,31 @@ stateDiagram-v2
             
             state EvaluateActionsGate {
                 [*] --> CheckActionCount
-                CheckActionCount --> SealWinPECTSecrets: [Actions > 0]
-                CheckActionCount --> SkipSecrets: [Actions == 0]
-                SealWinPECTSecrets --> ArmHklmRunSpecialize
-                SkipSecrets --> DirectOOBE
-                ArmHklmRunSpecialize --> [*]
-                DirectOOBE --> [*]
+                CheckActionCount --> ActionsWorkflow: [Actions > 0]
+                CheckActionCount --> ZeroActionWorkflow: [Actions == 0]
+
+                state ActionsWorkflow {
+                    [*] --> StageSelectiveFullOSPayload: Stage FullOS/Universal runtime only
+                    StageSelectiveFullOSPayload --> StageUnattendOOBE: [If AuditMode]
+                    StageSelectiveFullOSPayload --> SealWinPECTSecrets: [Standard/DomainJoin]
+                    StageUnattendOOBE --> SealWinPECTSecrets
+                    SealWinPECTSecrets --> ArmHklmRunSpecialize
+                    ArmHklmRunSpecialize --> [*]
+                }
+
+                state ZeroActionWorkflow {
+                    [*] --> SkipFullOSStaging: Skip staging runtime files
+                    SkipFullOSStaging --> SyncLogsToShare: Mirror state & logs
+                    SyncLogsToShare --> PurgeOSDiskLiteDeploy: Delete W:\~LiteDeploy completely
+                    PurgeOSDiskLiteDeploy --> DirectOOBE
+                    DirectOOBE --> [*]
+                }
+
+                ActionsWorkflow --> [*]
+                ZeroActionWorkflow --> [*]
             }
 
-            EvaluateActionsGate --> StageRuntimeAndTools: GATE_EVALUATED
-            StageRuntimeAndTools --> SyncDeploymentState: ASSETS_COPIED
+            EvaluateActionsGate --> SyncDeploymentState: GATE_EVALUATED
             SyncDeploymentState --> [*]: STAGING_COMPLETE
         }
 
@@ -175,7 +190,9 @@ stateDiagram-v2
             DisableShieldingAndUnfreezeGPO --> SkipUAC: [If AuditMode]
             RestoreUAC --> CleanupEphemeralAccount: [If LD-UID]
             SkipUAC --> CleanupEphemeralAccount: [If LD-UID]
-            CleanupEphemeralAccount --> MarkStateCompleted
+            CleanupEphemeralAccount --> SysprepResealOOBE: [If AuditMode with Unattend-OOBE.xml]
+            CleanupEphemeralAccount --> MarkStateCompleted: [Otherwise]
+            SysprepResealOOBE --> MarkStateCompleted
             MarkStateCompleted --> FinalLogMirror
             FinalLogMirror --> [*]
         }
@@ -223,10 +240,15 @@ stateDiagram-v2
     ReadStagingPaths --> CopyAssets: PATHS_VERIFIED
     
     state CopyAssets {
-        [*] --> CopyRuntimeScripts
-        CopyRuntimeScripts --> CopyToolsAndWinPECT
-        CopyToolsAndWinPECT --> StageSelectedDrivers
-        StageSelectedDrivers --> [*]
+        [*] --> CheckActionCount
+        CheckActionCount --> ZeroActionDiskPurge: [actions == 0]
+        CheckActionCount --> StageSelectiveFullOS: [actions > 0]
+        StageSelectiveFullOS --> CopyFullOSRuntimeScripts: FullOS/Universal only
+        CopyFullOSRuntimeScripts --> CopyToolsAndWinPECT
+        CopyToolsAndWinPECT --> StageUnattendOOBE: [If Audit Mode]
+        CopyToolsAndWinPECT --> [*]: [Otherwise]
+        StageUnattendOOBE --> [*]
+        ZeroActionDiskPurge --> [*]: [Purge ~LiteDeploy after log sync]
     }
 
     CopyAssets --> CredentialSealing: ASSETS_STAGED
