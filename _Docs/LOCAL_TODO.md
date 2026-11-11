@@ -27,7 +27,7 @@
   - [x] Non-blocking offline network socket probe (200 ms).
   - [x] Instant synchronous UI dropdown population on window launch.
 - [x] **Triple Mirror Logging & State:** Live Memory-Mapped File (MMF) IPC, WinPE Ramdisk (`X:`), Remote Deployment Share (`Z:`), and Target OS Volume (`W:\~LiteDeploy`).
-- [x] **Automated Architecture Test Suite:** 158 tests passing with 0 failures (`_Tests\Test-LiteDeployArchitectureV2.ps1`).
+- [x] **Comprehensive Multi-Suite Verification:** 591 tests passing with 0 failures across 5 test suites (Architecture V2: 142 dev / 164 published, Console Logging: 112, Session Migration: 110, Setup Progress: 63).
 - [x] **Repo tooling folders:** `Templates` → `_Templates`; `Engine\Scripts\Tests` → `_Tests` (docs + RepoRoot inference updated).
 - [x] **Repository Folder Flattening:** Removed redundant `Engine\Scripts\` nesting (`Engine\Runtime` and `Engine\Admin`).
 - [x] **Zero-Dependency WinPE Bootstrap:** `LiteDeploy.PE.Boot.ps1` (`Dependencies = @("None")`) is the sole script in `boot.wim` (`X:\~LiteDeploy\Engine\Runtime\`), embedding network detection, DHCP wait, SMB port 445 test, CredUI, and persistent `Z:` mounting.
@@ -42,6 +42,16 @@
 - [x] **Dynamic Ephemeral Service Account Injection (`LD-<UID>`):** Template placeholders `<!--LocalServiceAccount-->` and `<!--AutoLogon-->` in `DomainJoin.xml` resolved dynamically by `LiteDeploy.Image.ps1` using Session `DeploymentUid` (e.g. `LD-261110-A3F1`) when `actions > 0`; cleared when `actions == 0`.
 - [x] **Workflow Domain vs UI Deduplication:** Purged redundant helper functions (`Test-JSONFormat`, `Get-LiteDeployOperatingSystemsCatalog`, `Get-LiteDeployOsCatalogDateText`) from `LiteDeploy.UI.WorkflowSelection.ps1` in favor of canonical `050-Workflow` (`LiteDeploy.Workflow.ps1`) domain exports. Synchronized `Save-LiteDeployWorkflowSelectionJson` in `LiteDeploy.Workflow.ps1` to consistently exclude `BootConfig` from disk serialization.
 - [x] **Enforce Software-Only WPF Render Mode in WinPE (2026-11-10):** Fixed critical WPF render mode initialization order across `LiteDeploy.UI.HardwarePrecheck.ps1` and `LiteDeploy.UI.WorkflowSelection.ps1`. `RenderOptions.ProcessRenderMode = SoftwareOnly` was erroneously invoked before `PresentationCore` assembly loading (failing silently inside try/catch). Without software rendering, WinPE's lack of Direct3D drivers caused `ShowDialog()` to crash with `System.OutOfMemoryException` (`milcore` mapping D3D allocation failure). Enforced preemptive software-only mode in `LiteDeploy.PE.Engine.ps1` before Phase 1.
+- [x] **Security Hardening & Safeguards:**
+  - [x] Authentic hardware detection: eradicated leftover debug vendor mocks (`return "Dell Inc."`, etc.) in `LiteDeploy.Hardware.ps1` for authentic WMI/CIM discovery.
+  - [x] Target Disk Identity Verification: implemented `Assert-LiteDeployTargetDiskIdentity` in `LiteDeploy.Disk.ps1`, strictly blocking destructive partitioning on USB drives, boot/system drives, WinPE `X:` ramdisk, and active share locations.
+  - [x] Structured XML DOM handling & preflight validation: implemented DOM XML manipulation with safe character escaping and `Test-LiteDeployUnattendDocument` in `LiteDeploy.Image.ps1`.
+  - [x] Crash-safe atomic state persistence: implemented atomic temp-file replace with `.bak` recovery and 48-bit CSPRNG UIDs in `LiteDeploy.Session.ps1`.
+- [x] **Precision FullOS Payload Staging & Cleanup:**
+  - [x] Selective staging: `Sync-LiteDeployFullOSPayloadToOsVolume` copies strictly FullOS/Universal components (`OS.Engine`, `Environment`, `Session`, `Hardware`, `Packages`, `HostShell`, `Progress`, `WinPECT`) and strictly excludes WinPE assets.
+  - [x] Zero-Action Deployment Purge: when workflow specifies `actions == 0` (e.g. Intune Ready), `W:\~LiteDeploy` is completely removed before reboot after remote log sync, leaving a 100% clean OS volume for OOBE.
+  - [x] Audit Mode Sysprep Reseal: staged `Unattend-OOBE.xml` to `Content\` and implemented `Invoke-LiteDeploySysprepReseal` in `LiteDeploy.OS.Engine.ps1` to prevent audit loops.
+  - [x] SetupComplete.cmd permanent elimination: permanently deleted `SetupComplete.cmd` and its discovery logic from `LiteDeploy.Admin.Build.ps1`.
 
 ---
 
@@ -59,6 +69,7 @@
 
 ## 3. Next Session: Console & Terminal UX Modernization
 
+- [x] **Clean Setup.exe Console Progress:** Streamlined Windows Setup console parser to show clean percentages, suppressing noisy Phase and SubPhase terminal noise.
 - [ ] **UI Component Consolidation (Embedded XAML):** Reduce file footprint across `Engine\Runtime\100-UI` and published `DeploymentShare\Engine\Runtime\UI` by embedding XAML markup directly inside host PowerShell scripts (e.g. here-strings), eliminating separate sidecar `.xaml` files for `HardwarePrecheck`, `WorkflowSelection`, `Progress`, and `DriverPicker`.
 - [ ] **Console wrap / host lag:** FullOS + Probe windows can slow under heavy colored log + word-wrap; consider minimized Probe, file-first logging, or narrower banner output.
 - [ ] **In-Place Driver Progress Counter:** Replace 400+ line terminal floods with a dynamic single-line carriage return counter (`[DRIVERS] Installing: 285/441 (65%) - Intel_I2C.inf`).
