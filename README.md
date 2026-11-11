@@ -18,7 +18,7 @@
 | **Boot modes** | Network (SMB → `Z:`) and Media (USB → `<drive>:\~LiteDeploy`) |
 | **Imaging** | `setup.exe` or `dism.exe` |
 | **FullOS resume** | `HKLM\...\Run\LiteDeployFullOS` (not Task Scheduler / SetupComplete) |
-| **Smoke suite** | [`_Tests\`](_Tests/README.md) — **136 passing** (158 with published Runtime) |
+| **Smoke suite** | [`_Tests\`](_Tests/README.md) — **142 passing** (164 with published Runtime; 591 total across all suites) |
 | **Docs map** | [`_Docs/README.md`](_Docs/README.md) |
 
 ---
@@ -58,7 +58,7 @@ flowchart TB
     Prog["UI.Progress process"]
     Disk["Disk -ConfirmDestroy"]
     Image["Image -ExecuteSetup"]
-    Hand["Handoff → W:\\~LiteDeploy<br/>Runtime · Tools · state · WinPECT hive"]
+    Hand["Handoff:<br/>actions == 0: purge ~LiteDeploy · share log sync<br/>actions > 0: stage FullOS/Universal Runtime · WinPECT · Unattend-OOBE.xml"]
     Boot --> Engine
     Engine --> Pre --> Sel
     Engine --> Prog
@@ -67,7 +67,7 @@ flowchart TB
 
   subgraph FirstBoot["Windows first boot"]
     Gate{"workflow actions > 0?"}
-    OOBE["OOBE only<br/>(e.g. Intune Ready)"]
+    OOBE["OOBE only / Autopilot<br/>(e.g. Intune Ready — 100% clean disk)"]
     Spec["specialize RunSynchronous<br/>1 description · 2 HKLM Run<br/>3–4 UAC bypass if Domain Join"]
     Logon["Interactive logon<br/>Audit Admin or AutoLogon"]
     Gate -->|no| OOBE
@@ -83,7 +83,7 @@ flowchart TB
     Secrets["WinPECT unseal · Z: · log mirror"]
     Probe["Interactive Probe window<br/>(Progress/packages next)"]
     RebootHook["Pre-Reboot Hook: AutoLogon shielding<br/>(re-inject password, domain='.')"]
-    Cleanup["Teardown: Disable shielding · gpupdate · restore UAC · delete LD-UID"]
+    Cleanup["Teardown: Disable shielding · gpupdate · restore UAC · sysprep reseal to OOBE via Unattend-OOBE.xml"]
     Run --> Power --> Shield --> Console --> ReArm --> Secrets --> Probe
     Probe -.->|reboot 3010| RebootHook --> Run
     Probe --> Cleanup

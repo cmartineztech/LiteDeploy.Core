@@ -15,15 +15,30 @@ The `REQUIREMENTS BY ENVIRONMENT` block near the top declares **Shared**, **WinP
 | --- | --- |
 | Shared | Environment, BootConfig, Session |
 | WinPE | HostShell, Hardware, Drivers, HardwarePrecheck, WorkflowSelection, DriverPicker, their XAML views, Progress, Disk, Image |
-| FullOS | Shared + Hardware, Packages, HostShell; Progress optional for interactive sessions |
+| FullOS | Shared + Hardware, Packages, HostShell; Progress optional for interactive sessions (WinPE-only components excluded) |
 
 `$EngineRequirements.FullOSImplemented` is **true**. WinPE still uses `-BootObject`. FullOS first
 entry is **HKLM Run** (`LiteDeployFullOS`), staged in unattend **specialize** when the workflow
 has actions (not `auditUser`). Interactive session = Audit Admin (Standard) or AutoLogon
 (Domain Join; temporary `EnableLUA=0` when no Audit marker). FullOS may re-arm the same Run key
 for mid-deploy reboots, kills `sysprep.exe` (stock Setup CmdLine left intact), restores UAC on
-cleanup when bypassed, and displays the live interactive monitor in the console. On direct
-execution, before resume, FullOS sets `HKCU\Console\%%Startup` `DelegationConsole` and
+cleanup when bypassed, and displays the live interactive monitor in the console. When actions complete
+in Audit Mode, `Invoke-LiteDeploySysprepReseal` reseals the operating system into OOBE using the staged
+`C:\~LiteDeploy\Content\Unattend-OOBE.xml` answer file.
+
+When a workflow defines **zero actions** (`actions == 0`, e.g. *Intune Ready*), WinPE completes imaging,
+syncs final state and logs to the deployment share, and **purges `W:\~LiteDeploy` completely** from the
+target OS volume so the device boots 100% clean directly into OOBE/Autopilot.
+
+When a workflow defines **actions > 0**, `Sync-LiteDeployFullOSPayloadToOsVolume` stages **strictly**
+components and assets whose `TargetEnvironment` is `FullOS` or `Universal`:
+- Runtime: `LiteDeploy.OS.Engine.ps1`, `LiteDeploy.Environment.ps1`, `LiteDeploy.Session.ps1`, `LiteDeploy.Hardware.ps1`, `LiteDeploy.Packages.ps1`.
+- UI: `UI\LiteDeploy.UI.HostShell.ps1`, `UI\LiteDeploy.UI.Progress.ps1`, `UI\LiteDeploy.UI.Progress.xaml`, `UI\LiteDeploy.UI.Theme.xaml`.
+- Tools: `Engine\Tools\WinPECT` (in-memory credential unsealing).
+- WinPE-only components (`PE.Boot`, `PE.Engine`, `Disk`, `Drivers`, `Image`, `UI.HardwarePrecheck.*`, `UI.WorkflowSelection.*`) are **strictly excluded**.
+SetupComplete.cmd is completely eliminated.
+
+On direct execution, before resume, FullOS sets `HKCU\Console\%%Startup` `DelegationConsole` and
 `DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` so consoles started after
 that hand off to Windows Terminal. The already-open FullOS window
 is unchanged. A registry failure does not stop resume. Engine `-ResumeFullOS`
@@ -169,7 +184,7 @@ Call after dot-sourcing the component. Parameter declarations:
 
 ### Purpose
 
-Interactive Session 1 resume after imaging: on direct execution, set `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` (Windows Terminal handoff for consoles started afterward; the current window stays as launched), then load DeploymentState, kill `sysprep.exe` (stock Setup CmdLine left intact), WinPECT in-memory unseal, native `Z:` reconnect, log mirror, re-arm HKLM Run for mid-deploy reboots, temporary Interactive Probe window. A failed console-host write is ignored. Package loop and real Progress dispatch are not fully wired yet. Domain Join path may restore `EnableLUA` when `UacBypassed` was set in specialize.
+Interactive Session 1 resume after imaging: on direct execution, set `HKCU\Console\%%Startup` `DelegationConsole` and `DelegationTerminal` to `{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}` (Windows Terminal handoff for consoles started afterward; the current window stays as launched), then load DeploymentState, kill `sysprep.exe` (stock Setup CmdLine left intact), WinPECT in-memory unseal, native `Z:` reconnect, log mirror, re-arm HKLM Run for mid-deploy reboots, temporary Interactive Probe window. Once package orchestration completes in Audit Mode, `Invoke-LiteDeploySysprepReseal` reseals the system into OOBE via `C:\~LiteDeploy\Content\Unattend-OOBE.xml`. Domain Join path may restore `EnableLUA` when `UacBypassed` was set in specialize.
 
 ### Dependencies
 
