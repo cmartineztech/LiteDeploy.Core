@@ -1905,21 +1905,13 @@ function Invoke-SetupEngine {
                     $latestSubPhase = $currSub
 
                     $displayPct = if ($pctVal -eq [Math]::Floor($pctVal)) { "$([int]$pctVal)" } else { ("{0:F1}" -f $pctVal) }
-                    $phaseContext = ""
-                    if ($null -ne $currPhase) {
-                        if ($null -ne $currSub) {
-                            $phaseContext = " (Phase: $currPhase, SubPhase: $currSub)"
-                        } else {
-                            $phaseContext = " (Phase: $currPhase)"
-                        }
-                    }
 
-                    Write-Host -NoNewline ("`r [INFO   ] Windows Setup progress: $displayPct%$phaseContext  ")
+                    Write-Host -NoNewline ("`r [INFO   ] Windows Setup progress: $displayPct%  ")
                     $hasRenderedProgress = $true
 
                     if ($pctVal -ge $nextMilestone) {
                         Write-Host -NoNewline "`r                                                                `r"
-                        Write-ComponentLog "Windows Setup progress: $displayPct%$phaseContext" -Level "INFO"
+                        Write-ComponentLog "Windows Setup progress: $displayPct%" -Level "INFO"
                         $currentDecade = [int]([Math]::Floor($pctVal / 10.0) * 10)
                         $nextMilestone = $currentDecade + 10
                     }
