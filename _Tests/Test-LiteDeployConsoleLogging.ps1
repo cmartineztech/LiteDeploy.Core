@@ -429,7 +429,37 @@ try {
     Assert-Condition ($incompleteThrew) "Incomplete OS imaging throws before handoff"
     Assert-Condition ($script:mockRebootToolCalls.Count -eq 0) "Incomplete OS imaging never requests reboot"
 
-    # 8d: Default log path fallback without global override under StrictMode2
+    # 8d: Zero workflow actions skips FullOS staging and cleans target OS volume before reboot
+    $stateZeroActions = [PSCustomObject]@{
+        Status    = 'Completed'
+        Disk      = [PSCustomObject]@{ DiskNumber = 0; Formatted = $true }
+        OSInstall = [PSCustomObject]@{ Applied = $true; ImagePath = 'C:\Images\install.wim'; ExitCode = 0; DurationSeconds = 45 }
+        Execution = [PSCustomObject]@{ CurrentStep = 'OSInstallation'; RemoteLogDir = 'Z:\Logs\TEST-ZERO' }
+        Workflow  = [PSCustomObject]@{
+            SelectionData = [PSCustomObject]@{
+                actions = @()
+            }
+        }
+    }
+    $script:mockRebootToolCalls.Clear()
+    $script:mockRemoveItemCalls = [System.Collections.Generic.List[string]]::new()
+    function Remove-Item {
+        param($LiteralPath, [switch]$Recurse, [switch]$Force, $ErrorAction)
+        $script:mockRemoveItemCalls.Add([string]$LiteralPath)
+    }
+
+    Complete-LiteDeployWinPEHandoff `
+        -DeploymentState $stateZeroActions `
+        -RuntimePaths ([PSCustomObject]@{}) `
+        -OsDriveLetter 'C:' `
+        -LocalRootName '~LiteDeploy'
+
+    Assert-Condition ($script:mockRebootToolCalls.Count -eq 1) "Zero actions reaches reboot"
+    Assert-Condition ($stateZeroActions.Execution.FullOSPayload.Staged -eq $false) "Zero actions skips FullOS payload staging"
+    Assert-Condition ($script:mockRemoveItemCalls -contains 'C:\~LiteDeploy') "Zero actions removes ~LiteDeploy from OS volume"
+    Remove-Item function:Remove-Item -ErrorAction SilentlyContinue
+
+    # 8e: Default log path fallback without global override under StrictMode2
     $script:logFallbackOk = $false
     $script:logOverrideOk = $false
     & {
