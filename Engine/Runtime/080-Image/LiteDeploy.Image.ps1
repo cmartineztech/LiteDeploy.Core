@@ -1262,6 +1262,53 @@ function New-LiteDeployUnattendXml {
     Set-Content -LiteralPath $effectiveOutputPath -Value $generatedContent -Encoding UTF8 -Force
     Write-ComponentLog "Unattended answer file written to: $effectiveOutputPath" -Level "SUCCESS" -ForegroundColor Green
 
+    # When Audit Mode with actions is active, stage the OOBE reseal answer file (first in RAM, then to OS volume)
+    if ($hasFullOsActions -and ($generatedContent -match '<Mode>Audit</Mode>')) {
+        try {
+            [xml]$finalXml = $generatedContent
+            $oobeNode = $finalXml.SelectSingleNode("//*[local-name()='settings'][@pass='oobeSystem']")
+            if ($null -ne $oobeNode) {
+                $resealMode = $oobeNode.SelectSingleNode("//*[local-name()='Reseal']/*[local-name()='Mode']")
+                if ($null -ne $resealMode) {
+                    $resealMode.InnerText = 'OOBE'
+                }
+                $oobeXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+$($oobeNode.OuterXml)
+</unattend>
+"@
+                [void](Test-LiteDeployUnattendDocument -XmlContent $oobeXml)
+
+                # 1. Save in RAM alongside effective output (e.g. X:\Unattend-OOBE.xml)
+                $outputDir = Split-Path -Path $effectiveOutputPath -Parent
+                if ($outputDir -and (Test-Path -LiteralPath $outputDir)) {
+                    $ramOobePath = Join-Path $outputDir 'Unattend-OOBE.xml'
+                    Set-Content -LiteralPath $ramOobePath -Value $oobeXml -Encoding UTF8 -Force
+                    Write-ComponentLog "OOBE reseal answer file saved in RAM: $ramOobePath" -Level "SUCCESS" -ForegroundColor Green
+                }
+
+                # 2. Stage to target OS volume if destination drive is available
+                if ($DiskData -and $DiskData.PSObject.Properties['OSDriveLetter'] -and $DiskData.OSDriveLetter) {
+                    $osDriveClean = ($DiskData.OSDriveLetter -replace '[\\/]+$', '').Trim()
+                    if ($osDriveClean.Length -eq 1) { $osDriveClean += ':' }
+                    $targetOsContent = Join-Path "$osDriveClean\" '~LiteDeploy\Content'
+                    if (Test-Path -LiteralPath "$osDriveClean\") {
+                        if (-not (Test-Path -LiteralPath $targetOsContent)) {
+                            $null = New-Item -Path $targetOsContent -ItemType Directory -Force -ErrorAction SilentlyContinue
+                        }
+                        $osOobePath = Join-Path $targetOsContent 'Unattend-OOBE.xml'
+                        Set-Content -LiteralPath $osOobePath -Value $oobeXml -Encoding UTF8 -Force
+                        Write-ComponentLog "OOBE reseal answer file staged on OS volume: $osOobePath" -Level "SUCCESS" -ForegroundColor Green
+                    }
+                }
+            }
+        }
+        catch {
+            Write-ComponentLog "Warning: Could not generate OOBE reseal answer file: $($_.Exception.Message)" -Level WARNING
+        }
+    }
+
     return $effectiveOutputPath
 }
 

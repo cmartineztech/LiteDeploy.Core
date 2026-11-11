@@ -870,6 +870,24 @@ function Complete-LiteDeployWinPEHandoff {
             -OsDriveLetter $OsDriveLetter `
             -LocalRootName $LocalRootName `
             -BootCtx $BootCtx
+
+        # Stage Unattend-OOBE.xml from RAM if not already staged
+        $targetContentDir = Join-Path ($OsDriveLetter.TrimEnd('\').TrimEnd(':') + ':\') ($LocalRootName.TrimStart('\') + '\Content')
+        $targetOobeUnattend = Join-Path $targetContentDir 'Unattend-OOBE.xml'
+        if (-not (Test-Path -LiteralPath $targetOobeUnattend -PathType Leaf)) {
+            $ramCandidates = @('X:\Unattend-OOBE.xml')
+            if ($env:TEMP) { $ramCandidates += (Join-Path $env:TEMP 'Unattend-OOBE.xml') }
+            foreach ($candidate in $ramCandidates) {
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    if (-not (Test-Path -LiteralPath $targetContentDir)) {
+                        $null = New-Item -Path $targetContentDir -ItemType Directory -Force -ErrorAction SilentlyContinue
+                    }
+                    Copy-Item -LiteralPath $candidate -Destination $targetOobeUnattend -Force -ErrorAction SilentlyContinue
+                    Write-LiteDeployLog "Staged OOBE reseal answer file to OS volume: $targetOobeUnattend" -Level SUCCESS -Component "PE.Engine" -NoConsole
+                    break
+                }
+            }
+        }
     }
     else {
         Write-LiteDeployLog 'Workflow defines 0 FullOS actions: Skipping FullOS payload staging and WinPECT credential handoff.' -Level INFO -Component "PE.Engine"

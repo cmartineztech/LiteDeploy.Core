@@ -524,6 +524,69 @@ function Stop-LiteDeployAuditModeSysprep {
     return $killed
 }
 
+function Invoke-LiteDeploySysprepReseal {
+    <#
+    .SYNOPSIS
+        Reseals Windows into OOBE using the staged Unattend-OOBE.xml answer file.
+    .DESCRIPTION
+        Invoked after FullOS actions complete in Audit Mode. Executes sysprep.exe /oobe with the
+        staged OOBE answer file under C:\~LiteDeploy\Content\Unattend-OOBE.xml to restore original
+        unattended OOBE settings (EULA bypass, local account / Entra join, regional settings).
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$LocalRoot = '',
+        [ValidateSet('Reboot', 'Shutdown', 'None')][string]$Action = 'Reboot'
+    )
+    if ([string]::IsNullOrWhiteSpace($LocalRoot)) {
+        $LocalRoot = Join-Path $env:SystemDrive '~LiteDeploy'
+    }
+    $oobeUnattendPath = Join-Path $LocalRoot 'Content\Unattend-OOBE.xml'
+    if (-not (Test-Path -LiteralPath $oobeUnattendPath -PathType Leaf)) {
+        if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+            Write-LiteDeployLog "No OOBE reseal answer file found at '$oobeUnattendPath'; skipping sysprep reseal." -Level 'INFO' -Component 'OS.Engine'
+        }
+        return $false
+    }
+
+    $sysprepExe = Join-Path $env:SystemRoot 'System32\sysprep\sysprep.exe'
+    if (-not (Test-Path -LiteralPath $sysprepExe -PathType Leaf)) {
+        if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+            Write-LiteDeployLog "Sysprep binary not found at '$sysprepExe'." -Level 'ERROR' -Component 'OS.Engine'
+        }
+        return $false
+    }
+
+    if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+        Write-LiteDeployLog "Initiating Sysprep Reseal to OOBE using answer file '$oobeUnattendPath' (Action: $Action)..." -Level 'INIT' -Component 'OS.Engine'
+    }
+
+    $actionArg = switch ($Action) {
+        'Shutdown' { '/shutdown' }
+        'None'     { '/quiet' }
+        default    { '/reboot' }
+    }
+
+    $sysprepArgs = @('/oobe', $actionArg, "/unattend:$oobeUnattendPath")
+    if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+        Write-LiteDeployLog "Executing: sysprep.exe $($sysprepArgs -join ' ')" -Level 'INFO' -Component 'OS.Engine'
+    }
+
+    $proc = Start-Process -FilePath $sysprepExe -ArgumentList $sysprepArgs -Wait -PassThru -NoNewWindow -ErrorAction Stop
+    if ($proc.ExitCode -eq 0) {
+        if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+            Write-LiteDeployLog "Sysprep reseal completed successfully with exit code 0." -Level 'SUCCESS' -Component 'OS.Engine'
+        }
+        return $true
+    }
+    else {
+        if (Get-Command Write-LiteDeployLog -ErrorAction SilentlyContinue) {
+            Write-LiteDeployLog "Sysprep reseal exited with code $($proc.ExitCode)." -Level 'WARNING' -Component 'OS.Engine'
+        }
+        return $false
+    }
+}
+
 # ==============================================================================
 # 3b. REBOOT SURVIVAL — HKLM Run (interactive logon), NOT Setup CmdLine
 # ==============================================================================

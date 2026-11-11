@@ -281,6 +281,20 @@ foreach ($engineTarget in $engineTargets) {
             if ($null -eq $localAcctNode -or $localAcctNode.InnerText -cne "LD-$testUid") { $mapped = $false }
             if ($null -eq $autoLogonUserNode -or $autoLogonUserNode.InnerText -cne "LD-$testUid") { $mapped = $false }
 
+            # Verify AuditMode with actions generates Unattend-OOBE.xml with Mode=OOBE
+            $stdTmplPath = Join-Path $RepoRoot "DeploymentShare\Content\Unattend\Standard.xml"
+            $null = New-LiteDeployUnattendXml -TemplateFile $stdTmplPath -TargetOutputFile $answer -ConfigObj $config -WorkflowData $wfWithActions
+            $oobeAnswer = Join-Path (Split-Path -Parent $answer) 'Unattend-OOBE.xml'
+            $oobeValid = $false
+            if (Test-Path -LiteralPath $oobeAnswer) {
+                [xml]$oobeXml = Get-Content $oobeAnswer -Raw
+                $resealNode = $oobeXml.SelectSingleNode("//*[local-name()='Reseal']/*[local-name()='Mode']")
+                if ($resealNode -and $resealNode.InnerText -eq 'OOBE') {
+                    $oobeValid = $true
+                }
+            }
+            if (-not $oobeValid) { $mapped = $false }
+
             [pscustomobject]@{ Omitted = $optionalClean; Preserved = $allPreserved; Mapped = $mapped; IdentityPolicies = $identityPolicies }
         }
         Assert-True $registrationChecks.Omitted "Blank registration omitted from state and answer file ($($engineTarget.Mode))"
